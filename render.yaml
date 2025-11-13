@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: butler-web
+    env: node
+    repo: https://github.com/itslolan/butler
+    branch: main
+    autoDeploy: true
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+    healthCheckPath: /
