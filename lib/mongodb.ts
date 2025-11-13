@@ -1,4 +1,4 @@
-import { Collection, Db, MongoClient, MongoClientOptions } from 'mongodb';
+import { Collection, Db, Document, MongoClient, MongoClientOptions } from 'mongodb';
 
 const uri = process.env.MONGODB_URI;
 const configuredDbName = process.env.MONGODB_DB;
@@ -65,7 +65,9 @@ export async function getDb(): Promise<Db> {
   return cached.db;
 }
 
-export async function getCollection<TSchema>(collectionName: string): Promise<Collection<TSchema>> {
+export async function getCollection<TSchema extends Document = Document>(
+  collectionName: string,
+): Promise<Collection<TSchema>> {
   const db = await getDb();
   return db.collection<TSchema>(collectionName);
 }
