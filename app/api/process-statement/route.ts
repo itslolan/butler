@@ -618,11 +618,8 @@ async function persistDerivedMetrics({
     metrics: derivedMetricsPayload,
     computed_at: extractedAt,
     updated_at: now,
+    ...(derivedMetricsMetadata ? { metadata: derivedMetricsMetadata } : {}),
   };
-
-  if (derivedMetricsMetadata) {
-    setOperations.metadata = derivedMetricsMetadata;
-  }
 
   const updateDocument: UpdateFilter<DerivedMetricsRecord> = {
     $set: setOperations,
