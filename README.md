@@ -40,3 +40,11 @@ npm run dev
 - Refunds & reversals
 - Subscription creep
 
+## Deployment on Render
+
+1. Commit the provided `render.yaml` file and push it to the `main` branch.
+2. In the Render dashboard, create a new Blueprint deploy and connect it to `https://github.com/itslolan/butler`.
+3. Select the `butler-web` service from the blueprint, ensure the branch is `main`, and confirm that `autoDeploy` is enabled.
+4. Add the required environment variables (for example `OPENAI_API_KEY`) in the Render dashboard.
+5. Trigger the initial deploy; future merges to `main` will automatically rebuild and redeploy the service.
+
