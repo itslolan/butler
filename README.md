@@ -20,6 +20,9 @@ npm install
 Create a `.env.local` file with:
 ```
 OPENAI_API_KEY=your_openai_api_key_here
+MONGODB_URI=your_mongodb_connection_string
+# Optional: override the database name extracted from the URI
+MONGODB_DB=butler
 ```
 
 3. Run the development server:
@@ -39,6 +42,18 @@ npm run dev
 - Category-level financial behavior
 - Refunds & reversals
 - Subscription creep
+
+## Data Persistence
+
+When a statement is processed the extracted information is stored in MongoDB:
+
+- `documents`: upload metadata, extraction status, user/document typology.
+- `transactions`: normalized cash-advance, refund, and payment events linked to each statement.
+- `statement_summaries`: credit utilization, balances, and supporting metrics for a specific document.
+- `derived_metrics`: cached user-level analytics, updated on each extraction.
+- `llm_extractions`: raw and normalized LLM responses for auditing and reprocessing.
+
+Ensure the configured MongoDB user has permissions to read and write to these collections.
 
 ## Deployment on Render
 
