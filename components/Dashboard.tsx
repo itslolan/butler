@@ -12,7 +12,12 @@ export default function Dashboard({ financialData, isExample }: DashboardProps) 
   // Aggregate data from all statements
   const aggregatedData = financialData.length > 0 ? financialData[financialData.length - 1].data : null;
 
-  const metrics = [
+  const metrics: Array<{
+    title: string;
+    value: string;
+    subtitle: string;
+    color: 'green' | 'yellow' | 'red' | 'blue' | 'gray';
+  }> = [
     {
       title: 'Credit Utilization',
       value: aggregatedData?.creditUtilization?.percentage != null
