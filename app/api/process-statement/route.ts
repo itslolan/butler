@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
-import { ObjectId } from 'mongodb';
+import { ObjectId, UpdateFilter } from 'mongodb';
 
 import { getCollection } from '@/lib/mongodb';
 import {
@@ -614,34 +614,26 @@ async function persistDerivedMetrics({
 
   const derivedMetricsCollection = await getCollection<DerivedMetricsRecord>('derived_metrics');
 
-  const updateDocument: {
-    $set: {
-      metrics: Record<string, unknown>;
-      computed_at: Date;
-      updated_at: Date;
-      metadata?: Record<string, unknown>;
-    };
-    $setOnInsert: {
-      user_id: string;
-      created_at: Date;
-    };
-    $unset?: Record<string, number>;
-  } = {
-    $set: {
-      metrics: derivedMetricsPayload,
-      computed_at: extractedAt,
-      updated_at: now,
-    },
+  const setOperations: NonNullable<UpdateFilter<DerivedMetricsRecord>['$set']> = {
+    metrics: derivedMetricsPayload,
+    computed_at: extractedAt,
+    updated_at: now,
+  };
+
+  if (derivedMetricsMetadata) {
+    setOperations.metadata = derivedMetricsMetadata;
+  }
+
+  const updateDocument: UpdateFilter<DerivedMetricsRecord> = {
+    $set: setOperations,
     $setOnInsert: {
       user_id: userId,
       created_at: now,
     },
   };
 
-  if (derivedMetricsMetadata) {
-    updateDocument.$set.metadata = derivedMetricsMetadata;
-  } else {
-    updateDocument.$unset = { metadata: 1 };
+  if (!derivedMetricsMetadata) {
+    updateDocument.$unset = { metadata: '' };
   }
 
   await derivedMetricsCollection.updateOne(
