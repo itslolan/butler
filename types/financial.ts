@@ -2,6 +2,7 @@ export interface FinancialData {
   id: string;
   fileName: string;
   extractedAt: string;
+  documentId?: string;
   data: {
     carryForwardBalance?: {
       previousBalance: number;
