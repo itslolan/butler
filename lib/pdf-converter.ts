@@ -1,19 +1,7 @@
-import { createMuPdf } from 'mupdf';
-
 export interface ConvertedImage {
   buffer: Buffer;
   pageNumber: number;
   mimeType: string;
-}
-
-// Cache the mupdf instance to avoid re-initialization
-let mupdfInstance: Awaited<ReturnType<typeof createMuPdf>> | null = null;
-
-async function getMuPdfInstance() {
-  if (!mupdfInstance) {
-    mupdfInstance = await createMuPdf();
-  }
-  return mupdfInstance;
 }
 
 /**
@@ -23,26 +11,38 @@ async function getMuPdfInstance() {
  */
 export async function convertPdfToJpgImages(pdfBuffer: Buffer): Promise<ConvertedImage[]> {
   try {
-    // Initialize MuPDF
-    const mupdf = await getMuPdfInstance();
+    // Dynamically import mupdf to handle top-level await
+    const mupdf = await import('mupdf');
     
     // Convert buffer to Uint8Array
     const pdfData = new Uint8Array(pdfBuffer);
     
     // Load the PDF document
-    const doc = mupdf.load(pdfData);
+    const doc = mupdf.default.Document.openDocument(pdfData);
     const pageCount = doc.countPages();
     const images: ConvertedImage[] = [];
 
+    // Get RGB colorspace for rendering
+    const rgbColorSpace = mupdf.default.ColorSpace.DeviceRGB;
+
     // Convert each page to a JPG image
     // Using 2.0 scale factor for better quality
+    const scale = 2.0;
+    
     for (let i = 0; i < pageCount; i++) {
       const page = doc.loadPage(i);
-      const pixmap = page.toPixmap(2.0); // Render at 2x resolution for better quality
-      const jpgBuffer = pixmap.toBuffer('jpeg');
+      
+      // Create transformation matrix for scaling
+      const matrix = mupdf.default.Matrix.scale(scale, scale);
+      
+      // Render page to pixmap
+      const pixmap = page.toPixmap(matrix, rgbColorSpace, false);
+      
+      // Convert pixmap to JPEG (quality: 95)
+      const jpgData = pixmap.asJPEG(95);
       
       images.push({
-        buffer: Buffer.from(jpgBuffer),
+        buffer: Buffer.from(jpgData),
         pageNumber: i + 1,
         mimeType: 'image/jpeg',
       });
