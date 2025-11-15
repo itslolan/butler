@@ -3,6 +3,7 @@ import OpenAI from 'openai';
 import { ObjectId, UpdateFilter } from 'mongodb';
 
 import { getCollection } from '@/lib/mongodb';
+import { convertPdfToJpgImages } from '@/lib/pdf-converter';
 import {
   DerivedMetricsRecord,
   DocumentRecord,
@@ -43,11 +44,45 @@ export async function POST(request: NextRequest) {
     const filePathEntry = formData.get('filePath');
     const filePath = typeof filePathEntry === 'string' ? filePathEntry : undefined;
 
-    // Convert file to base64
+    // Get file buffer
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
-    const base64Image = buffer.toString('base64');
     const mimeType = file.type || 'image/png';
+    const isPdf = mimeType === 'application/pdf';
+
+    // Prepare images for GPT-4o
+    let imageContents: Array<{ type: 'image_url'; image_url: { url: string } }> = [];
+
+    if (isPdf) {
+      // Convert PDF to JPG images (one per page)
+      const convertedImages = await convertPdfToJpgImages(buffer);
+      
+      // Convert each page to base64 and add to content array
+      imageContents = convertedImages.map((img) => ({
+        type: 'image_url' as const,
+        image_url: {
+          url: `data:${img.mimeType};base64,${img.buffer.toString('base64')}`,
+        },
+      }));
+
+      if (imageContents.length === 0) {
+        return NextResponse.json(
+          { error: 'PDF file appears to be empty or could not be converted' },
+          { status: 400 }
+        );
+      }
+    } else {
+      // Handle regular image file
+      const base64Image = buffer.toString('base64');
+      imageContents = [
+        {
+          type: 'image_url' as const,
+          image_url: {
+            url: `data:${mimeType};base64,${base64Image}`,
+          },
+        },
+      ];
+    }
 
     // Call GPT-4o to extract financial information
     const response = await openai.chat.completions.create({
@@ -56,6 +91,8 @@ export async function POST(request: NextRequest) {
         {
           role: 'system',
           content: `You are a financial statement analyzer. Extract financial information from bank and credit card statements. 
+          
+          ${isPdf ? 'This is a multi-page PDF document. Analyze all pages together to extract complete information.' : ''}
           
           Extract the following information and return it as JSON:
           
@@ -120,14 +157,7 @@ export async function POST(request: NextRequest) {
         },
         {
           role: 'user',
-          content: [
-            {
-              type: 'image_url',
-              image_url: {
-                url: `data:${mimeType};base64,${base64Image}`,
-              },
-            },
-          ],
+          content: imageContents,
         },
       ],
       max_tokens: 4000,
