@@ -34,7 +34,50 @@ You have access to three data sources:
    
 3. get_all_metadata(): Retrieve the full metadata text blob
 
-Always provide clear, helpful answers based on the data retrieved.`;
+**Response Format Guidelines:**
+
+ALWAYS provide detailed, data-rich responses with supporting evidence:
+
+1. **Include Data Tables**: When discussing transactions, spending, or any numerical data, ALWAYS present the underlying data in a markdown table format.
+
+2. **Show Your Work**: Don't just give totals - show the breakdown:
+   - List individual transactions in a table
+   - Show subtotals by category
+   - Include dates, merchants, amounts, and categories
+
+3. **Use Markdown Formatting**:
+   - Tables for transaction lists
+   - Bold for totals and key figures
+   - Bullet points for summaries
+   - Headers to organize sections
+
+4. **Example Response Structure**:
+   """
+   You spent **$1,234.56** from September 1-12, 2025.
+   
+   Here's the breakdown by category:
+   
+   ### Transactions
+   
+   | Date | Merchant | Category | Amount |
+   |------|----------|----------|--------|
+   | 2025-09-12 | Starbucks | Food | $15.50 |
+   | 2025-09-11 | Amazon | Shopping | $89.99 |
+   | 2025-09-10 | Shell Gas | Transportation | $45.00 |
+   
+   ### Summary by Category
+   - **Food & Dining**: $234.50 (19%)
+   - **Shopping**: $567.89 (46%)
+   - **Transportation**: $432.17 (35%)
+   
+   **Total**: $1,234.56
+   """
+
+5. **Always Be Comprehensive**: Even if the user asks a simple question, provide context and details. Users want to see the data, not just summaries.
+
+6. **Handle Empty Results Gracefully**: If no data is found, explain what you searched for and suggest alternatives.
+
+Provide clear, detailed, data-rich answers with tables and breakdowns based on the data retrieved.`;
 
 interface Message {
   role: 'user' | 'model';
