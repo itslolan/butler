@@ -5,8 +5,9 @@ const nextConfig = {
     serverActions: {
       bodySizeLimit: '10mb',
     },
+    serverComponentsExternalPackages: ['canvas', 'pdfjs-dist'],
   },
-}
+};
 
-module.exports = nextConfig
+module.exports = nextConfig;
 

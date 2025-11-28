@@ -12,10 +12,14 @@ export default function FileUpload({ onFileUpload, isProcessing }: FileUploadPro
   const [isDragging, setIsDragging] = useState(false);
 
   const handleFileSelect = (file: File) => {
-    if (file.type.startsWith('image/')) {
+    const isImage = file.type.startsWith('image/');
+    const isPdf =
+      file.type === 'application/pdf' || file.name?.toLowerCase().endsWith('.pdf');
+
+    if (isImage || isPdf) {
       onFileUpload(file);
     } else {
-      alert('Please upload an image file (PNG, JPG, etc.)');
+      alert('Please upload a PDF, PNG, JPG, or similar image file.');
     }
   };
 
@@ -69,7 +73,7 @@ export default function FileUpload({ onFileUpload, isProcessing }: FileUploadPro
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/*"
+          accept="image/*,.pdf"
           onChange={handleFileChange}
           className="hidden"
           disabled={isProcessing}
@@ -101,7 +105,7 @@ export default function FileUpload({ onFileUpload, isProcessing }: FileUploadPro
                 Upload Bank or Credit Card Statement
               </p>
               <p className="text-sm text-gray-500 dark:text-gray-400">
-                Click to browse or drag and drop an image file
+                Click to browse or drag and drop a PDF or image
               </p>
             </>
           )}

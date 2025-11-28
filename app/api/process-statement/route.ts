@@ -1,21 +1,62 @@
 import { NextRequest, NextResponse } from 'next/server';
-import OpenAI from 'openai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import { insertDocument, insertTransactions, appendMetadata } from '@/lib/db-tools';
+import { uploadFile } from '@/lib/supabase';
+
+export const runtime = 'nodejs';
+
+const GEMINI_MODEL = 'gemini-2.0-flash-exp';
+
+const SYSTEM_PROMPT = `You are a financial document parser. Extract structured information from bank statements and credit card statements.
+
+Return a JSON object with this exact structure:
+{
+  "documentType": "bank_statement" | "credit_card_statement" | "unknown",
+  "issuer": string or null,
+  "accountId": string or null,
+  "statementDate": "YYYY-MM-DD" or null,
+  "previousBalance": number or null,
+  "newBalance": number or null,
+  "creditLimit": number or null,
+  "minimumPayment": number or null,
+  "dueDate": "YYYY-MM-DD" or null,
+  "transactions": [
+    {
+      "date": "YYYY-MM-DD",
+      "merchant": string,
+      "amount": number,
+      "category": string or null,
+      "description": string or null
+    }
+  ],
+  "metadataSummary": "A concise markdown-formatted summary of key information from this statement. Include: issuer, account number (last 4 digits only), statement period, balances, credit limit if applicable, notable spending patterns, and any important notices or alerts."
+}
+
+Extract all transactions visible in the document. Categorize them logically (Food, Travel, Utilities, Entertainment, Shopping, etc.).
+For amounts, use positive numbers for charges/debits and negative numbers for payments/credits.
+Always return valid JSON.`;
 
 export async function POST(request: NextRequest) {
   try {
-    if (!process.env.OPENAI_API_KEY) {
+    if (!process.env.GEMINI_API_KEY) {
       return NextResponse.json(
-        { error: 'OpenAI API key not configured. Please set OPENAI_API_KEY in your environment variables.' },
+        { error: 'Gemini API key not configured. Please set GEMINI_API_KEY in your environment variables.' },
         { status: 500 }
       );
     }
 
-    const openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({
+      model: GEMINI_MODEL,
+      systemInstruction: SYSTEM_PROMPT,
+      generationConfig: {
+        responseMimeType: 'application/json',
+      },
     });
 
     const formData = await request.formData();
     const file = formData.get('file') as File;
+    const userId = (formData.get('userId') as string) || 'default-user';
 
     if (!file) {
       return NextResponse.json(
@@ -24,170 +65,113 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Convert file to base64
+    // Get file buffer
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
-    const base64Image = buffer.toString('base64');
-    const mimeType = file.type || 'image/png';
+    const isPdf = file.type === 'application/pdf' || file.name?.toLowerCase().endsWith('.pdf');
+    const isImage = file.type.startsWith('image/');
 
-    // Call GPT-4o to extract financial information
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      messages: [
-        {
-          role: 'system',
-          content: `You are a financial statement analyzer. Extract financial information from bank and credit card statements. 
-          
-          Extract the following information and return it as JSON:
-          
-          1. **Carry-forward balance behavior**: Look for "Previous Balance", "Payments", "New Balance" in the statement summary. Compare balances to detect unpaid carry-over.
-          
-          2. **Cash advances**: Identify transactions containing "CASH ADVANCE" or "CASH ADVANCE FEE" in the transaction list.
-          
-          3. **Credit utilization ratio**: Find "Credit Limit" and "New Balance" in the statement header. Calculate utilization as new_balance / credit_limit.
-          
-          4. **Volatility of spending**: Calculate standard deviation of total monthly spend from all transactions.
-          
-          5. **Payment regularity**: Find "Payment - Thank You" entries and due dates. Check if minimum payments are made on time each cycle.
-          
-          6. **Category-level financial behavior**: Categorize merchants (Food, Travel, Utilities, Entertainment, Shopping, etc.) and sum spend by category.
-          
-          7. **Refunds & reversals**: Flag transactions with "REFUND" or negative amounts.
-          
-          8. **Subscription creep**: Detect recurring charges from the same merchant with similar amounts across statements.
-          
-          Return a JSON object with this structure:
-          {
-            "carryForwardBalance": {
-              "previousBalance": number,
-              "payments": number,
-              "newBalance": number,
-              "hasCarryOver": boolean
-            },
-            "cashAdvances": {
-              "transactions": [{"date": "string", "description": "string", "amount": number, "fee": number}],
-              "totalAmount": number,
-              "totalFees": number
-            },
-            "creditUtilization": {
-              "creditLimit": number,
-              "newBalance": number,
-              "utilizationRatio": number,
-              "percentage": number
-            },
-            "spendingVolatility": {
-              "monthlySpends": [number],
-              "standardDeviation": number,
-              "averageSpend": number
-            },
-            "paymentRegularity": {
-              "payments": [{"date": "string", "amount": number, "dueDate": "string", "onTime": boolean}],
-              "onTimePercentage": number
-            },
-            "categorySpending": {
-              "categories": {"category": amount},
-              "total": number
-            },
-            "refunds": {
-              "transactions": [{"date": "string", "description": "string", "amount": number}],
-              "totalAmount": number
-            },
-            "subscriptions": {
-              "recurringCharges": [{"merchant": "string", "amount": number, "frequency": "string", "occurrences": number}]
-            }
-          }
-          
-          If information is not available, use null or empty arrays/objects. Always return valid JSON.`,
-        },
+    if (!isPdf && !isImage) {
+      return NextResponse.json(
+        { error: 'Unsupported file type. Please upload a PDF or an image.' },
+        { status: 400 }
+      );
+    }
+
+    // Upload file to Supabase Storage
+    const fileUrl = await uploadFile(userId, buffer, file.name);
+
+    // Send file directly to Gemini
+    const filePart = {
+      inlineData: {
+        mimeType: isPdf ? 'application/pdf' : file.type,
+        data: buffer.toString('base64'),
+      },
+    };
+
+    const geminiResponse = await model.generateContent({
+      contents: [
         {
           role: 'user',
-          content: [
+          parts: [
             {
-              type: 'image_url',
-              image_url: {
-                url: `data:${mimeType};base64,${base64Image}`,
-              },
+              text: 'Extract all information from this financial document and return the structured JSON.',
             },
+            filePart,
           ],
         },
       ],
-      max_tokens: 4000,
-      response_format: { type: 'json_object' },
     });
 
-    const content = response.choices[0]?.message?.content;
+    const content = geminiResponse.response.text();
     if (!content) {
-      throw new Error('No response from OpenAI');
+      throw new Error('No response from Gemini');
     }
 
     let extractedData;
     try {
       extractedData = JSON.parse(content);
     } catch (parseError) {
-      // If JSON parsing fails, try to extract JSON from the response
       const jsonMatch = content.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         extractedData = JSON.parse(jsonMatch[0]);
       } else {
-        throw new Error('Failed to parse JSON response');
+        throw new Error('Failed to parse JSON response from Gemini');
       }
     }
 
-    // Ensure all data structures exist and have proper defaults
-    if (!extractedData) {
-      extractedData = {};
-    }
+    // Save to Supabase
+    // Insert document
+    const documentEntry = {
+      user_id: userId,
+      file_name: file.name,
+      file_url: fileUrl,
+      uploaded_at: new Date().toISOString(),
+      document_type: extractedData.documentType || 'unknown',
+      issuer: extractedData.issuer || null,
+      account_id: extractedData.accountId || null,
+      statement_date: extractedData.statementDate || null,
+      previous_balance: extractedData.previousBalance || null,
+      new_balance: extractedData.newBalance || null,
+      credit_limit: extractedData.creditLimit || null,
+      minimum_payment: extractedData.minimumPayment || null,
+      due_date: extractedData.dueDate || null,
+      metadata: {},
+    };
 
-    // Calculate standard deviation if not provided
-    if (extractedData.spendingVolatility?.monthlySpends && Array.isArray(extractedData.spendingVolatility.monthlySpends)) {
-      const spends = extractedData.spendingVolatility.monthlySpends.filter((s: any) => typeof s === 'number');
-      if (spends.length > 0 && !extractedData.spendingVolatility.standardDeviation) {
-        const avg = spends.reduce((a: number, b: number) => a + b, 0) / spends.length;
-        const variance = spends.reduce((sum: number, val: number) => sum + Math.pow(val - avg, 2), 0) / spends.length;
-        extractedData.spendingVolatility.standardDeviation = Math.sqrt(variance);
-        extractedData.spendingVolatility.averageSpend = avg;
+    const insertedDoc = await insertDocument(documentEntry);
+    const documentId = insertedDoc.id!;
+
+    // Insert transactions
+    if (extractedData.transactions && Array.isArray(extractedData.transactions)) {
+      const transactions = extractedData.transactions.map((txn: any) => ({
+        user_id: userId,
+        document_id: documentId,
+        date: txn.date,
+        merchant: txn.merchant,
+        amount: txn.amount,
+        category: txn.category || null,
+        description: txn.description || null,
+        metadata: {},
+      }));
+
+      if (transactions.length > 0) {
+        await insertTransactions(transactions);
       }
     }
 
-    // Calculate credit utilization percentage if not provided
-    if (extractedData.creditUtilization?.utilizationRatio != null && extractedData.creditUtilization.percentage == null) {
-      extractedData.creditUtilization.percentage = Number(extractedData.creditUtilization.utilizationRatio) * 100;
-    }
+    // Append metadata summary
+    const metadataSummary = extractedData.metadataSummary || 'No metadata summary provided.';
+    const metadataEntry = `\n\n---\n**Document:** ${file.name} (uploaded ${new Date().toISOString()})\n\n${metadataSummary}\n`;
 
-    // Calculate payment regularity percentage if not provided
-    if (extractedData.paymentRegularity?.payments && Array.isArray(extractedData.paymentRegularity.payments) && extractedData.paymentRegularity.onTimePercentage === undefined) {
-      const payments = extractedData.paymentRegularity.payments;
-      const onTimeCount = payments.filter((p: any) => p?.onTime === true).length;
-      extractedData.paymentRegularity.onTimePercentage = payments.length > 0 
-        ? (onTimeCount / payments.length) * 100 
-        : 0;
-    }
-
-    // Calculate category total if not provided
-    if (extractedData.categorySpending?.categories && typeof extractedData.categorySpending.categories === 'object' && extractedData.categorySpending.total === undefined) {
-      extractedData.categorySpending.total = Object.values(extractedData.categorySpending.categories)
-        .reduce((sum: number, val: any) => sum + (typeof val === 'number' ? val : 0), 0);
-    }
-
-    // Ensure arrays exist for safety
-    if (extractedData.cashAdvances && !Array.isArray(extractedData.cashAdvances.transactions)) {
-      extractedData.cashAdvances.transactions = [];
-    }
-    if (extractedData.refunds && !Array.isArray(extractedData.refunds.transactions)) {
-      extractedData.refunds.transactions = [];
-    }
-    if (extractedData.subscriptions && !Array.isArray(extractedData.subscriptions.recurringCharges)) {
-      extractedData.subscriptions.recurringCharges = [];
-    }
-    if (extractedData.paymentRegularity && !Array.isArray(extractedData.paymentRegularity.payments)) {
-      extractedData.paymentRegularity.payments = [];
-    }
+    await appendMetadata(userId, metadataEntry);
 
     const result = {
-      id: `stmt_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      id: documentId,
       fileName: file.name,
       extractedAt: new Date().toISOString(),
-      data: extractedData,
+      documentType: extractedData.documentType,
+      transactionCount: extractedData.transactions?.length || 0,
     };
 
     return NextResponse.json(result);
@@ -199,4 +183,5 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
 

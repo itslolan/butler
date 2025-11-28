@@ -1,13 +1,23 @@
-# Butler - Financial Health Tracker
+# Butler - AI Financial Assistant
 
-Butler helps users keep track of their expenses and financial health using AI-powered analysis of bank and credit card statements.
+Butler helps users manage and understand their finances using AI-powered analysis of bank and credit card statements.
 
 ## Features
 
-- Upload bank and credit card statements (images)
-- AI-powered extraction of financial markers using GPT-4o
-- Visual dashboard showing financial health metrics
-- Track spending patterns, credit utilization, payment regularity, and more
+- Upload bank and credit card statements (PDFs or images)
+- AI-powered extraction using Google Gemini
+- Structured storage of documents and transactions in MongoDB
+- File storage in Supabase
+- Conversational AI assistant to query your financial data
+- Ask questions about spending, balances, transactions, and more
+
+## Architecture
+
+- **Frontend**: Next.js 14 with React
+- **AI**: Google Gemini 2.0 Flash with function calling
+- **Database**: Supabase (PostgreSQL with JSONB columns)
+- **Storage**: Supabase Storage for original files
+- **Language**: TypeScript
 
 ## Getting Started
 
@@ -19,32 +29,61 @@ npm install
 2. Set up environment variables:
 Create a `.env.local` file with:
 ```
-OPENAI_API_KEY=your_openai_api_key_here
+# Required: Gemini API Key
+# Get your API key from: https://aistudio.google.com/app/apikey
+GEMINI_API_KEY=your_gemini_api_key_here
+
+# Required: Supabase configuration
+# Get from your Supabase project settings
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 ```
 
-3. Run the development server:
+3. Set up Supabase:
+   - Create a new Supabase project at https://supabase.com
+   - Run the SQL schema from `supabase-schema.sql` in the SQL Editor
+   - Create a storage bucket called `statements`
+   - Make it public or configure appropriate access policies
+
+4. Run the development server:
 ```bash
 npm run dev
 ```
 
-4. Open [http://localhost:3000](http://localhost:3000) in your browser.
+5. Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-## Financial Markers Extracted
+## How It Works
 
-- Carry-forward balance behavior
-- Cash advances
-- Credit utilization ratio
-- Volatility of spending
-- Payment regularity
-- Category-level financial behavior
-- Refunds & reversals
-- Subscription creep
+1. **Upload**: User uploads a PDF or image of a bank/credit card statement
+2. **Storage**: Original file is saved to Supabase Storage
+3. **Extraction**: Gemini AI extracts:
+   - Document metadata (issuer, account, balances, dates)
+   - Individual transactions (date, merchant, amount, category)
+   - Metadata summary (markdown text)
+4. **Storage**: Structured data is saved to Supabase (PostgreSQL):
+   - `documents` table: Document metadata with JSONB for flexible data
+   - `transactions` table: Individual transactions with JSONB for flexible data
+   - `user_metadata` table: Append-only markdown summaries per user
+5. **Chat**: AI assistant answers questions using function calling to query the database
+
+## Data Extracted
+
+- Document type (bank statement vs credit card)
+- Issuer/bank name
+- Account information
+- Statement dates and periods
+- Balances (previous, new, credit limits)
+- Payment information
+- Individual transactions with categories
+- Metadata summaries
 
 ## Deployment on Render
 
-1. Commit the provided `render.yaml` file and push it to the `main` branch.
-2. In the Render dashboard, create a new Blueprint deploy and connect it to `https://github.com/itslolan/butler`.
-3. Select the `butler-web` service from the blueprint, ensure the branch is `main`, and confirm that `autoDeploy` is enabled.
-4. Add the required environment variables (for example `OPENAI_API_KEY`) in the Render dashboard.
-5. Trigger the initial deploy; future merges to `main` will automatically rebuild and redeploy the service.
-
+1. Commit your code and push to your repository
+2. In Render dashboard, create a new Web Service
+3. Connect to your repository
+4. Add environment variables:
+   - `GEMINI_API_KEY`
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `SUPABASE_SERVICE_ROLE_KEY`
+5. Deploy!
