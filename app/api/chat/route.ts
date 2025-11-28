@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
 import { searchDocuments, searchTransactions, getAllMetadata } from '@/lib/db-tools';
 
 export const runtime = 'nodejs';
@@ -11,10 +11,10 @@ const SYSTEM_PROMPT = `You are Butler, an AI financial assistant. You help users
 You have access to three data sources:
 
 1. **Documents Collection**: Stores metadata about uploaded bank/credit card statements
-   - Fields: documentType, issuer, accountId, statementDate, previousBalance, newBalance, creditLimit, minimumPayment, dueDate, fileName, uploadedAt
+   - Fields: documentType, issuer, accountId, accountName, statementDate, previousBalance, newBalance, creditLimit, minimumPayment, dueDate, fileName, uploadedAt
    
 2. **Transactions Collection**: Stores individual transactions extracted from statements
-   - Fields: date, merchant, amount, category, description, documentId
+   - Fields: date, merchant, amount, category, description, accountName, documentId
    
 3. **Metadata Text**: A markdown document containing all metadata summaries from uploaded statements (may be noisy or duplicate structured data)
 
@@ -27,10 +27,10 @@ You have access to three data sources:
 **Available Tools:**
 
 1. search_documents(filters): Query documents collection
-   - Filters: documentType, issuer, startDate, endDate, minBalance, maxBalance
+   - Filters: documentType, issuer, accountName, startDate, endDate, minBalance, maxBalance
    
 2. search_transactions(filters): Query transactions collection
-   - Filters: startDate, endDate, merchant, category, minAmount, maxAmount
+   - Filters: accountName, startDate, endDate, merchant, category, minAmount, maxAmount
    
 3. get_all_metadata(): Retrieve the full metadata text blob
 
@@ -114,30 +114,34 @@ export async function POST(request: NextRequest) {
             name: 'search_documents',
             description: 'Search uploaded financial documents (bank/credit card statements) with optional filters',
             parameters: {
-              type: 'OBJECT' as const,
+              type: SchemaType.OBJECT,
               properties: {
                 documentType: {
-                  type: 'STRING' as const,
+                  type: SchemaType.STRING,
                   description: 'Filter by document type: bank_statement, credit_card_statement, or unknown',
                 },
                 issuer: {
-                  type: 'STRING' as const,
+                  type: SchemaType.STRING,
                   description: 'Filter by issuer name (partial match, case-insensitive)',
                 },
+                accountName: {
+                  type: SchemaType.STRING,
+                  description: 'Filter by account name/nickname (partial match, case-insensitive). Use this to query transactions from a specific account across multiple statement periods.',
+                },
                 startDate: {
-                  type: 'STRING' as const,
+                  type: SchemaType.STRING,
                   description: 'Filter statements on or after this date (YYYY-MM-DD)',
                 },
                 endDate: {
-                  type: 'STRING' as const,
+                  type: SchemaType.STRING,
                   description: 'Filter statements on or before this date (YYYY-MM-DD)',
                 },
                 minBalance: {
-                  type: 'NUMBER' as const,
+                  type: SchemaType.NUMBER,
                   description: 'Filter by minimum new balance',
                 },
                 maxBalance: {
-                  type: 'NUMBER' as const,
+                  type: SchemaType.NUMBER,
                   description: 'Filter by maximum new balance',
                 },
               },
@@ -147,30 +151,34 @@ export async function POST(request: NextRequest) {
             name: 'search_transactions',
             description: 'Search individual transactions from all uploaded statements with optional filters',
             parameters: {
-              type: 'OBJECT' as const,
+              type: SchemaType.OBJECT,
               properties: {
+                accountName: {
+                  type: SchemaType.STRING,
+                  description: 'Filter by account name/nickname (partial match, case-insensitive). IMPORTANT: Use this to query transactions from a specific account across multiple statement periods.',
+                },
                 startDate: {
-                  type: 'STRING' as const,
+                  type: SchemaType.STRING,
                   description: 'Filter transactions on or after this date (YYYY-MM-DD)',
                 },
                 endDate: {
-                  type: 'STRING' as const,
+                  type: SchemaType.STRING,
                   description: 'Filter transactions on or before this date (YYYY-MM-DD)',
                 },
                 merchant: {
-                  type: 'STRING' as const,
+                  type: SchemaType.STRING,
                   description: 'Filter by merchant name (partial match, case-insensitive)',
                 },
                 category: {
-                  type: 'STRING' as const,
+                  type: SchemaType.STRING,
                   description: 'Filter by category (partial match, case-insensitive)',
                 },
                 minAmount: {
-                  type: 'NUMBER' as const,
+                  type: SchemaType.NUMBER,
                   description: 'Filter by minimum transaction amount',
                 },
                 maxAmount: {
-                  type: 'NUMBER' as const,
+                  type: SchemaType.NUMBER,
                   description: 'Filter by maximum transaction amount',
                 },
               },
@@ -180,7 +188,7 @@ export async function POST(request: NextRequest) {
             name: 'get_all_metadata',
             description: 'Retrieve the full metadata text blob containing markdown summaries from all uploaded statements. Use sparingly.',
             parameters: {
-              type: 'OBJECT' as const,
+              type: SchemaType.OBJECT,
               properties: {},
             },
           },
@@ -191,7 +199,7 @@ export async function POST(request: NextRequest) {
     const model = genAI.getGenerativeModel({
       model: GEMINI_MODEL,
       systemInstruction: SYSTEM_PROMPT,
-      tools,
+      tools: tools as any, // Type assertion to bypass strict typing
       generationConfig: {
         // Enable thinking/reasoning mode
         temperature: 0.7,
@@ -242,9 +250,9 @@ export async function POST(request: NextRequest) {
     let functionCallCount = 0;
     const maxFunctionCalls = 10;
 
-    while (result.response.functionCalls() && functionCallCount < maxFunctionCalls) {
+    while (result.response.functionCalls && result.response.functionCalls() && functionCallCount < maxFunctionCalls) {
       functionCallCount++;
-      const functionCalls = result.response.functionCalls();
+      const functionCalls = result.response.functionCalls()!;
       
       // Capture reasoning before this function call iteration
       try {

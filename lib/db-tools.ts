@@ -3,6 +3,7 @@ import { supabase, Document, Transaction, UserMetadata } from './supabase';
 export interface DocumentFilter {
   documentType?: string;
   issuer?: string;
+  accountName?: string;
   startDate?: string;
   endDate?: string;
   minBalance?: number;
@@ -10,6 +11,7 @@ export interface DocumentFilter {
 }
 
 export interface TransactionFilter {
+  accountName?: string;
   startDate?: string;
   endDate?: string;
   merchant?: string;
@@ -33,6 +35,10 @@ export async function searchDocuments(userId: string, filters: DocumentFilter = 
 
   if (filters.issuer) {
     query = query.ilike('issuer', `%${filters.issuer}%`);
+  }
+
+  if (filters.accountName) {
+    query = query.ilike('account_name', `%${filters.accountName}%`);
   }
 
   if (filters.startDate) {
@@ -68,6 +74,10 @@ export async function searchTransactions(userId: string, filters: TransactionFil
     .from('transactions')
     .select('*')
     .eq('user_id', userId);
+
+  if (filters.accountName) {
+    query = query.ilike('account_name', `%${filters.accountName}%`);
+  }
 
   if (filters.startDate) {
     query = query.gte('date', filters.startDate);

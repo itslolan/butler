@@ -23,6 +23,7 @@ export interface Document {
   document_type: 'bank_statement' | 'credit_card_statement' | 'unknown';
   issuer?: string | null;
   account_id?: string | null;
+  account_name?: string | null;
   statement_date?: Date | string | null;
   previous_balance?: number | null;
   new_balance?: number | null;
@@ -38,6 +39,7 @@ export interface Transaction {
   id?: string;
   user_id: string;
   document_id: string;
+  account_name?: string | null;
   date: Date | string;
   merchant: string;
   amount: number;

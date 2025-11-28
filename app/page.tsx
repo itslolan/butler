@@ -29,11 +29,23 @@ export default function Home() {
 
       const data = await response.json();
       setUploadCount(prev => prev + 1);
-      setLastUploadResult(
-        `✅ Successfully processed ${file.name}\n` +
+      
+      let resultMessage = `✅ Successfully processed ${file.name}\n` +
         `Document Type: ${data.documentType}\n` +
-        `Transactions: ${data.transactionCount}`
-      );
+        `Transactions Saved: ${data.transactionCount}`;
+      
+      if (data.duplicatesRemoved > 0) {
+        resultMessage += `\n\n🔍 Duplicate Detection:\n` +
+          `- Found ${data.duplicatesRemoved} duplicate transaction(s)\n` +
+          `- Only ${data.transactionCount} unique transactions saved`;
+        
+        if (data.duplicateExamples && data.duplicateExamples.length > 0) {
+          resultMessage += `\n\nExamples:\n` + 
+            data.duplicateExamples.map((ex: string) => `  • ${ex}`).join('\n');
+        }
+      }
+      
+      setLastUploadResult(resultMessage);
     } catch (error: any) {
       console.error('Error processing file:', error);
       setLastUploadResult(`❌ Error: ${error.message || 'Failed to process statement'}`);
