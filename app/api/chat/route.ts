@@ -114,30 +114,30 @@ export async function POST(request: NextRequest) {
             name: 'search_documents',
             description: 'Search uploaded financial documents (bank/credit card statements) with optional filters',
             parameters: {
-              type: 'object',
+              type: 'OBJECT' as const,
               properties: {
                 documentType: {
-                  type: 'string',
+                  type: 'STRING' as const,
                   description: 'Filter by document type: bank_statement, credit_card_statement, or unknown',
                 },
                 issuer: {
-                  type: 'string',
+                  type: 'STRING' as const,
                   description: 'Filter by issuer name (partial match, case-insensitive)',
                 },
                 startDate: {
-                  type: 'string',
+                  type: 'STRING' as const,
                   description: 'Filter statements on or after this date (YYYY-MM-DD)',
                 },
                 endDate: {
-                  type: 'string',
+                  type: 'STRING' as const,
                   description: 'Filter statements on or before this date (YYYY-MM-DD)',
                 },
                 minBalance: {
-                  type: 'number',
+                  type: 'NUMBER' as const,
                   description: 'Filter by minimum new balance',
                 },
                 maxBalance: {
-                  type: 'number',
+                  type: 'NUMBER' as const,
                   description: 'Filter by maximum new balance',
                 },
               },
@@ -147,30 +147,30 @@ export async function POST(request: NextRequest) {
             name: 'search_transactions',
             description: 'Search individual transactions from all uploaded statements with optional filters',
             parameters: {
-              type: 'object',
+              type: 'OBJECT' as const,
               properties: {
                 startDate: {
-                  type: 'string',
+                  type: 'STRING' as const,
                   description: 'Filter transactions on or after this date (YYYY-MM-DD)',
                 },
                 endDate: {
-                  type: 'string',
+                  type: 'STRING' as const,
                   description: 'Filter transactions on or before this date (YYYY-MM-DD)',
                 },
                 merchant: {
-                  type: 'string',
+                  type: 'STRING' as const,
                   description: 'Filter by merchant name (partial match, case-insensitive)',
                 },
                 category: {
-                  type: 'string',
+                  type: 'STRING' as const,
                   description: 'Filter by category (partial match, case-insensitive)',
                 },
                 minAmount: {
-                  type: 'number',
+                  type: 'NUMBER' as const,
                   description: 'Filter by minimum transaction amount',
                 },
                 maxAmount: {
-                  type: 'number',
+                  type: 'NUMBER' as const,
                   description: 'Filter by maximum transaction amount',
                 },
               },
@@ -180,7 +180,7 @@ export async function POST(request: NextRequest) {
             name: 'get_all_metadata',
             description: 'Retrieve the full metadata text blob containing markdown summaries from all uploaded statements. Use sparingly.',
             parameters: {
-              type: 'object',
+              type: 'OBJECT' as const,
               properties: {},
             },
           },
