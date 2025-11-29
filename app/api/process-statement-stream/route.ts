@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { insertDocument, insertTransactions, appendMetadata, insertAccountSnapshots, getUnclarifiedTransactions } from '@/lib/db-tools';
-import { uploadFile } from '@/lib/supabase';
+import { uploadFile, Transaction } from '@/lib/supabase';
 import { calculateMonthlySnapshots } from '@/lib/snapshot-calculator';
 
 export const runtime = 'nodejs';
@@ -307,7 +307,7 @@ export async function POST(request: NextRequest) {
         const documentId = insertedDoc.id!;
 
         if (transactionsToInsert.length > 0) {
-          const transactions = transactionsToInsert.map((txn: any) => ({
+          const transactions: Transaction[] = transactionsToInsert.map((txn: any) => ({
             user_id: userId,
             document_id: documentId,
             account_name: accountName,
