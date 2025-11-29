@@ -23,7 +23,7 @@ import {
 
 interface ChartRendererProps {
   config: ChartConfig;
-  height?: number | string;
+  height?: number | `${number}%`;
   className?: string;
 }
 
