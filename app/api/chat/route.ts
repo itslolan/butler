@@ -1,28 +1,44 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
-import { searchDocuments, searchTransactions, getAllMetadata } from '@/lib/db-tools';
+import { 
+  searchDocuments, 
+  searchTransactions, 
+  getAllMetadata,
+  getAccountSnapshots,
+  calculateNetWorth 
+} from '@/lib/db-tools';
 
 export const runtime = 'nodejs';
 
-const GEMINI_MODEL = 'gemini-2.0-flash-exp';
+const GEMINI_MODEL = 'gemini-3-pro-preview';
 
 const SYSTEM_PROMPT = `You are Butler, an AI financial assistant. You help users understand their financial data by querying structured databases.
 
-You have access to three data sources:
+You have access to four data sources:
 
 1. **Documents Collection**: Stores metadata about uploaded bank/credit card statements
    - Fields: documentType, issuer, accountId, accountName, statementDate, previousBalance, newBalance, creditLimit, minimumPayment, dueDate, fileName, uploadedAt
    
 2. **Transactions Collection**: Stores individual transactions extracted from statements
-   - Fields: date, merchant, amount, category, description, accountName, documentId
+   - Fields: date, merchant, amount, category, description, accountName, transactionType (income/expense/transfer/other), documentId
    
-3. **Metadata Text**: A markdown document containing all metadata summaries from uploaded statements (may be noisy or duplicate structured data)
+3. **Account Snapshots**: Monthly balance snapshots for each account at month start/end
+   - Use this to track net worth over time
+   
+4. **Metadata Text**: A markdown document containing all metadata summaries from uploaded statements (may be noisy or duplicate structured data)
+
+**Transaction Types:**
+- **income**: Salary, wages, business income, refunds, reimbursements
+- **expense**: Purchases, bills, fees, charges
+- **transfer**: Transfers between own accounts
+- **other**: Uncategorized
 
 **Tool Usage Guidelines:**
 - ALWAYS prefer structured data (documents/transactions) when answering questions about balances, specific amounts, dates, merchants, etc.
 - Use metadata text ONLY when structured queries don't provide enough context or for general summaries
 - When filtering data, be flexible with date ranges and partial string matches
 - If you need to calculate aggregates (totals, averages), retrieve the relevant transactions and compute them
+- Use categorize_transaction tool when user clarifies a transaction type
 
 **Available Tools:**
 
@@ -30,9 +46,25 @@ You have access to three data sources:
    - Filters: documentType, issuer, accountName, startDate, endDate, minBalance, maxBalance
    
 2. search_transactions(filters): Query transactions collection
-   - Filters: accountName, startDate, endDate, merchant, category, minAmount, maxAmount
+   - Filters: accountName, transactionType, startDate, endDate, merchant, category, minAmount, maxAmount
    
 3. get_all_metadata(): Retrieve the full metadata text blob
+
+4. categorize_transaction(transaction_id, transaction_type): Categorize a transaction as income, expense, transfer, or other
+   - Use when user clarifies the type of a transaction
+
+5. get_account_snapshots(accountName?, startDate?, endDate?): Get monthly balance snapshots
+
+6. calculate_net_worth(date): Calculate net worth at a specific date across all accounts
+
+**Financial Health Analysis:**
+When analyzing financial data, automatically provide:
+- Income vs. Expenses comparison
+- Savings rate (if income data available)
+- Income-to-expense ratio
+- Month-over-month balance changes
+- Warning if expenses exceed income
+- Net worth trends when available
 
 **Response Format Guidelines:**
 
@@ -44,6 +76,7 @@ ALWAYS provide detailed, data-rich responses with supporting evidence:
    - List individual transactions in a table
    - Show subtotals by category
    - Include dates, merchants, amounts, and categories
+   - Separate income vs. expenses
 
 3. **Use Markdown Formatting**:
    - Tables for transaction lists
@@ -59,18 +92,20 @@ ALWAYS provide detailed, data-rich responses with supporting evidence:
    
    ### Transactions
    
-   | Date | Merchant | Category | Amount |
-   |------|----------|----------|--------|
-   | 2025-09-12 | Starbucks | Food | $15.50 |
-   | 2025-09-11 | Amazon | Shopping | $89.99 |
-   | 2025-09-10 | Shell Gas | Transportation | $45.00 |
+   | Date | Merchant | Category | Amount | Type |
+   |------|----------|----------|--------|------|
+   | 2025-09-12 | Starbucks | Food | $15.50 | expense |
+   | 2025-09-11 | Amazon | Shopping | $89.99 | expense |
+   | 2025-09-10 | Payroll | Salary | $5,000.00 | income |
    
    ### Summary by Category
-   - **Food & Dining**: $234.50 (19%)
-   - **Shopping**: $567.89 (46%)
-   - **Transportation**: $432.17 (35%)
+   - **Food & Dining**: $234.50 (4.7%)
+   - **Shopping**: $567.89 (11.4%)
+   - **Transportation**: $432.17 (8.7%)
    
-   **Total**: $1,234.56
+   **Total Expenses**: $1,234.56
+   **Total Income**: $5,000.00
+   **Net Savings**: $3,765.44 (75.3% savings rate)
    """
 
 5. **Always Be Comprehensive**: Even if the user asks a simple question, provide context and details. Users want to see the data, not just summaries.
@@ -78,6 +113,7 @@ ALWAYS provide detailed, data-rich responses with supporting evidence:
 6. **Handle Empty Results Gracefully**: If no data is found, explain what you searched for and suggest alternatives.
 
 Provide clear, detailed, data-rich answers with tables and breakdowns based on the data retrieved.`;
+
 
 interface Message {
   role: 'user' | 'model';
@@ -157,6 +193,10 @@ export async function POST(request: NextRequest) {
                   type: SchemaType.STRING,
                   description: 'Filter by account name/nickname (partial match, case-insensitive). IMPORTANT: Use this to query transactions from a specific account across multiple statement periods.',
                 },
+                transactionType: {
+                  type: SchemaType.STRING,
+                  description: 'Filter by transaction type: income, expense, transfer, or other',
+                },
                 startDate: {
                   type: SchemaType.STRING,
                   description: 'Filter transactions on or after this date (YYYY-MM-DD)',
@@ -190,6 +230,59 @@ export async function POST(request: NextRequest) {
             parameters: {
               type: SchemaType.OBJECT,
               properties: {},
+            },
+          },
+          {
+            name: 'categorize_transaction',
+            description: 'Categorize a transaction as income, expense, transfer, or other. Use when user clarifies the type of a transaction.',
+            parameters: {
+              type: SchemaType.OBJECT,
+              properties: {
+                transaction_id: {
+                  type: SchemaType.STRING,
+                  description: 'The ID of the transaction to categorize',
+                },
+                transaction_type: {
+                  type: SchemaType.STRING,
+                  description: 'The transaction type: income, expense, transfer, or other',
+                },
+              },
+              required: ['transaction_id', 'transaction_type'],
+            },
+          },
+          {
+            name: 'get_account_snapshots',
+            description: 'Get monthly balance snapshots for accounts. Shows balances at month start and month end.',
+            parameters: {
+              type: SchemaType.OBJECT,
+              properties: {
+                accountName: {
+                  type: SchemaType.STRING,
+                  description: 'Optional: Filter by account name',
+                },
+                startDate: {
+                  type: SchemaType.STRING,
+                  description: 'Optional: Start date (YYYY-MM-DD)',
+                },
+                endDate: {
+                  type: SchemaType.STRING,
+                  description: 'Optional: End date (YYYY-MM-DD)',
+                },
+              },
+            },
+          },
+          {
+            name: 'calculate_net_worth',
+            description: 'Calculate total net worth at a specific date across all accounts with uploaded data.',
+            parameters: {
+              type: SchemaType.OBJECT,
+              properties: {
+                date: {
+                  type: SchemaType.STRING,
+                  description: 'The date to calculate net worth for (YYYY-MM-DD)',
+                },
+              },
+              required: ['date'],
             },
           },
         ],
@@ -283,6 +376,26 @@ export async function POST(request: NextRequest) {
             functionResult = await searchTransactions(effectiveUserId, args);
           } else if (name === 'get_all_metadata') {
             functionResult = await getAllMetadata(effectiveUserId);
+          } else if (name === 'categorize_transaction') {
+            // Call the clarify-transaction API
+            const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/clarify-transaction`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                transaction_id: (args as any).transaction_id,
+                transaction_type: (args as any).transaction_type,
+              }),
+            });
+            functionResult = await response.json();
+          } else if (name === 'get_account_snapshots') {
+            functionResult = await getAccountSnapshots(
+              effectiveUserId,
+              (args as any).accountName,
+              (args as any).startDate,
+              (args as any).endDate
+            );
+          } else if (name === 'calculate_net_worth') {
+            functionResult = await calculateNetWorth(effectiveUserId, (args as any).date);
           } else {
             functionResult = { error: 'Unknown function' };
           }

@@ -45,7 +45,21 @@ export interface Transaction {
   amount: number;
   category?: string | null;
   description?: string | null;
+  transaction_type?: 'income' | 'expense' | 'transfer' | 'other' | null;
+  needs_clarification?: boolean;
+  clarification_question?: string | null;
   metadata?: Record<string, any>;
+  created_at?: Date | string;
+}
+
+export interface AccountSnapshot {
+  id?: string;
+  user_id: string;
+  account_name: string;
+  snapshot_date: Date | string;
+  snapshot_type: 'month_start' | 'month_end';
+  balance: number;
+  document_id?: string;
   created_at?: Date | string;
 }
 

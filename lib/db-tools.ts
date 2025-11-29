@@ -1,4 +1,4 @@
-import { supabase, Document, Transaction, UserMetadata } from './supabase';
+import { supabase, Document, Transaction, UserMetadata, AccountSnapshot } from './supabase';
 
 export interface DocumentFilter {
   documentType?: string;
@@ -12,6 +12,7 @@ export interface DocumentFilter {
 
 export interface TransactionFilter {
   accountName?: string;
+  transactionType?: string;
   startDate?: string;
   endDate?: string;
   merchant?: string;
@@ -77,6 +78,10 @@ export async function searchTransactions(userId: string, filters: TransactionFil
 
   if (filters.accountName) {
     query = query.ilike('account_name', `%${filters.accountName}%`);
+  }
+
+  if (filters.transactionType) {
+    query = query.eq('transaction_type', filters.transactionType);
   }
 
   if (filters.startDate) {
@@ -194,3 +199,184 @@ export async function appendMetadata(userId: string, newContent: string) {
     }
   }
 }
+
+/**
+ * Get a transaction by ID
+ */
+export async function getTransactionById(id: string): Promise<Transaction | null> {
+  const { data, error } = await supabase
+    .from('transactions')
+    .select('*')
+    .eq('id', id)
+    .single();
+
+  if (error && error.code !== 'PGRST116') {
+    throw new Error(`Failed to get transaction: ${error.message}`);
+  }
+
+  return data || null;
+}
+
+/**
+ * Update transaction type
+ */
+export async function updateTransactionType(
+  id: string,
+  transactionType: 'income' | 'expense' | 'transfer' | 'other'
+): Promise<void> {
+  const { error } = await supabase
+    .from('transactions')
+    .update({ 
+      transaction_type: transactionType,
+      needs_clarification: false,
+      clarification_question: null,
+    })
+    .eq('id', id);
+
+  if (error) {
+    throw new Error(`Failed to update transaction type: ${error.message}`);
+  }
+}
+
+/**
+ * Get transactions that need clarification
+ */
+export async function getUnclarifiedTransactions(
+  userId: string,
+  documentId?: string
+): Promise<Transaction[]> {
+  let query = supabase
+    .from('transactions')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('needs_clarification', true);
+
+  if (documentId) {
+    query = query.eq('document_id', documentId);
+  }
+
+  const { data, error } = await query.order('date', { ascending: false });
+
+  if (error) {
+    throw new Error(`Failed to get unclarified transactions: ${error.message}`);
+  }
+
+  return data || [];
+}
+
+/**
+ * Insert account snapshot
+ */
+export async function insertAccountSnapshot(snapshot: AccountSnapshot): Promise<void> {
+  const { error } = await supabase
+    .from('account_snapshots')
+    .upsert(snapshot, {
+      onConflict: 'user_id,account_name,snapshot_date,snapshot_type',
+    });
+
+  if (error) {
+    throw new Error(`Failed to insert account snapshot: ${error.message}`);
+  }
+}
+
+/**
+ * Insert multiple account snapshots
+ */
+export async function insertAccountSnapshots(snapshots: AccountSnapshot[]): Promise<void> {
+  if (snapshots.length === 0) return;
+
+  const { error } = await supabase
+    .from('account_snapshots')
+    .upsert(snapshots, {
+      onConflict: 'user_id,account_name,snapshot_date,snapshot_type',
+    });
+
+  if (error) {
+    throw new Error(`Failed to insert account snapshots: ${error.message}`);
+  }
+}
+
+/**
+ * Get account snapshots with optional filters
+ */
+export async function getAccountSnapshots(
+  userId: string,
+  accountName?: string,
+  startDate?: string,
+  endDate?: string
+): Promise<AccountSnapshot[]> {
+  let query = supabase
+    .from('account_snapshots')
+    .select('*')
+    .eq('user_id', userId);
+
+  if (accountName) {
+    query = query.ilike('account_name', `%${accountName}%`);
+  }
+
+  if (startDate) {
+    query = query.gte('snapshot_date', startDate);
+  }
+
+  if (endDate) {
+    query = query.lte('snapshot_date', endDate);
+  }
+
+  const { data, error } = await query.order('snapshot_date', { ascending: true });
+
+  if (error) {
+    throw new Error(`Failed to get account snapshots: ${error.message}`);
+  }
+
+  return data || [];
+}
+
+/**
+ * Calculate net worth at a specific date across all accounts
+ */
+export async function calculateNetWorth(userId: string, date: string): Promise<{
+  netWorth: number;
+  breakdown: Array<{ accountName: string; balance: number; type: string }>;
+  accountsCount: number;
+}> {
+  // Get all month_end snapshots closest to the given date
+  const { data, error } = await supabase
+    .from('account_snapshots')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('snapshot_type', 'month_end')
+    .lte('snapshot_date', date)
+    .order('snapshot_date', { ascending: false });
+
+  if (error) {
+    throw new Error(`Failed to calculate net worth: ${error.message}`);
+  }
+
+  if (!data || data.length === 0) {
+    return { netWorth: 0, breakdown: [], accountsCount: 0 };
+  }
+
+  // Get the most recent snapshot for each account
+  const latestByAccount = new Map<string, AccountSnapshot>();
+  
+  for (const snapshot of data) {
+    if (!latestByAccount.has(snapshot.account_name)) {
+      latestByAccount.set(snapshot.account_name, snapshot);
+    }
+  }
+
+  const breakdown = Array.from(latestByAccount.values()).map(snapshot => ({
+    accountName: snapshot.account_name,
+    balance: Number(snapshot.balance),
+    type: snapshot.balance >= 0 ? 'asset' : 'liability',
+  }));
+
+  const netWorth = breakdown.reduce((sum, item) => sum + item.balance, 0);
+
+  return {
+    netWorth,
+    breakdown,
+    accountsCount: breakdown.length,
+  };
+}
+

@@ -106,6 +106,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Processing steps to track
+    const processingSteps: Array<{ step: string; status: 'processing' | 'complete'; message: string; timestamp: number }> = [];
+    
+    const addStep = (step: string, message: string, status: 'processing' | 'complete' = 'processing') => {
+      processingSteps.push({ step, status, message, timestamp: Date.now() });
+      console.log(`[${status.toUpperCase()}] ${message}`);
+    };
+
+    addStep('upload', `📄 Processing ${file.name}...`, 'complete');
+
     // Get file buffer
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
@@ -119,8 +129,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    addStep('storage', '☁️ Uploading to secure storage...', 'processing');
+    
     // Upload file to Supabase Storage
     const fileUrl = await uploadFile(userId, buffer, file.name);
+    
+    processingSteps[processingSteps.length - 1].status = 'complete';
+    addStep('analysis', '🤖 Analyzing document with AI...', 'processing');
 
     // Send file directly to Gemini
     const filePart = {
@@ -161,11 +176,47 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    processingSteps[processingSteps.length - 1].status = 'complete';
+
+    // Generate friendly document description
+    const docType = extractedData.documentType === 'credit_card_statement' 
+      ? 'credit card statement' 
+      : extractedData.documentType === 'bank_statement' 
+        ? 'bank statement' 
+        : 'financial document';
+    
+    const issuerText = extractedData.issuer ? ` from ${extractedData.issuer}` : '';
+    const accountText = extractedData.accountName 
+      ? ` for ${extractedData.accountName}` 
+      : extractedData.accountId 
+        ? ` ending with ${extractedData.accountId.slice(-4)}` 
+        : '';
+    
+    const dateText = extractedData.firstTransactionDate && extractedData.lastTransactionDate
+      ? ` covering ${new Date(extractedData.firstTransactionDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} to ${new Date(extractedData.lastTransactionDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+      : extractedData.statementDate
+        ? ` for ${new Date(extractedData.statementDate).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}`
+        : '';
+
+    addStep('detection', `📋 Detected ${docType}${issuerText}${accountText}${dateText}`, 'complete');
+
     // Duplicate detection: Check for existing transactions in the date range
     let transactionsToInsert = extractedData.transactions || [];
-    let duplicatesInfo = { duplicatesFound: 0, duplicateExamples: [] };
+    let duplicatesInfo = { duplicatesFound: 0, duplicateExamples: [] as string[] };
+
+    console.log('\n=== DUPLICATE DETECTION START ===');
+    console.log(`Extracted transactions: ${transactionsToInsert.length}`);
+    console.log(`First transaction date: ${extractedData.firstTransactionDate}`);
+    console.log(`Last transaction date: ${extractedData.lastTransactionDate}`);
+    console.log(`Account name: ${extractedData.accountName}`);
+
+    if (transactionsToInsert.length > 0) {
+      addStep('extraction', `💳 Found ${transactionsToInsert.length} transaction${transactionsToInsert.length !== 1 ? 's' : ''} in the document`, 'complete');
+    }
 
     if (transactionsToInsert.length > 0 && extractedData.firstTransactionDate && extractedData.lastTransactionDate) {
+      addStep('duplicate-check', '🔍 Checking for duplicate transactions...', 'processing');
+      
       // Fetch existing transactions in the same date range for this account
       const { searchTransactions } = await import('@/lib/db-tools');
       
@@ -175,56 +226,64 @@ export async function POST(request: NextRequest) {
         endDate: extractedData.lastTransactionDate,
       });
 
-      // If there are existing transactions, use Gemini to deduplicate
+      console.log(`Found ${existingTransactions.length} existing transactions in database`);
+
+      // If there are existing transactions, deduplicate using JavaScript logic
       if (existingTransactions.length > 0) {
-        console.log(`Found ${existingTransactions.length} existing transactions in date range. Running deduplication...`);
+        console.log('Running deduplication...');
 
-        const deduplicationResponse = await model.generateContent({
-          contents: [
-            {
-              role: 'user',
-              parts: [
-                {
-                  text: `${DEDUPLICATION_PROMPT}
-
-**Newly Parsed Transactions:**
-${JSON.stringify(transactionsToInsert, null, 2)}
-
-**Existing Transactions in Database:**
-${JSON.stringify(existingTransactions.map(t => ({
-  date: t.date,
-  merchant: t.merchant,
-  amount: t.amount,
-  category: t.category,
-  description: t.description
-})), null, 2)}
-
-Return only the unique transactions from the newly parsed list.`,
-                },
-              ],
-            },
-          ],
-        });
-
-        const deduplicationContent = deduplicationResponse.response.text();
+        // Use simple JavaScript-based deduplication for reliability
+        const { deduplicateTransactionsSimple } = await import('@/lib/deduplication-test');
         
-        try {
-          const deduplicationResult = JSON.parse(deduplicationContent);
-          transactionsToInsert = deduplicationResult.uniqueTransactions || [];
-          duplicatesInfo = {
-            duplicatesFound: deduplicationResult.duplicatesFound || 0,
-            duplicateExamples: deduplicationResult.duplicateExamples || [],
-          };
-          
-          console.log(`Deduplication complete: ${duplicatesInfo.duplicatesFound} duplicates removed, ${transactionsToInsert.length} unique transactions remaining.`);
-        } catch (parseError) {
-          console.error('Failed to parse deduplication response, using all transactions:', parseError);
-          // If deduplication fails, proceed with all transactions (safer than losing data)
+        const deduplicationResult = deduplicateTransactionsSimple(
+          transactionsToInsert,
+          existingTransactions.map(t => ({
+            date: t.date instanceof Date ? t.date.toISOString().split('T')[0] : t.date,
+            merchant: t.merchant,
+            amount: Number(t.amount),
+            category: t.category,
+            description: t.description,
+          }))
+        );
+
+        transactionsToInsert = deduplicationResult.uniqueTransactions;
+        duplicatesInfo = {
+          duplicatesFound: deduplicationResult.duplicatesFound,
+          duplicateExamples: deduplicationResult.duplicateExamples,
+        };
+
+        console.log(`Deduplication complete:`);
+        console.log(`  - ${duplicatesInfo.duplicatesFound} duplicates found`);
+        console.log(`  - ${transactionsToInsert.length} unique transactions to save`);
+        
+        processingSteps[processingSteps.length - 1].status = 'complete';
+        
+        if (duplicatesInfo.duplicatesFound > 0) {
+          addStep('deduplication', `✨ Removed ${duplicatesInfo.duplicatesFound} duplicate transaction${duplicatesInfo.duplicatesFound !== 1 ? 's' : ''} - keeping only ${transactionsToInsert.length} unique transaction${transactionsToInsert.length !== 1 ? 's' : ''}`, 'complete');
+        } else {
+          addStep('deduplication', `✅ No duplicates found - all ${transactionsToInsert.length} transaction${transactionsToInsert.length !== 1 ? 's are' : ' is'} new`, 'complete');
         }
+      } else {
+        console.log('No existing transactions found, skipping deduplication');
+        processingSteps[processingSteps.length - 1].status = 'complete';
+        addStep('deduplication', `✅ No existing transactions found - all ${transactionsToInsert.length} transaction${transactionsToInsert.length !== 1 ? 's are' : ' is'} new`, 'complete');
+      }
+    } else {
+      if (transactionsToInsert.length === 0) {
+        console.log('⚠️  No transactions to insert');
+        addStep('extraction', '⚠️ No transactions found in the document', 'complete');
+      }
+      if (!extractedData.firstTransactionDate || !extractedData.lastTransactionDate) {
+        console.log('⚠️  Missing date range - firstTransactionDate or lastTransactionDate not extracted');
+        console.log('   Deduplication will be skipped!');
       }
     }
 
+    console.log('=== DUPLICATE DETECTION END ===\n');
+
     // Save to Supabase
+    addStep('saving', '💾 Saving to database...', 'processing');
+    
     // Insert document
     const accountName = extractedData.accountName || null;
     
@@ -276,6 +335,9 @@ Return only the unique transactions from the newly parsed list.`,
     const metadataEntry = `\n\n---\n**Document:** ${file.name} (uploaded ${new Date().toISOString()})\n\n${metadataSummary}\n`;
 
     await appendMetadata(userId, metadataEntry);
+    
+    processingSteps[processingSteps.length - 1].status = 'complete';
+    addStep('complete', '🎉 Processing complete!', 'complete');
 
     const result = {
       id: documentId,
@@ -286,6 +348,7 @@ Return only the unique transactions from the newly parsed list.`,
       totalTransactionsParsed: extractedData.transactions?.length || 0,
       duplicatesRemoved: duplicatesInfo.duplicatesFound,
       duplicateExamples: duplicatesInfo.duplicateExamples.slice(0, 3), // Show first 3 examples
+      processingSteps,
     };
 
     return NextResponse.json(result);

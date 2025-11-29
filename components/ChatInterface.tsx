@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 interface Message {
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'system';
   content: string;
   debug?: {
     functionCalls: Array<{
@@ -24,7 +24,7 @@ interface ChatInterfaceProps {
   userId?: string;
 }
 
-export default function ChatInterface({ userId = 'default-user' }: ChatInterfaceProps) {
+const ChatInterface = forwardRef(({ userId = 'default-user' }: ChatInterfaceProps, ref) => {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
@@ -42,6 +42,13 @@ export default function ChatInterface({ userId = 'default-user' }: ChatInterface
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Expose methods to parent component
+  useImperativeHandle(ref, () => ({
+    sendSystemMessage: (content: string) => {
+      setMessages(prev => [...prev, { role: 'system' as const, content }]);
+    },
+  }));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -114,11 +121,25 @@ export default function ChatInterface({ userId = 'default-user' }: ChatInterface
                 className={`max-w-[80%] rounded-lg px-4 py-2 ${
                   message.role === 'user'
                     ? 'bg-blue-500 text-white'
+                    : message.role === 'system'
+                    ? 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-900 dark:text-yellow-200 border border-yellow-200 dark:border-yellow-700'
                     : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
                 }`}
               >
                 {message.role === 'user' ? (
                   <p className="whitespace-pre-wrap break-words">{message.content}</p>
+                ) : message.role === 'system' ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-lg">🔔</span>
+                      <span className="font-semibold text-sm">System Message</span>
+                    </div>
+                    <div className="prose prose-sm dark:prose-invert max-w-none">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {message.content}
+                      </ReactMarkdown>
+                    </div>
+                  </div>
                 ) : (
                   <div className="prose prose-sm dark:prose-invert max-w-none">
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
@@ -245,5 +266,9 @@ export default function ChatInterface({ userId = 'default-user' }: ChatInterface
       </form>
     </div>
   );
-}
+});
+
+ChatInterface.displayName = 'ChatInterface';
+
+export default ChatInterface;
 
