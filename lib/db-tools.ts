@@ -380,3 +380,198 @@ export async function calculateNetWorth(userId: string, date: string): Promise<{
   };
 }
 
+/**
+ * Get monthly spending trend for a user
+ * Aggregates total expenses by month for the last N months
+ */
+export async function getMonthlySpendingTrend(
+  userId: string,
+  months: number = 6
+): Promise<Array<{ month: string; total: number }>> {
+  const now = new Date();
+  const monthsAgo = new Date(now);
+  monthsAgo.setMonth(now.getMonth() - months);
+  
+  const startDate = monthsAgo.toISOString().split('T')[0];
+  
+  // Get all expense transactions in the date range
+  const { data, error } = await supabase
+    .from('transactions')
+    .select('date, amount, transaction_type')
+    .eq('user_id', userId)
+    .in('transaction_type', ['expense', 'other'])
+    .gte('date', startDate)
+    .order('date', { ascending: true });
+
+  if (error) {
+    throw new Error(`Failed to get spending trend: ${error.message}`);
+  }
+
+  if (!data || data.length === 0) {
+    // Return empty months
+    const result: Array<{ month: string; total: number }> = [];
+    for (let i = months - 1; i >= 0; i--) {
+      const d = new Date(now);
+      d.setMonth(now.getMonth() - i);
+      const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      result.push({ month: monthKey, total: 0 });
+    }
+    return result;
+  }
+
+  // Aggregate by month
+  const monthlyMap = new Map<string, number>();
+  
+  for (const txn of data) {
+    const date = new Date(txn.date);
+    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+    const current = monthlyMap.get(monthKey) || 0;
+    monthlyMap.set(monthKey, current + Math.abs(Number(txn.amount)));
+  }
+  
+  // Fill in missing months with 0
+  const result: Array<{ month: string; total: number }> = [];
+  for (let i = months - 1; i >= 0; i--) {
+    const d = new Date(now);
+    d.setMonth(now.getMonth() - i);
+    const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    
+    result.push({
+      month: monthKey,
+      total: monthlyMap.get(monthKey) || 0,
+    });
+  }
+  
+  return result;
+}
+
+/**
+ * Get category breakdown for a user
+ * Aggregates expenses by category for the last N months
+ */
+export async function getCategoryBreakdown(
+  userId: string,
+  months: number = 6
+): Promise<Array<{ category: string; total: number; percentage: number; count: number }>> {
+  const now = new Date();
+  const monthsAgo = new Date(now);
+  monthsAgo.setMonth(now.getMonth() - months);
+  
+  const startDate = monthsAgo.toISOString().split('T')[0];
+  
+  // Get all expense transactions in the date range
+  const { data, error } = await supabase
+    .from('transactions')
+    .select('category, amount, transaction_type')
+    .eq('user_id', userId)
+    .in('transaction_type', ['expense', 'other'])
+    .gte('date', startDate);
+
+  if (error) {
+    throw new Error(`Failed to get category breakdown: ${error.message}`);
+  }
+
+  if (!data || data.length === 0) {
+    return [];
+  }
+
+  // Aggregate by category
+  const categoryMap = new Map<string, { total: number; count: number }>();
+  let grandTotal = 0;
+  
+  for (const txn of data) {
+    const category = txn.category || 'Uncategorized';
+    const absAmount = Math.abs(Number(txn.amount));
+    
+    const current = categoryMap.get(category) || { total: 0, count: 0 };
+    categoryMap.set(category, {
+      total: current.total + absAmount,
+      count: current.count + 1,
+    });
+    
+    grandTotal += absAmount;
+  }
+  
+  // Convert to array and calculate percentages
+  const result = Array.from(categoryMap.entries()).map(([category, data]) => ({
+    category,
+    total: data.total,
+    count: data.count,
+    percentage: grandTotal > 0 ? (data.total / grandTotal) * 100 : 0,
+  }));
+  
+  // Sort by total descending
+  result.sort((a, b) => b.total - a.total);
+  
+  return result;
+}
+
+/**
+ * Get income vs expenses comparison by month
+ * Returns monthly totals for both income and expenses
+ */
+export async function getIncomeVsExpenses(
+  userId: string,
+  months: number = 6
+): Promise<Array<{ month: string; income: number; expenses: number }>> {
+  const now = new Date();
+  const monthsAgo = new Date(now);
+  monthsAgo.setMonth(now.getMonth() - months);
+  
+  const startDate = monthsAgo.toISOString().split('T')[0];
+  
+  // Get all transactions in the date range
+  const { data, error } = await supabase
+    .from('transactions')
+    .select('date, amount, transaction_type')
+    .eq('user_id', userId)
+    .gte('date', startDate)
+    .order('date', { ascending: true });
+
+  if (error) {
+    throw new Error(`Failed to get income vs expenses: ${error.message}`);
+  }
+
+  // Initialize monthly data
+  const monthlyData = new Map<string, { income: number; expenses: number }>();
+  
+  // Fill in all months first with zeros
+  for (let i = months - 1; i >= 0; i--) {
+    const d = new Date(now);
+    d.setMonth(now.getMonth() - i);
+    const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    monthlyData.set(monthKey, { income: 0, expenses: 0 });
+  }
+
+  if (data && data.length > 0) {
+    // Aggregate transactions
+    for (const txn of data) {
+      const date = new Date(txn.date);
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      
+      const current = monthlyData.get(monthKey);
+      if (current) {
+        const absAmount = Math.abs(Number(txn.amount));
+        
+        if (txn.transaction_type === 'income') {
+          current.income += absAmount;
+        } else if (txn.transaction_type === 'expense' || txn.transaction_type === 'other') {
+          current.expenses += absAmount;
+        }
+      }
+    }
+  }
+  
+  // Convert to array
+  const result = Array.from(monthlyData.entries()).map(([month, data]) => ({
+    month,
+    income: data.income,
+    expenses: data.expenses,
+  }));
+  
+  // Sort by month
+  result.sort((a, b) => a.month.localeCompare(b.month));
+  
+  return result;
+}
+

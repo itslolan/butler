@@ -57,6 +57,19 @@ You have access to four data sources:
 
 6. calculate_net_worth(date): Calculate net worth at a specific date across all accounts
 
+7. render_chart(config): Render a visual chart/graph
+   - Use when user asks for trends, breakdowns, comparisons, or wants to "see" data visually
+   - Types: line (trends over time), bar (comparisons), pie (breakdowns), area (cumulative)
+   - Always provide data as an array of {label, value, value2?}
+   - Include descriptive title and insights in description field
+
+**When to Use Charts:**
+- User asks about "trends", "over time", "changes"
+- User wants to "see", "visualize", "show me a graph"
+- Comparing multiple values (e.g., income vs expenses)
+- Category breakdowns or distributions
+- Any question that would benefit from visual representation
+
 **Financial Health Analysis:**
 When analyzing financial data, automatically provide:
 - Income vs. Expenses comparison
@@ -285,6 +298,62 @@ export async function POST(request: NextRequest) {
               required: ['date'],
             },
           },
+          {
+            name: 'render_chart',
+            description: 'Render a chart or graph to visualize financial data. Use this when the user asks for trends, breakdowns, comparisons, or visual representations. Choose chart type based on data: line for trends over time, pie for category breakdowns, bar for comparisons.',
+            parameters: {
+              type: SchemaType.OBJECT,
+              properties: {
+                type: {
+                  type: SchemaType.STRING,
+                  description: 'Chart type: line (for trends over time), bar (for comparisons), pie (for breakdowns/percentages), area (for cumulative trends)',
+                },
+                title: {
+                  type: SchemaType.STRING,
+                  description: 'Chart title (e.g., "Monthly Spending Trend")',
+                },
+                description: {
+                  type: SchemaType.STRING,
+                  description: 'Brief description or insight about the chart (e.g., "Your spending has been relatively stable")',
+                },
+                data: {
+                  type: SchemaType.ARRAY,
+                  description: 'Array of data points for the chart',
+                  items: {
+                    type: SchemaType.OBJECT,
+                    properties: {
+                      label: {
+                        type: SchemaType.STRING,
+                        description: 'Label for this data point (e.g., "January 2025" or "Food & Dining")',
+                      },
+                      value: {
+                        type: SchemaType.NUMBER,
+                        description: 'Primary value (e.g., 1234.56)',
+                      },
+                      value2: {
+                        type: SchemaType.NUMBER,
+                        description: 'Optional secondary value for multi-series charts (e.g., income vs expenses)',
+                      },
+                    },
+                    required: ['label', 'value'],
+                  },
+                },
+                xAxisLabel: {
+                  type: SchemaType.STRING,
+                  description: 'Optional X-axis label (e.g., "Month")',
+                },
+                yAxisLabel: {
+                  type: SchemaType.STRING,
+                  description: 'Optional Y-axis label (e.g., "Amount")',
+                },
+                currency: {
+                  type: SchemaType.BOOLEAN,
+                  description: 'Whether to format values as currency (true for monetary amounts)',
+                },
+              },
+              required: ['type', 'title', 'description', 'data'],
+            },
+          },
         ],
       },
     ];
@@ -396,6 +465,21 @@ export async function POST(request: NextRequest) {
             );
           } else if (name === 'calculate_net_worth') {
             functionResult = await calculateNetWorth(effectiveUserId, (args as any).date);
+          } else if (name === 'render_chart') {
+            // Validate and return chart config
+            const { validateChartConfig } = await import('@/lib/chart-types');
+            if (validateChartConfig(args)) {
+              functionResult = { 
+                success: true, 
+                chartConfig: args,
+                message: 'Chart configuration is valid and will be rendered'
+              };
+            } else {
+              functionResult = { 
+                success: false, 
+                error: 'Invalid chart configuration'
+              };
+            }
           } else {
             functionResult = { error: 'Unknown function' };
           }
@@ -444,8 +528,18 @@ export async function POST(request: NextRequest) {
       // Ignore if reasoning extraction fails
     }
 
+    // Extract chart configs from function calls
+    let chartConfig = null;
+    for (const trace of debugTrace) {
+      if (trace.function === 'render_chart' && trace.result?.success && trace.result?.chartConfig) {
+        chartConfig = trace.result.chartConfig;
+        break; // Use the first chart
+      }
+    }
+
     return NextResponse.json({
       message: responseText,
+      chartConfig, // Include chart config if present
       debug: {
         functionCalls: debugTrace,
         totalCalls: debugTrace.length,

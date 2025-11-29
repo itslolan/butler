@@ -43,7 +43,9 @@ export default function FileUpload({ onFileUpload, isProcessing }: FileUploadPro
   };
 
   const handleClick = () => {
-    fileInputRef.current?.click();
+    if (!isProcessing) {
+      fileInputRef.current?.click();
+    }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -54,64 +56,63 @@ export default function FileUpload({ onFileUpload, isProcessing }: FileUploadPro
   };
 
   return (
-    <div className="mb-8">
-      <div
-        onDrop={handleDrop}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onClick={handleClick}
-        className={`
-          relative border-2 border-dashed rounded-lg p-8 text-center cursor-pointer
-          transition-all duration-200
-          ${isDragging 
-            ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' 
-            : 'border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500'
-          }
-          ${isProcessing ? 'opacity-50 cursor-not-allowed' : ''}
-        `}
-      >
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*,.pdf"
-          onChange={handleFileChange}
-          className="hidden"
-          disabled={isProcessing}
-        />
+    <div
+      onClick={handleClick}
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      className={`
+        relative group cursor-pointer rounded-xl border-2 border-dashed transition-all duration-200 ease-in-out overflow-hidden
+        ${isDragging 
+          ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-900/20' 
+          : 'border-slate-200 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 bg-white dark:bg-gray-900'
+        }
+        ${isProcessing ? 'opacity-60 cursor-wait' : ''}
+      `}
+    >
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*,.pdf"
+        onChange={handleFileChange}
+        className="hidden"
+        disabled={isProcessing}
+      />
+      
+      <div className="p-4 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
+            isDragging ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-300'
+          }`}>
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">
+              {isProcessing ? 'Uploading...' : 'Upload Statement'}
+            </p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+              {isDragging ? 'Drop file now' : 'PDF or Image'}
+            </p>
+          </div>
+        </div>
         
-        <div className="flex flex-col items-center">
-          <svg
-            className="w-12 h-12 text-gray-400 dark:text-gray-500 mb-4"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-            />
-          </svg>
-          
-          {isProcessing ? (
-            <div className="flex items-center gap-2">
-              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500"></div>
-              <p className="text-gray-600 dark:text-gray-400">Processing statement...</p>
-            </div>
-          ) : (
-            <>
-              <p className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                Upload Bank or Credit Card Statement
-              </p>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Click to browse or drag and drop a PDF or image
-              </p>
-            </>
-          )}
+        <div className="shrink-0">
+           <span className={`text-xs font-medium px-3 py-1.5 rounded-full transition-colors ${
+             isDragging 
+               ? 'bg-blue-600 text-white' 
+               : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 group-hover:bg-slate-200 dark:group-hover:bg-slate-700'
+           }`}>
+             {isProcessing ? '...' : 'Browse'}
+           </span>
         </div>
       </div>
+
+      {/* Processing Progress Bar Overlay */}
+      {isProcessing && (
+        <div className="absolute bottom-0 left-0 h-1 bg-blue-600 animate-pulse w-full"></div>
+      )}
     </div>
   );
 }
-
