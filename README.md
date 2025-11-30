@@ -1,8 +1,14 @@
-# Butler - AI Financial Assistant
+# 🤵 Butler - AI Financial Assistant
 
 Butler helps users manage and understand their finances using AI-powered analysis of bank and credit card statements.
 
 ## Features
+
+### Authentication & Security
+- **User Authentication**: Email/password and Google OAuth login
+- **Protected Routes**: Automatic session management and route protection
+- **User Data Isolation**: Each user's financial data is completely isolated
+- **Secure Sessions**: httpOnly cookies for session storage
 
 ### Core Features
 - Upload bank and credit card statements (PDFs or images)
@@ -50,8 +56,9 @@ Create a `.env.local` file with:
 GEMINI_API_KEY=your_gemini_api_key_here
 
 # Required: Supabase configuration
-# Get from your Supabase project settings
+# Get from your Supabase project settings > API
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 ```
 
@@ -62,7 +69,12 @@ SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
    - Create a storage bucket called `statements`
    - Make it public or configure appropriate access policies
 
-4. Run the development server:
+4. Set up Authentication (see [AUTHENTICATION.md](./AUTHENTICATION.md) for detailed guide):
+   - Enable Email authentication in Supabase Dashboard > Authentication > Providers
+   - (Optional) Configure Google OAuth for social login
+   - Update redirect URLs in Supabase Dashboard
+
+5. Run the development server:
 ```bash
 npm run dev
 ```

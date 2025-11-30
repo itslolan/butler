@@ -202,16 +202,110 @@ export function createSpendingTrendChart(monthlyData: MonthlyData[]): ChartConfi
 }
 
 /**
+ * Category grouping definitions
+ */
+const CATEGORY_GROUPS: Record<string, 'Essentials' | 'Discretionary'> = {
+  // Essentials - necessary expenses
+  'Groceries': 'Essentials',
+  'Housing': 'Essentials',
+  'Utilities': 'Essentials',
+  'Gas/Automotive': 'Essentials',
+  'Transportation': 'Essentials',
+  'Health/Wellness': 'Essentials',
+  'Insurance': 'Essentials',
+  'Interest': 'Essentials',
+  'Loans': 'Essentials',
+  'Fees': 'Essentials',
+  
+  // Discretionary - optional/lifestyle expenses
+  'Food & Dining': 'Discretionary',
+  'Alcohol/Bars': 'Discretionary',
+  'Entertainment': 'Discretionary',
+  'Shopping': 'Discretionary',
+  'Travel': 'Discretionary',
+  'Electronics': 'Discretionary',
+  'Electronics/Software': 'Discretionary',
+  'Software': 'Discretionary',
+  'Home Improvement': 'Discretionary',
+  'Subscription': 'Discretionary',
+};
+
+/**
+ * Group color schemes
+ */
+const GROUP_COLORS = {
+  'Essentials': {
+    main: '#3b82f6',      // blue-500
+    shades: [
+      '#60a5fa', // blue-400
+      '#3b82f6', // blue-500
+      '#2563eb', // blue-600
+      '#1d4ed8', // blue-700
+      '#1e40af', // blue-800
+    ]
+  },
+  'Discretionary': {
+    main: '#f59e0b',      // amber-500
+    shades: [
+      '#fbbf24', // amber-400
+      '#f59e0b', // amber-500
+      '#d97706', // amber-600
+      '#b45309', // amber-700
+      '#92400e', // amber-800
+    ]
+  },
+};
+
+/**
  * Generate category breakdown pie chart config
  */
 export function createCategoryBreakdownChart(categoryData: CategoryData[]): ChartConfig {
+  // Group categories by Essentials vs Discretionary
+  const grouped: Record<string, CategoryData[]> = {
+    'Essentials': [],
+    'Discretionary': [],
+  };
+
+  categoryData.forEach(cat => {
+    const group = CATEGORY_GROUPS[cat.category] || 'Discretionary';
+    grouped[group].push(cat);
+  });
+
+  // Create hierarchical data structure
+  const hierarchicalData: ChartDataPoint[] = [];
+
+  Object.entries(grouped).forEach(([groupName, categories]) => {
+    if (categories.length === 0) return;
+
+    const groupTotal = categories.reduce((sum, cat) => sum + cat.total, 0);
+    const groupColor = GROUP_COLORS[groupName as keyof typeof GROUP_COLORS];
+    
+    // Sort categories by amount (largest first)
+    const sortedCategories = [...categories].sort((a, b) => b.total - a.total);
+    
+    // Create children with varying shades
+    const children = sortedCategories.map((cat, idx) => ({
+      label: cat.category,
+      value: cat.total,
+      group: groupName,
+      color: groupColor.shades[idx % groupColor.shades.length],
+    }));
+
+    hierarchicalData.push({
+      label: groupName,
+      value: groupTotal,
+      group: groupName,
+      color: groupColor.main,
+      children,
+    });
+  });
+
   return {
-    type: 'pie',
+    type: 'treemap',
     title: 'Spending by Category',
-    description: `Breakdown of expenses across ${categoryData.length} categories`,
-    data: categoryDataToChartPoints(categoryData),
+    description: `Breakdown of expenses: Essentials vs Discretionary`,
+    data: hierarchicalData,
     currency: true,
-    colors: getChartColors(categoryData.length),
   };
 }
 

@@ -2,13 +2,15 @@
  * Chart configuration types for Butler visualization system
  */
 
-export type ChartType = 'line' | 'bar' | 'pie' | 'area';
+export type ChartType = 'line' | 'bar' | 'pie' | 'area' | 'treemap';
 
 export interface ChartDataPoint {
   label: string;      // e.g., "January 2025" or "Food & Dining"
   value: number;      // e.g., 1234.56
   value2?: number;    // For multi-series (e.g., income vs expenses)
   color?: string;     // Optional custom color for this data point
+  children?: ChartDataPoint[]; // For hierarchical data (treemap)
+  group?: string;     // For grouping (e.g., "Essentials", "Discretionary")
 }
 
 export interface ChartConfig {
@@ -28,7 +30,7 @@ export interface ChartConfig {
 export function validateChartConfig(config: any): config is ChartConfig {
   if (!config || typeof config !== 'object') return false;
   
-  if (!['line', 'bar', 'pie', 'area'].includes(config.type)) return false;
+  if (!['line', 'bar', 'pie', 'area', 'treemap'].includes(config.type)) return false;
   if (typeof config.title !== 'string' || !config.title) return false;
   if (typeof config.description !== 'string') return false;
   if (!Array.isArray(config.data) || config.data.length === 0) return false;

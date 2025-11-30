@@ -187,11 +187,23 @@ export default function VisualizationPanel({ userId = 'default-user', refreshTri
           </ChartCard>
         )}
 
-        {/* Category Breakdown - Half Width */}
+        {/* Category Breakdown - Half Width on desktop, auto-height on mobile with legend */}
         {charts.categoryBreakdown && (
-          <ChartCard title="Category Breakdown" className="h-80">
-            <ChartRenderer config={charts.categoryBreakdown} height="100%" />
-          </ChartCard>
+          <>
+            {/* Desktop version - fixed height */}
+            <div className="hidden lg:block">
+              <ChartCard title="Category Breakdown" className="h-80">
+                <ChartRenderer config={charts.categoryBreakdown} height="100%" showLegend={false} />
+              </ChartCard>
+            </div>
+            
+            {/* Mobile version - auto height to fit content */}
+            <div className="block lg:hidden">
+              <ChartCard title="Category Breakdown" className="min-h-[500px]">
+                <ChartRenderer config={charts.categoryBreakdown} height={250} showLegend={true} />
+              </ChartCard>
+            </div>
+          </>
         )}
       </div>
     </div>

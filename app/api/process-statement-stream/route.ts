@@ -64,9 +64,12 @@ Return a JSON object with this exact structure:
   - Patterns: Regular deposits of similar amounts, large credits
 - **expense**: Purchases, bills, fees, charges, payments to merchants
   - Most debit transactions, card payments, bills, subscriptions
-- **transfer**: Transfers between own accounts
-  - Keywords: TRANSFER TO/FROM, INTERNAL TRANSFER, ACCOUNT TRANSFER
-  - Patterns: Round numbers, matching debits/credits
+  - **EXCEPTION**: Credit card payments are NOT expenses (see transfer below)
+- **transfer**: Transfers between own accounts, credit card payments
+  - Keywords: TRANSFER TO/FROM, INTERNAL TRANSFER, ACCOUNT TRANSFER, CREDIT CARD PAYMENT, CARD PAYMENT, PAYMENT TO [CARD NAME], AUTO PAYMENT, E-PAYMENT
+  - **IMPORTANT**: Credit card payments (like "Payment to Visa", "Card Payment", "Auto Pay Credit Card") should ALWAYS be classified as transfers, NOT expenses
+  - **Reasoning**: Credit card payments move money from checking to credit card account. The actual expenses were already recorded as individual credit card transactions
+  - Patterns: Round numbers, matching debits/credits, payments to credit card accounts
 - **other**: Everything else that doesn't clearly fit
 
 **Confidence & Clarification:**
@@ -379,6 +382,8 @@ export async function POST(request: NextRequest) {
           extractedAt: new Date().toISOString(),
           documentType: extractedData.documentType,
           transactionCount: transactionsToInsert.length,
+          duplicatesRemoved: duplicatesInfo.duplicatesFound,
+          totalTransactionsInDocument: (extractedData.transactions || []).length,
           unclarifiedTransactions: unclarifiedTransactions.map(t => ({
             id: t.id,
             date: t.date,

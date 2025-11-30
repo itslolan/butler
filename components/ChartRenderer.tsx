@@ -2,6 +2,7 @@
 
 import { ChartConfig } from '@/lib/chart-types';
 import { formatCurrency, formatCompactCurrency, getChartColors, getIncomeExpenseColors } from '@/lib/chart-utils';
+import TreemapRenderer from './TreemapRenderer';
 import {
   LineChart,
   Line,
@@ -25,10 +26,16 @@ interface ChartRendererProps {
   config: ChartConfig;
   height?: number | `${number}%`;
   className?: string;
+  showLegend?: boolean; // For mobile treemap legend
 }
 
-export default function ChartRenderer({ config, height = 300, className }: ChartRendererProps) {
+export default function ChartRenderer({ config, height = 300, className, showLegend = false }: ChartRendererProps) {
   const { type, data, xAxisLabel, yAxisLabel, currency, colors } = config;
+
+  // Handle treemap separately
+  if (type === 'treemap') {
+    return <TreemapRenderer data={data} currency={currency} height={height} showLegend={showLegend} />;
+  }
 
   // Custom tooltip formatter
   const CustomTooltip = ({ active, payload, label }: any) => {

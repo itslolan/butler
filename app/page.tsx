@@ -4,8 +4,15 @@ import { useState, useCallback, useRef } from 'react';
 import FileUpload from '@/components/FileUpload';
 import ChatInterface from '@/components/ChatInterface';
 import VisualizationPanel from '@/components/VisualizationPanel';
+import AuthGuard from '@/components/AuthGuard';
+import UserMenu from '@/components/UserMenu';
+import MobileChatModal from '@/components/MobileChatModal';
+import MobileUploadButton from '@/components/MobileUploadButton';
+import MobileProcessingToast from '@/components/MobileProcessingToast';
+import { useAuth } from '@/components/AuthProvider';
 
 export default function Home() {
+  const { user } = useAuth();
   const [uploadCount, setUploadCount] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [lastUploadResult, setLastUploadResult] = useState<string>('');
@@ -21,7 +28,7 @@ export default function Home() {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('userId', 'default-user');
+      formData.append('userId', user?.id || 'default-user');
 
       const response = await fetch('/api/process-statement-stream', {
         method: 'POST',
@@ -99,12 +106,21 @@ export default function Home() {
             }, 1000);
           }
         } else {
-          // Send financial health summary
+          // Send financial health summary with duplicate detection info
           if (chatInterfaceRef.current?.sendSystemMessage) {
             setTimeout(() => {
-              chatInterfaceRef.current.sendSystemMessage(
-                `I've processed your ${finalResult.documentType?.replace('_', ' ')}. Ask me about your financial health.`
-              );
+              let message = `✅ I've processed your ${finalResult.documentType?.replace('_', ' ')}.\n\n`;
+              message += `📊 **Processing Summary:**\n`;
+              message += `• Saved **${finalResult.transactionCount}** new transaction${finalResult.transactionCount !== 1 ? 's' : ''}`;
+              
+              if (finalResult.duplicatesRemoved > 0) {
+                message += `\n• 🎯 **Skipped ${finalResult.duplicatesRemoved} duplicate${finalResult.duplicatesRemoved !== 1 ? 's' : ''}** (already in your records)`;
+                message += `\n• Found ${finalResult.totalTransactionsInDocument} total in document`;
+              }
+              
+              message += `\n\n💡 Ask me about your financial health or spending patterns!`;
+              
+              chatInterfaceRef.current.sendSystemMessage(message);
             }, 1000);
           }
         }
@@ -121,7 +137,7 @@ export default function Home() {
       // relying on the fact that we just set success message above
       setTimeout(() => setProcessingSteps([]), 5000);
     }
-  }, []);
+  }, [user]);
 
   const buildClarificationMessage = (result: any) => {
     const unclarified = result.unclarifiedTransactions || [];
@@ -144,43 +160,42 @@ export default function Home() {
   };
 
   return (
-    <main className="flex flex-col h-screen bg-slate-50 dark:bg-gray-950 text-slate-900 dark:text-slate-100 overflow-hidden font-sans">
-      {/* Top Bar */}
-      <header className="h-16 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-gray-900 flex items-center justify-between px-6 shrink-0 z-10">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white font-bold shadow-sm">
-            B
+    <AuthGuard>
+      <main className="flex flex-col h-screen bg-slate-50 dark:bg-gray-950 text-slate-900 dark:text-slate-100 overflow-hidden font-sans">
+        {/* Top Bar */}
+        <header className="h-16 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-gray-900 flex items-center justify-between px-6 shrink-0 z-10">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white font-bold shadow-sm">
+              B
+            </div>
+            <h1 className="font-semibold text-lg tracking-tight">Butler</h1>
+            <div className="h-4 w-[1px] bg-slate-200 dark:bg-slate-700 mx-1"></div>
+            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border border-green-200 dark:border-green-800">
+              Connected
+            </span>
           </div>
-          <h1 className="font-semibold text-lg tracking-tight">Butler</h1>
-          <div className="h-4 w-[1px] bg-slate-200 dark:bg-slate-700 mx-1"></div>
-          <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border border-green-200 dark:border-green-800">
-            Connected
-          </span>
-        </div>
-        
-        <div className="flex items-center gap-4">
-          <div className="text-xs text-slate-500 dark:text-slate-400">
-            Last sync: Just now
-          </div>
-          <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-slate-700"></div>
-        </div>
-      </header>
-
-      <div className="flex-1 flex overflow-hidden">
-        {/* Main Content Grid */}
-        <div className="flex-1 grid grid-cols-12 gap-0 min-h-0 h-full">
           
-          {/* Left Column: Visualization & Data (65%) */}
-          <div className="col-span-12 lg:col-span-8 flex flex-col h-full border-r border-slate-200 dark:border-slate-800 overflow-y-auto bg-slate-50/50 dark:bg-black/5 p-6">
-            <div className="max-w-5xl w-full mx-auto space-y-6">
-              <VisualizationPanel key={chartRefreshKey} userId="default-user" />
+          <UserMenu />
+        </header>
+
+      <div className="flex-1 flex overflow-hidden min-h-0">
+        {/* Main Content Grid */}
+        <div className="flex-1 grid grid-cols-12 gap-0 min-h-0">
+          
+          {/* Left Column: Visualization & Data (65%) - Full width on mobile */}
+          <div className="col-span-12 lg:col-span-8 flex flex-col h-full lg:border-r border-slate-200 dark:border-slate-800 overflow-y-auto bg-slate-50/50 dark:bg-black/5 p-4 lg:p-6 pb-20 lg:pb-6">
+            <div className="max-w-5xl w-full mx-auto space-y-4 lg:space-y-6">
+              {/* Mobile Upload Button */}
+              <MobileUploadButton onFileUpload={handleFileUpload} isProcessing={isProcessing} />
+              
+              <VisualizationPanel key={chartRefreshKey} userId={user?.id || 'default-user'} />
             </div>
           </div>
 
-          {/* Right Column: Actions & Chat (35%) */}
-          <div className="col-span-12 lg:col-span-4 flex flex-col h-full bg-white dark:bg-gray-900">
+          {/* Right Column: Actions & Chat (35%) - Hidden on mobile */}
+          <div className="hidden lg:flex col-span-12 lg:col-span-4 flex-col min-h-0 bg-white dark:bg-gray-900">
             {/* Upload Section - Fixed at top */}
-            <div className="p-4 border-b border-slate-100 dark:border-slate-800">
+            <div className="p-4 border-b border-slate-100 dark:border-slate-800 shrink-0">
               <FileUpload onFileUpload={handleFileUpload} isProcessing={isProcessing} />
               
               {/* Toast-style Processing Status */}
@@ -213,13 +228,20 @@ export default function Home() {
             </div>
 
             {/* Chat Interface - Fills remaining space */}
-            <div className="flex-1 min-h-0 relative">
-              <ChatInterface ref={chatInterfaceRef} userId="default-user" />
+            <div className="flex-1 min-h-0 overflow-hidden">
+              <ChatInterface ref={chatInterfaceRef} userId={user?.id || 'default-user'} />
             </div>
           </div>
 
         </div>
       </div>
+
+      {/* Mobile Chat Modal - Only visible on mobile */}
+      <MobileChatModal userId={user?.id || 'default-user'} chatInterfaceRef={chatInterfaceRef} />
+      
+      {/* Mobile Processing Toast - Only visible on mobile */}
+      <MobileProcessingToast processingSteps={processingSteps} lastUploadResult={lastUploadResult} />
     </main>
+    </AuthGuard>
   );
 }
