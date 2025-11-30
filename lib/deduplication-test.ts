@@ -152,5 +152,5 @@ export function runDeduplicationTests() {
 }
 
 // Export for use in API
-export { Transaction };
+export type { Transaction };
 
