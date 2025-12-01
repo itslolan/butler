@@ -52,6 +52,7 @@ const ChatInterface = forwardRef(({ userId = 'default-user', onTodoResolved }: C
       const content = `📝 **Action Required: Clarification Needed**
 
 I need your help categorizing this transaction:
+* **TRANSACTION_ID:** ${transaction.id}
 * **Merchant:** ${transaction.merchant}
 * **Date:** ${new Date(transaction.date).toLocaleDateString()}
 * **Amount:** $${Math.abs(transaction.amount).toFixed(2)}
@@ -59,8 +60,8 @@ I need your help categorizing this transaction:
 
 Please reply with the correct category or explain what this transaction is.`;
       
-      // Add suggested quick actions based on common categories
-      const suggestedActions = [
+      // Generic fallback actions for when LLM generation fails or isn't available
+      const genericActions = [
         'This is food/dining',
         'This is transportation',
         'This is shopping',
@@ -68,6 +69,11 @@ Please reply with the correct category or explain what this transaction is.`;
         'This is entertainment',
         'This is income'
       ];
+      
+      // Use LLM-generated actions if available, otherwise fall back to generic actions
+      const suggestedActions = (transaction.suggested_actions && transaction.suggested_actions.length > 0)
+        ? transaction.suggested_actions
+        : genericActions;
       
       setMessages(prev => [...prev, { role: 'system' as const, content, suggestedActions }]);
     }

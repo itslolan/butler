@@ -40,6 +40,12 @@ You have access to four data sources:
 - If you need to calculate aggregates (totals, averages), retrieve the relevant transactions and compute them
 - Use categorize_transaction tool when user clarifies a transaction type
 
+**Transaction Clarification Optimization:**
+- When a system message includes "TRANSACTION_ID: [uuid]", use that ID directly with categorize_transaction
+- Do NOT search for the transaction - the ID is already provided in the context
+- This applies to todo/clarification workflows where the transaction is already identified
+- Simply extract the transaction_id from the message and call categorize_transaction immediately
+
 **Available Tools:**
 
 1. search_documents(filters): Query documents collection

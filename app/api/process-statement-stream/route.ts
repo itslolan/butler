@@ -3,6 +3,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { insertDocument, insertTransactions, appendMetadata, insertAccountSnapshots, getUnclarifiedTransactions, findMatchingTransfer } from '@/lib/db-tools';
 import { uploadFile, Transaction } from '@/lib/supabase';
 import { calculateMonthlySnapshots } from '@/lib/snapshot-calculator';
+import { generateSuggestedActions } from '@/lib/action-generator';
 
 export const runtime = 'nodejs';
 
@@ -330,6 +331,43 @@ export async function POST(request: NextRequest) {
           }
         }
 
+        // Generate suggested actions for transactions needing clarification
+        if (transactionsToInsert.length > 0) {
+          const transactionsNeedingActions = transactionsToInsert.filter((txn: any) => txn.clarificationNeeded);
+          
+          if (transactionsNeedingActions.length > 0) {
+            sendUpdate('action-generation', `🤖 Generating smart action suggestions for ${transactionsNeedingActions.length} transaction${transactionsNeedingActions.length !== 1 ? 's' : ''}...`, 'processing');
+            
+            // Generate actions for each transaction in parallel for better performance
+            const actionPromises = transactionsNeedingActions.map(async (txn: any) => {
+              try {
+                const actions = await generateSuggestedActions({
+                  merchant: txn.merchant,
+                  amount: txn.amount,
+                  date: txn.date,
+                  clarificationQuestion: txn.clarificationQuestion || 'How should this transaction be categorized?',
+                });
+                
+                // Add suggested actions to the transaction object
+                txn.suggestedActions = actions; // Will be null if generation failed (uses fallback in UI)
+              } catch (error) {
+                console.error(`Failed to generate actions for transaction ${txn.merchant}:`, error);
+                txn.suggestedActions = null; // Fallback to generic actions
+              }
+            });
+            
+            // Wait for all action generation to complete
+            await Promise.all(actionPromises);
+            
+            const successCount = transactionsNeedingActions.filter((txn: any) => txn.suggestedActions !== null).length;
+            if (successCount > 0) {
+              sendUpdate('action-generation', `✨ Generated smart actions for ${successCount} transaction${successCount !== 1 ? 's' : ''}`, 'complete');
+            } else {
+              sendUpdate('action-generation', `⚠️ Using fallback actions (action generation unavailable)`, 'complete');
+            }
+          }
+        }
+
         sendUpdate('saving', '💾 Saving to database...', 'processing');
 
         // Save to Supabase
@@ -374,6 +412,7 @@ export async function POST(request: NextRequest) {
             transaction_type: txn.transactionType || null,
             needs_clarification: txn.clarificationNeeded || false,
             clarification_question: txn.clarificationQuestion || null,
+            suggested_actions: txn.suggestedActions || null,
             metadata: {},
           }));
 

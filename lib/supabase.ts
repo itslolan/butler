@@ -48,6 +48,7 @@ export interface Transaction {
   transaction_type?: 'income' | 'expense' | 'transfer' | 'other' | null;
   needs_clarification?: boolean;
   clarification_question?: string | null;
+  suggested_actions?: string[] | null;
   metadata?: Record<string, any>;
   created_at?: Date | string;
 }
