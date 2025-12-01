@@ -82,7 +82,7 @@ export default function TodoButton({ userId, onSelectTodo, refreshTrigger = 0 }:
 
       {/* Popover */}
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white dark:bg-gray-900 rounded-xl shadow-xl border border-slate-200 dark:border-slate-800 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+        <div className="absolute right-0 mt-2 w-[calc(100vw-2rem)] sm:w-80 md:w-96 bg-white dark:bg-gray-900 rounded-xl shadow-xl border border-slate-200 dark:border-slate-800 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
           <div className="p-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex justify-between items-center">
             <h3 className="font-semibold text-sm text-slate-900 dark:text-white">
               Action Required
@@ -99,11 +99,11 @@ export default function TodoButton({ userId, onSelectTodo, refreshTrigger = 0 }:
                 onClick={() => handleSelect(todo)}
                 className="w-full text-left p-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 last:border-0 transition-colors group"
               >
-                <div className="flex justify-between items-start mb-1">
-                  <span className="font-medium text-sm text-slate-900 dark:text-white line-clamp-1 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                <div className="flex justify-between items-start mb-1 gap-2">
+                  <span className="font-medium text-sm text-slate-900 dark:text-white line-clamp-1 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors flex-1 min-w-0">
                     {todo.merchant}
                   </span>
-                  <span className="text-xs font-mono text-slate-500 dark:text-slate-400 shrink-0 ml-2">
+                  <span className="text-xs font-mono text-slate-500 dark:text-slate-400 shrink-0">
                     ${Math.abs(todo.amount).toFixed(2)}
                   </span>
                 </div>
