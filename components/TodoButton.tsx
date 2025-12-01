@@ -82,48 +82,79 @@ export default function TodoButton({ userId, onSelectTodo, refreshTrigger = 0 }:
 
       {/* Popover */}
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white dark:bg-gray-900 rounded-xl shadow-xl border border-slate-200 dark:border-slate-800 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-          <div className="p-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex justify-between items-center">
-            <h3 className="font-semibold text-sm text-slate-900 dark:text-white">
-              Action Required
-            </h3>
-            <span className="text-xs text-slate-500 dark:text-slate-400">
-              {todos.length} pending
-            </span>
-          </div>
+        <>
+          {/* Mobile backdrop */}
+          <div 
+            className="fixed inset-0 bg-black/20 dark:bg-black/40 z-40 lg:hidden"
+            onClick={() => setIsOpen(false)}
+          />
           
-          <div className="max-h-[400px] overflow-y-auto">
-            {todos.map((todo) => (
+          {/* Popover - Fixed on mobile, absolute on desktop */}
+          <div className="
+            fixed bottom-0 left-0 right-0 
+            lg:absolute lg:bottom-auto lg:left-auto lg:right-0 lg:top-full lg:mt-2
+            w-full lg:w-80 xl:w-96
+            max-h-[70vh] lg:max-h-[400px]
+            bg-white dark:bg-gray-900 
+            rounded-t-xl lg:rounded-xl 
+            shadow-2xl lg:shadow-xl 
+            border-t border-l border-r lg:border border-slate-200 dark:border-slate-800 
+            z-50 
+            overflow-hidden 
+            transform transition-all duration-200 ease-out
+            animate-slide-up lg:animate-none
+          ">
+            <div className="p-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex justify-between items-center">
+              <h3 className="font-semibold text-sm text-slate-900 dark:text-white">
+                Action Required
+              </h3>
               <button
-                key={todo.id}
-                onClick={() => handleSelect(todo)}
-                className="w-full text-left p-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 last:border-0 transition-colors group"
+                onClick={() => setIsOpen(false)}
+                className="lg:hidden p-1 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                aria-label="Close"
               >
-                <div className="flex justify-between items-start mb-1">
-                  <span className="font-medium text-sm text-slate-900 dark:text-white line-clamp-1 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                    {todo.merchant}
-                  </span>
-                  <span className="text-xs font-mono text-slate-500 dark:text-slate-400 shrink-0 ml-2">
-                    ${Math.abs(todo.amount).toFixed(2)}
-                  </span>
-                </div>
-                
-                <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2 mb-1.5">
-                  {todo.clarification_question}
-                </p>
-                
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-slate-400">
-                    {new Date(todo.date).toLocaleDateString()}
-                  </span>
-                  <span className="text-[10px] font-medium text-blue-600 dark:text-blue-400 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    Resolve <span className="text-xs">→</span>
-                  </span>
-                </div>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
               </button>
-            ))}
+              <span className="text-xs text-slate-500 dark:text-slate-400 lg:block hidden">
+                {todos.length} pending
+              </span>
+            </div>
+            
+            <div className="max-h-[calc(70vh-60px)] lg:max-h-[400px] overflow-y-auto">
+              {todos.map((todo) => (
+                <button
+                  key={todo.id}
+                  onClick={() => handleSelect(todo)}
+                  className="w-full text-left p-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 active:bg-slate-100 dark:active:bg-slate-800 border-b border-slate-100 dark:border-slate-800 last:border-0 transition-colors group"
+                >
+                  <div className="flex justify-between items-start mb-1 gap-2">
+                    <span className="font-medium text-sm text-slate-900 dark:text-white line-clamp-1 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors flex-1 min-w-0">
+                      {todo.merchant}
+                    </span>
+                    <span className="text-xs font-mono text-slate-500 dark:text-slate-400 shrink-0">
+                      ${Math.abs(todo.amount).toFixed(2)}
+                    </span>
+                  </div>
+                  
+                  <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2 mb-1.5">
+                    {todo.clarification_question}
+                  </p>
+                  
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-slate-400">
+                      {new Date(todo.date).toLocaleDateString()}
+                    </span>
+                    <span className="text-[10px] font-medium text-blue-600 dark:text-blue-400 flex items-center gap-1 lg:opacity-0 lg:group-hover:opacity-100 transition-opacity">
+                      Resolve <span className="text-xs">→</span>
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   );
