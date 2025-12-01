@@ -29,16 +29,39 @@ export default function VisualizationPanel({ userId = 'default-user', refreshTri
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [dateRange, setDateRange] = useState<number | null>(6);
+  const [selectedMonth, setSelectedMonth] = useState<string>('all');
+
+  // Generate last 12 months for dropdown
+  const monthOptions = Array.from({ length: 12 }, (_, i) => {
+    const d = new Date();
+    d.setMonth(d.getMonth() - i);
+    return {
+      value: d.toISOString().slice(0, 7), // YYYY-MM
+      label: d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+    };
+  });
 
   const fetchCharts = useCallback(async () => {
     setLoading(true);
     setError(null);
 
     try {
+      const queryParams = new URLSearchParams({
+        userId,
+      });
+
+      // If a specific month is selected, use it; otherwise use date range
+      if (selectedMonth !== 'all') {
+        queryParams.append('month', selectedMonth);
+      } else if (dateRange !== null) {
+        queryParams.append('months', dateRange.toString());
+      }
+
       const [spendingRes, categoryRes, incomeRes] = await Promise.all([
-        fetch(`/api/charts?userId=${userId}&type=spending-trend&months=6`),
-        fetch(`/api/charts?userId=${userId}&type=category-breakdown&months=6`),
-        fetch(`/api/charts?userId=${userId}&type=income-vs-expenses&months=6`),
+        fetch(`/api/charts?${queryParams}&type=spending-trend`),
+        fetch(`/api/charts?${queryParams}&type=category-breakdown`),
+        fetch(`/api/charts?${queryParams}&type=income-vs-expenses`),
       ]);
 
       if (!spendingRes.ok || !categoryRes.ok || !incomeRes.ok) {
@@ -74,7 +97,7 @@ export default function VisualizationPanel({ userId = 'default-user', refreshTri
     } finally {
       setLoading(false);
     }
-  }, [userId]);
+  }, [userId, dateRange, selectedMonth]);
 
   useEffect(() => {
     fetchCharts();
@@ -149,20 +172,68 @@ export default function VisualizationPanel({ userId = 'default-user', refreshTri
 
   return (
     <div className="space-y-6">
+      {/* Header Controls Row */}
+      <div className="flex flex-col sm:flex-row justify-end items-start sm:items-center gap-3 mb-2">
+        
+        {/* Month Dropdown */}
+        <select
+          value={selectedMonth}
+          onChange={(e) => {
+            setSelectedMonth(e.target.value);
+            // When a specific month is selected, clear the date range
+            if (e.target.value !== 'all') {
+              setDateRange(null);
+            } else {
+              // When "All Time" is selected, default to 6M
+              setDateRange(6);
+            }
+          }}
+          className="px-3 py-1.5 text-xs font-medium bg-white dark:bg-gray-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-700 dark:text-slate-300 cursor-pointer"
+        >
+          <option value="all">All Time</option>
+          {monthOptions.map((month) => (
+            <option key={month.value} value={month.value}>
+              {month.label}
+            </option>
+          ))}
+        </select>
+
+        {/* Date Range Selector */}
+        <div className="inline-flex bg-white dark:bg-gray-900 rounded-lg p-1 border border-slate-200 dark:border-slate-800 shadow-sm">
+          {[3, 6, 12].map((months) => (
+            <button
+              key={months}
+              onClick={() => {
+                setDateRange(months);
+                // When a date range is selected, clear the month filter
+                setSelectedMonth('all');
+              }}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                dateRange === months && selectedMonth === 'all'
+                  ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+              }`}
+            >
+              {months}M
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* KPI Summary Row */}
       {metrics && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <KPICard 
-            label="Total Income (6m)" 
+            label={`Total Income (${selectedMonth !== 'all' ? monthOptions.find(m => m.value === selectedMonth)?.label || 'selected' : dateRange + 'M'})`} 
             value={metrics.totalIncome} 
             color="green" 
           />
           <KPICard 
-            label="Total Expenses (6m)" 
+            label={`Total Expenses (${selectedMonth !== 'all' ? monthOptions.find(m => m.value === selectedMonth)?.label || 'selected' : dateRange + 'M'})`} 
             value={metrics.totalExpenses} 
             color="red" 
           />
-          <KPICard 
+          <KPICard  
             label="Net Result" 
             value={metrics.netResult} 
             trend={metrics.netResult >= 0 ? '+ Positive Cashflow' : '- Negative Cashflow'}

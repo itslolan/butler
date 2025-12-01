@@ -10,9 +10,10 @@ import MobileChatModal from '@/components/MobileChatModal';
 import MobileUploadButton from '@/components/MobileUploadButton';
 import MobileProcessingToast from '@/components/MobileProcessingToast';
 import { useAuth } from '@/components/AuthProvider';
+import LandingPage from '@/components/LandingPage';
 
 export default function Home() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const [uploadCount, setUploadCount] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [lastUploadResult, setLastUploadResult] = useState<string>('');
@@ -159,6 +160,17 @@ export default function Home() {
     return message;
   };
 
+  // If loading, show nothing (AuthGuard handles loading state for dashboard)
+  if (loading) {
+    return null;
+  }
+
+  // If not authenticated, show Landing Page
+  if (!user) {
+    return <LandingPage />;
+  }
+
+  // If authenticated, show Dashboard (wrapped in AuthGuard for extra safety)
   return (
     <AuthGuard>
       <main className="flex flex-col h-screen bg-slate-50 dark:bg-gray-950 text-slate-900 dark:text-slate-100 overflow-hidden font-sans">

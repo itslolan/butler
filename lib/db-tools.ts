@@ -447,25 +447,39 @@ export async function getMonthlySpendingTrend(
 
 /**
  * Get category breakdown for a user
- * Aggregates expenses by category for the last N months
+ * Aggregates expenses by category for the last N months OR a specific month
  */
 export async function getCategoryBreakdown(
   userId: string,
-  months: number = 6
+  months: number = 6,
+  specificMonth?: string // Optional: 'YYYY-MM'
 ): Promise<Array<{ category: string; total: number; percentage: number; count: number }>> {
-  const now = new Date();
-  const monthsAgo = new Date(now);
-  monthsAgo.setMonth(now.getMonth() - months);
   
-  const startDate = monthsAgo.toISOString().split('T')[0];
-  
-  // Get all expense transactions in the date range
-  const { data, error } = await supabase
+  let query = supabase
     .from('transactions')
-    .select('category, amount, transaction_type')
+    .select('category, amount, transaction_type, date')
     .eq('user_id', userId)
-    .in('transaction_type', ['expense', 'other'])
-    .gte('date', startDate);
+    .in('transaction_type', ['expense', 'other']);
+
+  if (specificMonth) {
+    // Filter for specific month
+    const startOfMonth = `${specificMonth}-01`;
+    // Calculate end of month
+    const [year, month] = specificMonth.split('-').map(Number);
+    const endDate = new Date(year, month, 0).toISOString().split('T')[0]; // Last day of month
+    
+    query = query.gte('date', startOfMonth).lte('date', endDate);
+  } else {
+    // Default: last N months
+    const now = new Date();
+    const monthsAgo = new Date(now);
+    monthsAgo.setMonth(now.getMonth() - months);
+    const startDate = monthsAgo.toISOString().split('T')[0];
+    
+    query = query.gte('date', startDate);
+  }
+  
+  const { data, error } = await query;
 
   if (error) {
     throw new Error(`Failed to get category breakdown: ${error.message}`);

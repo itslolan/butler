@@ -25,6 +25,7 @@ export async function GET(request: NextRequest) {
     const userId = searchParams.get('userId') || 'default-user';
     const type = searchParams.get('type');
     const months = parseInt(searchParams.get('months') || '6', 10);
+    const monthFilter = searchParams.get('month'); // Optional: specific month filter (YYYY-MM)
 
     if (!type) {
       return NextResponse.json(
@@ -43,7 +44,7 @@ export async function GET(request: NextRequest) {
       }
 
       case 'category-breakdown': {
-        const data = await getCategoryBreakdown(userId, months);
+        const data = await getCategoryBreakdown(userId, months, monthFilter || undefined);
         chartConfig = createCategoryBreakdownChart(data);
         break;
       }
