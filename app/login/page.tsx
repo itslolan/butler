@@ -21,9 +21,10 @@ export default function LoginPage() {
     setMessage(null);
 
     try {
-      const redirectUrl = process.env.NEXT_PUBLIC_SITE_URL 
-        ? `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback`
-        : `${window.location.origin}/auth/callback`;
+      // Always use window.location.origin for dynamic URL detection
+      const redirectUrl = `${window.location.origin}/auth/callback`;
+      
+      console.log('Redirect URL:', redirectUrl); // Debug log
 
       if (isSignUp) {
         const { error } = await supabase.auth.signUp({
@@ -58,9 +59,10 @@ export default function LoginPage() {
     setError(null);
 
     try {
-      const redirectUrl = process.env.NEXT_PUBLIC_SITE_URL 
-        ? `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback`
-        : `${window.location.origin}/auth/callback`;
+      // Always use window.location.origin for dynamic URL detection
+      const redirectUrl = `${window.location.origin}/auth/callback`;
+      
+      console.log('Google OAuth Redirect URL:', redirectUrl); // Debug log
 
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
