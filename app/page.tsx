@@ -11,6 +11,7 @@ import MobileUploadButton from '@/components/MobileUploadButton';
 import MobileProcessingToast from '@/components/MobileProcessingToast';
 import { useAuth } from '@/components/AuthProvider';
 import LandingPage from '@/components/LandingPage';
+import TodoButton from '@/components/TodoButton';
 
 export default function Home() {
   const { user, loading } = useAuth();
@@ -19,7 +20,21 @@ export default function Home() {
   const [lastUploadResult, setLastUploadResult] = useState<string>('');
   const [processingSteps, setProcessingSteps] = useState<Array<{ step: string; status: string; message: string; timestamp: number }>>([]);
   const [chartRefreshKey, setChartRefreshKey] = useState(0);
+  const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
   const chatInterfaceRef = useRef<any>(null);
+
+  const handleTodoSelect = (todo: any) => {
+    // If on mobile (simple check), open chat first
+    if (window.innerWidth < 1024) {
+      setIsMobileChatOpen(true);
+      // Allow time for modal to mount/render
+      setTimeout(() => {
+        chatInterfaceRef.current?.resolveTodo(todo);
+      }, 100);
+    } else {
+      chatInterfaceRef.current?.resolveTodo(todo);
+    }
+  };
 
   const handleFileUpload = useCallback(async (file: File) => {
     setIsProcessing(true);
@@ -187,7 +202,14 @@ export default function Home() {
             </span>
           </div>
           
-          <UserMenu />
+          <div className="flex items-center gap-4">
+            <TodoButton 
+              userId={user?.id || 'default-user'} 
+              onSelectTodo={handleTodoSelect}
+              refreshTrigger={chartRefreshKey} // Refresh todos when uploads happen
+            />
+            <UserMenu />
+          </div>
         </header>
 
       <div className="flex-1 flex overflow-hidden min-h-0">
@@ -248,10 +270,15 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Mobile Chat Modal - Only visible on mobile */}
-      <MobileChatModal userId={user?.id || 'default-user'} chatInterfaceRef={chatInterfaceRef} />
-      
-      {/* Mobile Processing Toast - Only visible on mobile */}
+          {/* Mobile Chat Modal - Only visible on mobile */}
+          <MobileChatModal 
+            userId={user?.id || 'default-user'} 
+            chatInterfaceRef={chatInterfaceRef} 
+            isOpen={isMobileChatOpen}
+            onOpenChange={setIsMobileChatOpen}
+          />
+          
+          {/* Mobile Processing Toast - Only visible on mobile */}
       <MobileProcessingToast processingSteps={processingSteps} lastUploadResult={lastUploadResult} />
     </main>
     </AuthGuard>

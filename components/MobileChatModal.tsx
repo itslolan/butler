@@ -6,16 +6,16 @@ import ChatInterface from './ChatInterface';
 interface MobileChatModalProps {
   userId: string;
   chatInterfaceRef: React.RefObject<any>;
+  isOpen: boolean;
+  onOpenChange: (isOpen: boolean) => void;
 }
 
-export default function MobileChatModal({ userId, chatInterfaceRef }: MobileChatModalProps) {
-  const [isOpen, setIsOpen] = useState(false);
-
+export default function MobileChatModal({ userId, chatInterfaceRef, isOpen, onOpenChange }: MobileChatModalProps) {
   return (
     <>
       {/* Floating Action Bar - Only visible on mobile */}
       <button
-        onClick={() => setIsOpen(true)}
+        onClick={() => onOpenChange(true)}
         className="fixed bottom-0 left-0 right-0 lg:hidden z-40 h-16 bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg hover:shadow-xl transition-all duration-200 flex items-center justify-center gap-3 group active:scale-[0.99] border-t-2 border-blue-500/20"
         aria-label="Open chat"
       >
@@ -42,7 +42,7 @@ export default function MobileChatModal({ userId, chatInterfaceRef }: MobileChat
           {/* Backdrop */}
           <div 
             className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-            onClick={() => setIsOpen(false)}
+            onClick={() => onOpenChange(false)}
           />
           
           {/* Modal Content */}
@@ -60,7 +60,7 @@ export default function MobileChatModal({ userId, chatInterfaceRef }: MobileChat
               </div>
               
               <button
-                onClick={() => setIsOpen(false)}
+                onClick={() => onOpenChange(false)}
                 className="w-10 h-10 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center transition-colors"
                 aria-label="Close chat"
               >

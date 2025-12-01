@@ -46,6 +46,19 @@ const ChatInterface = forwardRef(({ userId = 'default-user' }: ChatInterfaceProp
     sendSystemMessage: (content: string) => {
       setMessages(prev => [...prev, { role: 'system' as const, content }]);
     },
+    resolveTodo: (transaction: any) => {
+      const content = `📝 **Action Required: Clarification Needed**
+
+I need your help categorizing this transaction:
+* **Merchant:** ${transaction.merchant}
+* **Date:** ${new Date(transaction.date).toLocaleDateString()}
+* **Amount:** $${Math.abs(transaction.amount).toFixed(2)}
+* **Question:** ${transaction.clarification_question}
+
+Please reply with the correct category or explain what this transaction is.`;
+      
+      setMessages(prev => [...prev, { role: 'system' as const, content }]);
+    }
   }));
 
   const sendMessage = async (content: string) => {
