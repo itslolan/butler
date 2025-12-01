@@ -382,20 +382,29 @@ export async function calculateNetWorth(userId: string, date: string): Promise<{
 
 /**
  * Get monthly spending trend for a user
- * Aggregates total expenses by month for the last N months
+ * Aggregates expenses by month for the last N months OR a specific month
  */
 export async function getMonthlySpendingTrend(
   userId: string,
-  months: number = 6
+  months: number = 6,
+  specificMonth?: string
 ): Promise<Array<{ month: string; total: number }>> {
-  const now = new Date();
-  const monthsAgo = new Date(now);
-  monthsAgo.setMonth(now.getMonth() - months);
-  
-  const startDate = monthsAgo.toISOString().split('T')[0];
+  let startDate: string;
+  let endDate: string | undefined;
+
+  if (specificMonth) {
+    startDate = `${specificMonth}-01`;
+    const [year, month] = specificMonth.split('-').map(Number);
+    endDate = new Date(year, month, 0).toISOString().split('T')[0];
+  } else {
+    const now = new Date();
+    const monthsAgo = new Date(now);
+    monthsAgo.setMonth(now.getMonth() - months);
+    startDate = monthsAgo.toISOString().split('T')[0];
+  }
   
   // Get all expense transactions in the date range
-  const { data, error } = await supabase
+  let query = supabase
     .from('transactions')
     .select('date, amount, transaction_type')
     .eq('user_id', userId)
@@ -403,13 +412,24 @@ export async function getMonthlySpendingTrend(
     .gte('date', startDate)
     .order('date', { ascending: true });
 
+  if (endDate) {
+    query = query.lte('date', endDate);
+  }
+
+  const { data, error } = await query;
+
   if (error) {
     throw new Error(`Failed to get spending trend: ${error.message}`);
   }
 
   if (!data || data.length === 0) {
-    // Return empty months
+    if (specificMonth) {
+      return [{ month: specificMonth, total: 0 }];
+    }
+    
+    // Return empty months for range
     const result: Array<{ month: string; total: number }> = [];
+    const now = new Date();
     for (let i = months - 1; i >= 0; i--) {
       const d = new Date(now);
       d.setMonth(now.getMonth() - i);
@@ -429,8 +449,16 @@ export async function getMonthlySpendingTrend(
     monthlyMap.set(monthKey, current + Math.abs(Number(txn.amount)));
   }
   
-  // Fill in missing months with 0
+  if (specificMonth) {
+    return [{
+      month: specificMonth,
+      total: monthlyMap.get(specificMonth) || 0
+    }];
+  }
+
+  // Fill in missing months with 0 for range
   const result: Array<{ month: string; total: number }> = [];
+  const now = new Date();
   for (let i = months - 1; i >= 0; i--) {
     const d = new Date(now);
     d.setMonth(now.getMonth() - i);
@@ -526,21 +554,36 @@ export async function getCategoryBreakdown(
  */
 export async function getIncomeVsExpenses(
   userId: string,
-  months: number = 6
+  months: number = 6,
+  specificMonth?: string
 ): Promise<Array<{ month: string; income: number; expenses: number }>> {
-  const now = new Date();
-  const monthsAgo = new Date(now);
-  monthsAgo.setMonth(now.getMonth() - months);
-  
-  const startDate = monthsAgo.toISOString().split('T')[0];
+  let startDate: string;
+  let endDate: string | undefined;
+
+  if (specificMonth) {
+    startDate = `${specificMonth}-01`;
+    const [year, month] = specificMonth.split('-').map(Number);
+    endDate = new Date(year, month, 0).toISOString().split('T')[0];
+  } else {
+    const now = new Date();
+    const monthsAgo = new Date(now);
+    monthsAgo.setMonth(now.getMonth() - months);
+    startDate = monthsAgo.toISOString().split('T')[0];
+  }
   
   // Get all transactions in the date range
-  const { data, error } = await supabase
+  let query = supabase
     .from('transactions')
     .select('date, amount, transaction_type')
     .eq('user_id', userId)
     .gte('date', startDate)
     .order('date', { ascending: true });
+
+  if (endDate) {
+    query = query.lte('date', endDate);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     throw new Error(`Failed to get income vs expenses: ${error.message}`);
@@ -549,12 +592,17 @@ export async function getIncomeVsExpenses(
   // Initialize monthly data
   const monthlyData = new Map<string, { income: number; expenses: number }>();
   
-  // Fill in all months first with zeros
-  for (let i = months - 1; i >= 0; i--) {
-    const d = new Date(now);
-    d.setMonth(now.getMonth() - i);
-    const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    monthlyData.set(monthKey, { income: 0, expenses: 0 });
+  if (!specificMonth) {
+    const now = new Date();
+    // Fill in all months first with zeros for range
+    for (let i = months - 1; i >= 0; i--) {
+      const d = new Date(now);
+      d.setMonth(now.getMonth() - i);
+      const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      monthlyData.set(monthKey, { income: 0, expenses: 0 });
+    }
+  } else {
+    monthlyData.set(specificMonth, { income: 0, expenses: 0 });
   }
 
   if (data && data.length > 0) {
@@ -564,13 +612,25 @@ export async function getIncomeVsExpenses(
       const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
       
       const current = monthlyData.get(monthKey);
-      if (current) {
+      // Only update if the month is in our map (handles edge cases where transaction date might be slightly off or logic mismatch)
+      // For specificMonth mode, this ensures we only count for that month
+      if (current || (!specificMonth && !current)) {
+        // If not in map and we are in range mode, we might need to handle it? 
+        // But we pre-filled the map, so it should be there if within range.
+        // If specificMonth is set, we only care about that key.
+        
+        // Let's be safe:
+        if (!current && specificMonth) continue;
+        
+        const target = current || monthlyData.get(monthKey) || { income: 0, expenses: 0 };
+        if (!current && !specificMonth) monthlyData.set(monthKey, target);
+
         const absAmount = Math.abs(Number(txn.amount));
         
         if (txn.transaction_type === 'income') {
-          current.income += absAmount;
+          target.income += absAmount;
         } else if (txn.transaction_type === 'expense' || txn.transaction_type === 'other') {
-          current.expenses += absAmount;
+          target.expenses += absAmount;
         }
       }
     }

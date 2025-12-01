@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
 
     switch (type) {
       case 'spending-trend': {
-        const data = await getMonthlySpendingTrend(userId, months);
+        const data = await getMonthlySpendingTrend(userId, months, monthFilter || undefined);
         chartConfig = createSpendingTrendChart(data);
         break;
       }
@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
       }
 
       case 'income-vs-expenses': {
-        const data = await getIncomeVsExpenses(userId, months);
+        const data = await getIncomeVsExpenses(userId, months, monthFilter || undefined);
         chartConfig = createIncomeVsExpensesChart(data);
         break;
       }

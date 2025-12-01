@@ -48,11 +48,10 @@ const ChatInterface = forwardRef(({ userId = 'default-user' }: ChatInterfaceProp
     },
   }));
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || isLoading) return;
+  const sendMessage = async (content: string) => {
+    if (!content.trim() || isLoading) return;
 
-    const userMessage = input.trim();
+    const userMessage = content.trim();
     setInput('');
     
     const newMessages = [...messages, { role: 'user' as const, content: userMessage }];
@@ -97,18 +96,44 @@ const ChatInterface = forwardRef(({ userId = 'default-user' }: ChatInterfaceProp
     }
   };
 
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await sendMessage(input);
+  };
+
   return (
     <div className="flex flex-col h-full bg-white dark:bg-gray-900">
       {/* Messages container */}
       <div className="flex-1 overflow-y-auto p-4 space-y-6">
         {messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full text-center opacity-50 p-8">
-            <div className="w-12 h-12 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-3">
+          <div className="flex flex-col items-center justify-center h-full text-center p-8">
+            <div className="w-12 h-12 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
               <span className="text-xl">💬</span>
             </div>
-            <p className="text-sm text-slate-600 dark:text-slate-400">
-              Ask Butler anything about your finances.
+            <h3 className="text-lg font-medium text-slate-900 dark:text-white mb-2">
+              How can I help you today?
+            </h3>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mb-8 max-w-xs">
+              Ask Butler anything about your finances. Here are some examples:
             </p>
+            
+            <div className="grid gap-3 w-full max-w-sm">
+              {[
+                "What is my net worth?",
+                "Show me my spending trend",
+                "How much did I spend on food last month?",
+                "Any large transactions recently?"
+              ].map((question, i) => (
+                <button
+                  key={i}
+                  onClick={() => sendMessage(question)}
+                  className="px-4 py-3 text-sm text-left bg-white dark:bg-gray-800 hover:bg-slate-50 dark:hover:bg-gray-700 border border-slate-200 dark:border-slate-700 rounded-xl transition-colors shadow-sm flex items-center justify-between group"
+                >
+                  <span>{question}</span>
+                  <span className="text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300">→</span>
+                </button>
+              ))}
+            </div>
           </div>
         )}
         

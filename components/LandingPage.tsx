@@ -56,7 +56,7 @@ export default function LandingPage() {
               Get trusted answers about your finances. Save more money and get richer with personalized financial advice.
             </p>
             <p className="text-lg text-slate-500 dark:text-slate-500">
-              Just upload your bank statements, and we'll take care of the rest.
+              Just upload your bank statements, and we&apos;ll take care of the rest.
             </p>
           </div>
           
@@ -263,7 +263,7 @@ export default function LandingPage() {
         <div className="relative max-w-3xl mx-auto space-y-8">
           <h2 className="text-4xl md:text-5xl font-bold tracking-tight">Ready to take control?</h2>
           <p className="text-xl text-slate-300 max-w-xl mx-auto">
-            Join thousands who have ditched their spreadsheets for Butler's AI insights.
+            Join thousands who have ditched their spreadsheets for Butler&apos;s AI insights.
           </p>
           <Link 
             href="/login"
