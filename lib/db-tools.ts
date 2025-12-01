@@ -118,6 +118,57 @@ export async function searchTransactions(userId: string, filters: TransactionFil
 }
 
 /**
+ * Find a matching transfer transaction in other accounts
+ * Looks for a transaction with approximately the same amount (opposite sign)
+ * within a small date window (+/- 3 days).
+ */
+export async function findMatchingTransfer(
+  userId: string,
+  amount: number,
+  date: string,
+  excludeDocumentId?: string
+): Promise<Transaction | null> {
+  // We are looking for the opposite flow (e.g. if I see -100, I look for +100)
+  const targetAmount = -amount; 
+  const tolerance = 0.01;
+  
+  // Calculate date window (+/- 3 days)
+  const d = new Date(date);
+  
+  const startDateObj = new Date(d);
+  startDateObj.setDate(d.getDate() - 3);
+  const startDate = startDateObj.toISOString().split('T')[0];
+
+  const endDateObj = new Date(d);
+  endDateObj.setDate(d.getDate() + 3);
+  const endDate = endDateObj.toISOString().split('T')[0];
+  
+  let query = supabase
+    .from('transactions')
+    .select('*')
+    .eq('user_id', userId)
+    .gte('date', startDate)
+    .lte('date', endDate)
+    // Amount matching (approximate for float safety)
+    .gte('amount', targetAmount - tolerance)
+    .lte('amount', targetAmount + tolerance);
+
+  if (excludeDocumentId) {
+    query = query.neq('document_id', excludeDocumentId);
+  }
+
+  // We only need one match to confirm
+  const { data, error } = await query.limit(1);
+
+  if (error) {
+    console.error('Error finding matching transfer:', error);
+    return null;
+  }
+
+  return data && data.length > 0 ? data[0] : null;
+}
+
+/**
  * Get all metadata for a user
  */
 export async function getAllMetadata(userId: string) {
@@ -648,4 +699,3 @@ export async function getIncomeVsExpenses(
   
   return result;
 }
-

@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { insertDocument, insertTransactions, appendMetadata, insertAccountSnapshots, getUnclarifiedTransactions } from '@/lib/db-tools';
+import { insertDocument, insertTransactions, appendMetadata, insertAccountSnapshots, getUnclarifiedTransactions, findMatchingTransfer } from '@/lib/db-tools';
 import { uploadFile, Transaction } from '@/lib/supabase';
 import { calculateMonthlySnapshots } from '@/lib/snapshot-calculator';
 
@@ -276,6 +276,58 @@ export async function POST(request: NextRequest) {
           }
         } else if (transactionsToInsert.length === 0) {
           sendUpdate('extraction', '⚠️ No transactions found in the document', 'complete');
+        }
+
+        // Auto-detect transfers by matching against other accounts
+        if (transactionsToInsert.length > 0) {
+          sendUpdate('transfer-check', '🔄 Checking for matching transfers in other accounts...', 'processing');
+          
+          let transferMatchesFound = 0;
+          
+          // We need to be careful not to hold up the stream too long, so we'll process sequentially but efficiently
+          for (let i = 0; i < transactionsToInsert.length; i++) {
+            const txn = transactionsToInsert[i];
+            
+            // Candidates: 
+            // 1. Already classified as 'transfer' (to confirm)
+            // 2. Classified as 'expense' or 'other' but flagged as needing clarification
+            // 3. Any transaction with 'transfer' or 'payment' keyword in description even if not flagged
+            
+            const isPotentialTransfer = 
+              txn.transactionType === 'transfer' || 
+              (txn.clarificationNeeded && ['expense', 'other'].includes(txn.transactionType || '')) ||
+              (txn.description?.toLowerCase().includes('transfer') || txn.description?.toLowerCase().includes('payment'));
+
+            if (isPotentialTransfer) {
+              try {
+                // txn.date is typically YYYY-MM-DD string from JSON
+                const match = await findMatchingTransfer(userId, txn.amount, txn.date);
+                
+                if (match) {
+                  txn.transactionType = 'transfer';
+                  txn.clarificationNeeded = false;
+                  txn.clarificationQuestion = null;
+                  // We can't strictly link by ID since we haven't inserted yet, but we can store the match info
+                  // Note: txn object structure here matches the Gemini JSON output, not yet the DB Transaction interface
+                  // We'll add metadata property if it doesn't exist
+                  if (!txn.metadata) txn.metadata = {};
+                  txn.metadata.matched_transfer_id = match.id;
+                  txn.metadata.matched_account_name = match.account_name;
+                  
+                  transferMatchesFound++;
+                }
+              } catch (err) {
+                console.error('Error checking transfer match for txn:', err);
+                // Continue processing other transactions
+              }
+            }
+          }
+          
+          if (transferMatchesFound > 0) {
+             sendUpdate('transfer-match', `🔗 Linked ${transferMatchesFound} transfer${transferMatchesFound !== 1 ? 's' : ''} with other accounts`, 'complete');
+          } else {
+             sendUpdate('transfer-match', `✅ Transfer check complete`, 'complete');
+          }
         }
 
         sendUpdate('saving', '💾 Saving to database...', 'processing');
