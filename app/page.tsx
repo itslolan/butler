@@ -36,123 +36,163 @@ export default function Home() {
     }
   };
 
-  const handleFileUpload = useCallback(async (file: File) => {
+  const handleFileUpload = useCallback(async (files: File[]) => {
+    if (files.length === 0) return;
+    
     setIsProcessing(true);
     setLastUploadResult('');
     setProcessingSteps([]);
     
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('userId', user?.id || 'default-user');
+    let processedCount = 0;
+    let totalTransactions = 0;
+    let errors = 0;
 
-      const response = await fetch('/api/process-statement-stream', {
-        method: 'POST',
-        body: formData,
-      });
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const fileIndex = i + 1;
+      const totalFiles = files.length;
+      
+      // Initial step for this file
+      setProcessingSteps([{ 
+        step: 'init', 
+        status: 'processing', 
+        message: totalFiles > 1 
+          ? `📄 Processing file ${fileIndex}/${totalFiles}: ${file.name}...` 
+          : `📄 Processing ${file.name}...`, 
+        timestamp: Date.now() 
+      }]);
+    
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('userId', user?.id || 'default-user');
 
-      if (!response.ok) {
-        throw new Error('Failed to process statement');
-      }
+        const response = await fetch('/api/process-statement-stream', {
+          method: 'POST',
+          body: formData,
+        });
 
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
+        if (!response.ok) {
+          throw new Error('Failed to process statement');
+        }
 
-      if (!reader) {
-        throw new Error('No response body');
-      }
+        const reader = response.body?.getReader();
+        const decoder = new TextDecoder();
 
-      let done = false;
-      let finalResult: any = null;
+        if (!reader) {
+          throw new Error('No response body');
+        }
 
-      while (!done) {
-        const { value, done: readerDone } = await reader.read();
-        done = readerDone;
+        let done = false;
+        let finalResult: any = null;
 
-        if (value) {
-          const chunk = decoder.decode(value);
-          const lines = chunk.split('\n');
+        while (!done) {
+          const { value, done: readerDone } = await reader.read();
+          done = readerDone;
 
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              const data = JSON.parse(line.substring(6));
+          if (value) {
+            const chunk = decoder.decode(value);
+            const lines = chunk.split('\n');
 
-              if (data.error) {
-                throw new Error(data.error);
-              }
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                const data = JSON.parse(line.substring(6));
 
-              if (data.done) {
-                finalResult = data;
-              } else if (data.step) {
-                // Update processing steps in real-time
-                setProcessingSteps(prev => {
-                  const newSteps = [...prev];
-                  const existingIndex = newSteps.findIndex(s => s.step === data.step);
-                  
-                  if (existingIndex >= 0) {
-                    newSteps[existingIndex] = data;
-                  } else {
-                    newSteps.push(data);
-                  }
-                  
-                  return newSteps;
-                });
+                if (data.error) {
+                  throw new Error(data.error);
+                }
+
+                if (data.done) {
+                  finalResult = data;
+                } else if (data.step) {
+                  // Update processing steps in real-time
+                  setProcessingSteps(prev => {
+                    const newSteps = [...prev];
+                    // Check if we already have this step type for THIS file context?
+                    // Actually, since we reset steps for each file, we can just look for step name
+                    const existingIndex = newSteps.findIndex(s => s.step === data.step);
+                    
+                    // Prefix message with file info if batch processing
+                    const message = totalFiles > 1 
+                      ? `[${fileIndex}/${totalFiles}] ${data.message}` 
+                      : data.message;
+
+                    if (existingIndex >= 0) {
+                      newSteps[existingIndex] = { ...data, message };
+                    } else {
+                      newSteps.push({ ...data, message });
+                    }
+                    
+                    return newSteps;
+                  });
+                }
               }
             }
           }
         }
-      }
 
-      if (finalResult) {
-        setUploadCount(prev => prev + 1);
-        
-        const resultMessage = `✅ Processed ${finalResult.fileName} (${finalResult.transactionCount} txns)`;
-        setLastUploadResult(resultMessage);
-        
-        // Trigger chart refresh
-        setChartRefreshKey(prev => prev + 1);
-        
-        // Check if there are transactions needing clarification
-        if (finalResult.unclarifiedTransactions && finalResult.unclarifiedTransactions.length > 0) {
-          // Auto-send clarification message to chat
-          const clarificationMsg = buildClarificationMessage(finalResult);
-          if (chatInterfaceRef.current?.sendSystemMessage) {
-            setTimeout(() => {
-              chatInterfaceRef.current.sendSystemMessage(clarificationMsg);
-            }, 1000);
-          }
-        } else {
-          // Send financial health summary with duplicate detection info
-          if (chatInterfaceRef.current?.sendSystemMessage) {
-            setTimeout(() => {
-              let message = `✅ I've processed your ${finalResult.documentType?.replace('_', ' ')}.\n\n`;
-              message += `📊 **Processing Summary:**\n`;
-              message += `• Saved **${finalResult.transactionCount}** new transaction${finalResult.transactionCount !== 1 ? 's' : ''}`;
-              
-              if (finalResult.duplicatesRemoved > 0) {
-                message += `\n• 🎯 **Skipped ${finalResult.duplicatesRemoved} duplicate${finalResult.duplicatesRemoved !== 1 ? 's' : ''}** (already in your records)`;
-                message += `\n• Found ${finalResult.totalTransactionsInDocument} total in document`;
-              }
-              
-              message += `\n\n💡 Ask me about your financial health or spending patterns!`;
-              
-              chatInterfaceRef.current.sendSystemMessage(message);
-            }, 1000);
+        if (finalResult) {
+          processedCount++;
+          totalTransactions += finalResult.transactionCount || 0;
+          
+          // Trigger chart refresh immediately after each file
+          setChartRefreshKey(prev => prev + 1);
+          
+          // Handle clarifications and summary for THIS file
+          if (finalResult.unclarifiedTransactions && finalResult.unclarifiedTransactions.length > 0) {
+            const clarificationMsg = buildClarificationMessage(finalResult);
+            if (chatInterfaceRef.current?.sendSystemMessage) {
+              // Small delay to ensure order
+              setTimeout(() => {
+                chatInterfaceRef.current.sendSystemMessage(clarificationMsg);
+              }, 500);
+            }
+          } else {
+            // Send summary
+            if (chatInterfaceRef.current?.sendSystemMessage) {
+              setTimeout(() => {
+                let message = `✅ **${file.name}**: Processed successfully.\n`;
+                message += `• Saved ${finalResult.transactionCount} transactions`;
+                if (finalResult.duplicatesRemoved > 0) {
+                  message += `\n• Skipped ${finalResult.duplicatesRemoved} duplicates`;
+                }
+                chatInterfaceRef.current.sendSystemMessage(message);
+              }, 500);
+            }
           }
         }
-      }
 
-    } catch (error: any) {
-      console.error('Error processing file:', error);
-      setLastUploadResult(`❌ Error: ${error.message || 'Failed to process statement'}`);
-      setProcessingSteps([]);
-    } finally {
-      setIsProcessing(false);
-      // Auto-hide processing status after delay if successful
-      // Note: We check for success by the absence of error message, 
-      // relying on the fact that we just set success message above
-      setTimeout(() => setProcessingSteps([]), 5000);
+      } catch (error: any) {
+        console.error(`Error processing file ${file.name}:`, error);
+        errors++;
+        setLastUploadResult(`❌ Error with ${file.name}: ${error.message}`);
+        // Keep going to next file
+      }
     }
+
+    setIsProcessing(false);
+    
+    // Final batch summary
+    if (files.length > 1) {
+      const summary = errors === 0
+        ? `✅ Batch Complete: ${processedCount}/${files.length} files processed (${totalTransactions} txns)`
+        : `⚠️ Batch Complete: ${processedCount}/${files.length} files processed (${errors} failed)`;
+      
+      setLastUploadResult(summary);
+      
+      // Clear steps after a delay
+      setTimeout(() => setProcessingSteps([]), 5000);
+    } else {
+      // Single file logic matches existing behavior more or less
+      if (errors === 0) {
+         // Success message was already set per-file, but let's set the toast one
+         // We can't easily get the finalResult here for single file without storing it, 
+         // but checking success count is enough
+         setLastUploadResult(`✅ Upload Complete`);
+         setTimeout(() => setProcessingSteps([]), 5000);
+      }
+    }
+
   }, [user]);
 
   const buildClarificationMessage = (result: any) => {

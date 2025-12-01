@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react';
 
 interface FileUploadProps {
-  onFileUpload: (file: File) => void;
+  onFileUpload: (files: File[]) => void;
   isProcessing: boolean;
 }
 
@@ -11,15 +11,17 @@ export default function FileUpload({ onFileUpload, isProcessing }: FileUploadPro
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
 
-  const handleFileSelect = (file: File) => {
-    const isImage = file.type.startsWith('image/');
-    const isPdf =
-      file.type === 'application/pdf' || file.name?.toLowerCase().endsWith('.pdf');
+  const handleFiles = (files: File[]) => {
+    const validFiles = files.filter(file => {
+      const isImage = file.type.startsWith('image/');
+      const isPdf = file.type === 'application/pdf' || file.name?.toLowerCase().endsWith('.pdf');
+      return isImage || isPdf;
+    });
 
-    if (isImage || isPdf) {
-      onFileUpload(file);
-    } else {
-      alert('Please upload a PDF, PNG, JPG, or similar image file.');
+    if (validFiles.length > 0) {
+      onFileUpload(validFiles);
+    } else if (files.length > 0) {
+      alert('Please upload PDF, PNG, JPG, or similar image files.');
     }
   };
 
@@ -27,9 +29,9 @@ export default function FileUpload({ onFileUpload, isProcessing }: FileUploadPro
     e.preventDefault();
     setIsDragging(false);
     
-    const file = e.dataTransfer.files[0];
-    if (file) {
-      handleFileSelect(file);
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 0) {
+      handleFiles(files);
     }
   };
 
@@ -49,10 +51,12 @@ export default function FileUpload({ onFileUpload, isProcessing }: FileUploadPro
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      handleFileSelect(file);
+    const files = Array.from(e.target.files || []);
+    if (files.length > 0) {
+      handleFiles(files);
     }
+    // Reset input value to allow re-uploading same files if needed
+    if (e.target) e.target.value = '';
   };
 
   return (
@@ -77,6 +81,7 @@ export default function FileUpload({ onFileUpload, isProcessing }: FileUploadPro
         onChange={handleFileChange}
         className="hidden"
         disabled={isProcessing}
+        multiple
       />
       
       <div className="p-4 flex items-center justify-between gap-4">
@@ -90,10 +95,10 @@ export default function FileUpload({ onFileUpload, isProcessing }: FileUploadPro
           </div>
           <div className="min-w-0">
             <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">
-              {isProcessing ? 'Uploading...' : 'Upload Statement'}
+              {isProcessing ? 'Uploading...' : 'Upload Statements'}
             </p>
             <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-              {isDragging ? 'Drop file now' : 'PDF or Image'}
+              {isDragging ? 'Drop files now' : 'PDFs or Images'}
             </p>
           </div>
         </div>

@@ -3,7 +3,7 @@
 import { useRef } from 'react';
 
 interface MobileUploadButtonProps {
-  onFileUpload: (file: File) => void;
+  onFileUpload: (files: File[]) => void;
   isProcessing: boolean;
 }
 
@@ -11,9 +11,16 @@ export default function MobileUploadButton({ onFileUpload, isProcessing }: Mobil
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      onFileUpload(file);
+    const files = Array.from(e.target.files || []);
+    
+    const validFiles = files.filter(file => {
+      const isImage = file.type.startsWith('image/');
+      const isPdf = file.type === 'application/pdf' || file.name?.toLowerCase().endsWith('.pdf');
+      return isImage || isPdf;
+    });
+
+    if (validFiles.length > 0) {
+      onFileUpload(validFiles);
       // Reset input
       e.target.value = '';
     }
@@ -28,6 +35,7 @@ export default function MobileUploadButton({ onFileUpload, isProcessing }: Mobil
         onChange={handleFileSelect}
         className="hidden"
         disabled={isProcessing}
+        multiple
       />
       
       <button
