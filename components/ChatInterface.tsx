@@ -10,6 +10,7 @@ interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string;
   chartConfig?: ChartConfig;
+  suggestedActions?: string[];
   debug?: {
     functionCalls: Array<{
       function: string;
@@ -25,9 +26,10 @@ interface Message {
 
 interface ChatInterfaceProps {
   userId?: string;
+  onTodoResolved?: () => void;
 }
 
-const ChatInterface = forwardRef(({ userId = 'default-user' }: ChatInterfaceProps, ref) => {
+const ChatInterface = forwardRef(({ userId = 'default-user', onTodoResolved }: ChatInterfaceProps, ref) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -57,7 +59,17 @@ I need your help categorizing this transaction:
 
 Please reply with the correct category or explain what this transaction is.`;
       
-      setMessages(prev => [...prev, { role: 'system' as const, content }]);
+      // Add suggested quick actions based on common categories
+      const suggestedActions = [
+        'This is food/dining',
+        'This is transportation',
+        'This is shopping',
+        'This is bills/utilities',
+        'This is entertainment',
+        'This is income'
+      ];
+      
+      setMessages(prev => [...prev, { role: 'system' as const, content, suggestedActions }]);
     }
   }));
 
@@ -95,6 +107,16 @@ Please reply with the correct category or explain what this transaction is.`;
         chartConfig: data.chartConfig, // Include chart config if present
         debug: data.debug 
       }]);
+      
+      // Check if a transaction was categorized (todo resolved)
+      if (data.debug?.functionCalls) {
+        const hasCategorization = data.debug.functionCalls.some(
+          (call: any) => call.function === 'categorize_transaction' && call.result?.success
+        );
+        if (hasCategorization && onTodoResolved) {
+          onTodoResolved();
+        }
+      }
     } catch (error: any) {
       console.error('Error sending message:', error);
       setMessages([
@@ -181,6 +203,25 @@ Please reply with the correct category or explain what this transaction is.`;
                 </div>
               )}
             </div>
+            
+            {/* Quick Actions - show after system message */}
+            {message.role === 'system' && message.suggestedActions && message.suggestedActions.length > 0 && (
+              <div className="mt-3 w-full max-w-[85%]">
+                <p className="text-xs text-slate-500 dark:text-slate-400 mb-2 font-medium">Quick Actions:</p>
+                <div className="flex flex-wrap gap-2">
+                  {message.suggestedActions.map((action, actionIndex) => (
+                    <button
+                      key={actionIndex}
+                      onClick={() => sendMessage(action)}
+                      disabled={isLoading}
+                      className="px-3 py-1.5 text-xs font-medium bg-white dark:bg-gray-800 hover:bg-yellow-50 dark:hover:bg-yellow-900/20 border border-slate-200 dark:border-slate-700 hover:border-yellow-400 dark:hover:border-yellow-600 rounded-lg transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {action}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             
             {/* Chart rendering - show inline after assistant message */}
             {message.role === 'assistant' && message.chartConfig && (

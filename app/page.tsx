@@ -12,6 +12,7 @@ import MobileProcessingToast from '@/components/MobileProcessingToast';
 import { useAuth } from '@/components/AuthProvider';
 import LandingPage from '@/components/LandingPage';
 import TodoButton from '@/components/TodoButton';
+import TodoList from '@/components/TodoList';
 
 export default function Home() {
   const { user, loading } = useAuth();
@@ -262,6 +263,13 @@ export default function Home() {
               {/* Mobile Upload Button */}
               <MobileUploadButton onFileUpload={handleFileUpload} isProcessing={isProcessing} />
               
+              {/* Todo List - Prominent placement above charts */}
+              <TodoList 
+                userId={user?.id || 'default-user'} 
+                onSelectTodo={handleTodoSelect}
+                refreshTrigger={chartRefreshKey}
+              />
+              
               <VisualizationPanel key={chartRefreshKey} userId={user?.id || 'default-user'} />
             </div>
           </div>
@@ -303,7 +311,11 @@ export default function Home() {
 
             {/* Chat Interface - Fills remaining space */}
             <div className="flex-1 min-h-0 overflow-hidden">
-              <ChatInterface ref={chatInterfaceRef} userId={user?.id || 'default-user'} />
+              <ChatInterface 
+                ref={chatInterfaceRef} 
+                userId={user?.id || 'default-user'}
+                onTodoResolved={() => setChartRefreshKey(prev => prev + 1)}
+              />
             </div>
           </div>
 
