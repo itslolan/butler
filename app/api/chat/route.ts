@@ -37,7 +37,7 @@ You have access to four data sources:
 4. **Metadata Text**: A markdown document containing all metadata summaries from uploaded statements (may be noisy or duplicate structured data)
 
 **Currency Handling:**
-- Each transaction, document, and account snapshot includes a `currency` field (ISO 4217 code like USD, EUR, GBP, INR, etc.)
+- Each transaction, document, and account snapshot includes a currency field (ISO 4217 code like USD, EUR, GBP, INR, etc.)
 - ALWAYS use the appropriate currency symbol when displaying amounts in your responses
 - Common currencies: $ (USD), € (EUR), £ (GBP), ¥ (JPY), ₹ (INR)
 - When analyzing data with mixed currencies, mention the currency for each amount
