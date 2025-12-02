@@ -275,13 +275,19 @@ export async function updateTransactionType(
   id: string,
   transactionType: 'income' | 'expense' | 'transfer' | 'other'
 ): Promise<void> {
-  console.log('[updateTransactionType] Starting transaction update', {
-    transaction_id: id,
-    transaction_type: transactionType,
-    timestamp: new Date().toISOString(),
-  });
-
   try {
+    // Get the transaction to retrieve user_id for RLS policy compliance
+    const { data: currentTransaction, error: fetchError } = await supabase
+      .from('transactions')
+      .select('id, user_id')
+      .eq('id', id)
+      .single();
+
+    if (fetchError || !currentTransaction) {
+      throw new Error(`Transaction with id ${id} not found`);
+    }
+
+    // Update with explicit user_id check to ensure RLS policies allow it
     const { data, error } = await supabase
       .from('transactions')
       .update({ 
@@ -290,36 +296,24 @@ export async function updateTransactionType(
         clarification_question: null,
       })
       .eq('id', id)
+      .eq('user_id', currentTransaction.user_id)
       .select();
 
     if (error) {
-      console.error('[updateTransactionType] Supabase error:', {
-        error_message: error.message,
-        error_details: error.details,
-        error_hint: error.hint,
-        error_code: error.code,
-        transaction_id: id,
-        transaction_type: transactionType,
-        timestamp: new Date().toISOString(),
-      });
-      throw new Error(`Failed to update transaction type: ${error.message} (code: ${error.code}, details: ${error.details})`);
+      throw new Error(`Failed to update transaction type: ${error.message}`);
     }
 
-    console.log('[updateTransactionType] Transaction updated successfully', {
-      transaction_id: id,
-      transaction_type: transactionType,
-      updated_rows: data?.length || 0,
-      timestamp: new Date().toISOString(),
-    });
+    if (!data || data.length === 0) {
+      throw new Error(`Transaction with id ${id} not found or could not be updated`);
+    }
+
+    // Verify that needs_clarification was actually set to false
+    const updatedTransaction = data[0];
+    if (updatedTransaction.needs_clarification !== false) {
+      throw new Error(`Update failed: needs_clarification is still ${updatedTransaction.needs_clarification} instead of false`);
+    }
   } catch (error: any) {
-    console.error('[updateTransactionType] Unexpected error:', {
-      error_name: error.name,
-      error_message: error.message,
-      error_stack: error.stack,
-      transaction_id: id,
-      transaction_type: transactionType,
-      timestamp: new Date().toISOString(),
-    });
+    console.error('[updateTransactionType] Error:', error.message);
     throw error;
   }
 }
@@ -335,7 +329,7 @@ export async function getUnclarifiedTransactions(
     .from('transactions')
     .select('*')
     .eq('user_id', userId)
-    .eq('needs_clarification', true);
+    .is('needs_clarification', true);
 
   if (documentId) {
     query = query.eq('document_id', documentId);
@@ -347,7 +341,8 @@ export async function getUnclarifiedTransactions(
     throw new Error(`Failed to get unclarified transactions: ${error.message}`);
   }
 
-  return data || [];
+  // Client-side filter to ensure we only return transactions that actually need clarification
+  return (data || []).filter(txn => txn.needs_clarification === true);
 }
 
 /**

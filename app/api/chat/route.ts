@@ -163,7 +163,7 @@ interface Message {
 }
 
 // Helper function to execute a tool call
-async function executeToolCall(name: string, args: any, effectiveUserId: string) {
+async function executeToolCall(name: string, args: any, effectiveUserId: string, requestUrl?: string) {
   let functionResult;
   
   try {
@@ -175,15 +175,24 @@ async function executeToolCall(name: string, args: any, effectiveUserId: string)
       functionResult = await getAllMetadata(effectiveUserId);
     } else if (name === 'categorize_transaction') {
       // Call the clarify-transaction API
-      const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 
-                     process.env.NEXT_PUBLIC_BASE_URL || 
-                     'http://localhost:3000';
-      const apiUrl = `${baseUrl}/api/clarify-transaction`;
+      // Construct URL from request to ensure we call the same server instance
+      // This is critical - if we use an absolute URL, we might hit a different server/database
+      let fullApiUrl: string;
       
-      console.log(`[chat API] Calling categorize_transaction - URL: ${apiUrl}, TxnID: ${args.transaction_id}, Type: ${args.transaction_type}`);
-
+      if (requestUrl) {
+        // Use the provided request URL to construct the API endpoint
+        const url = new URL(requestUrl);
+        fullApiUrl = `${url.protocol}//${url.host}/api/clarify-transaction`;
+      } else {
+        // Fallback: try to construct from environment or use localhost
+        const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 
+                       process.env.NEXT_PUBLIC_BASE_URL || 
+                       'http://localhost:3000';
+        fullApiUrl = `${baseUrl}/api/clarify-transaction`;
+      }
+      
       try {
-        const response = await fetch(apiUrl, {
+        const response = await fetch(fullApiUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -192,26 +201,21 @@ async function executeToolCall(name: string, args: any, effectiveUserId: string)
           }),
         });
 
-        console.log(`[chat API] categorize_transaction response - Status: ${response.status}, OK: ${response.ok}`);
-
         if (!response.ok) {
           const errorText = await response.text();
-          console.error(`[chat API] categorize_transaction failed - Status: ${response.status} ${response.statusText}, Body: ${errorText}`);
+          console.error('[chat API] categorize_transaction failed:', response.status, errorText);
           functionResult = { 
             error: `API error: ${response.status} ${response.statusText}`,
             details: errorText,
           };
         } else {
           functionResult = await response.json();
-          console.log(`[chat API] categorize_transaction success - Result: ${JSON.stringify(functionResult)}`);
         }
       } catch (fetchError: any) {
-        console.error(`[chat API] categorize_transaction fetch error - ${fetchError.name}: ${fetchError.message}`);
-        console.error(`[chat API] Fetch error details - URL: ${apiUrl}, Stack: ${fetchError.stack}`);
+        console.error('[chat API] categorize_transaction fetch error:', fetchError.message);
         functionResult = { 
           error: `Fetch failed: ${fetchError.message}`,
           error_type: fetchError.name,
-          details: fetchError.stack,
         };
       }
     } else if (name === 'get_account_snapshots') {
@@ -870,7 +874,7 @@ export async function POST(request: NextRequest) {
               });
 
               const startTime = Date.now();
-              const functionResult = await executeToolCall(name, args, effectiveUserId);
+              const functionResult = await executeToolCall(name, args, effectiveUserId, request.url);
               const duration = Date.now() - startTime;
 
               // Send tool result event

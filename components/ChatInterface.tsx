@@ -216,8 +216,9 @@ Please reply with the correct category or explain what this transaction is.`;
 
                 // Check if a transaction was categorized
                 const hasCategorization = toolCalls.some(
-                  call => call.name === 'categorize_transaction' && call.result?.success
+                  call => call.name === 'categorize_transaction' && call.result?.success === true
                 );
+                
                 if (hasCategorization && onTodoResolved) {
                   onTodoResolved();
                 }
