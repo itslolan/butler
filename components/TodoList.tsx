@@ -32,6 +32,7 @@ export default function TodoList({ userId, onSelectTodo, refreshTrigger = 0 }: T
 
   useEffect(() => {
     fetchTodos();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, refreshTrigger]);
 
   // Don't render anything if there are no todos

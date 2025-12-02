@@ -245,7 +245,7 @@ export default function LandingPage() {
             </div>
             <h2 className="text-4xl md:text-5xl font-bold text-slate-900 dark:text-white mb-6">Why not just use ChatGPT?</h2>
             <p className="text-xl text-slate-600 dark:text-slate-400 max-w-2xl mx-auto leading-relaxed">
-              ChatGPT is great, but Adphex is built specifically for your finances. Here's why it's better.
+              ChatGPT is great, but Adphex is built specifically for your finances. Here&apos;s why it&apos;s better.
             </p>
           </div>
 
@@ -257,7 +257,7 @@ export default function LandingPage() {
               </div>
               <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-3">Advanced Duplicate Detection</h3>
               <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
-                Adphex does advanced duplicate detection so that you don't have to worry about whether you uploaded your document twice or more times.
+                Adphex does advanced duplicate detection so that you don&apos;t have to worry about whether you uploaded your document twice or more times.
               </p>
             </div>
 
@@ -268,7 +268,7 @@ export default function LandingPage() {
               </div>
               <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-3">Interactive Metrics</h3>
               <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
-                Adphex allows you to track important metrics using interactive graphs and diagrams, allowing you to "just glance" to understand your financial health.
+                Adphex allows you to track important metrics using interactive graphs and diagrams, allowing you to &quot;just glance&quot; to understand your financial health.
               </p>
             </div>
 

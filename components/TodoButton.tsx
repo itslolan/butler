@@ -34,6 +34,7 @@ export default function TodoButton({ userId, onSelectTodo, refreshTrigger = 0 }:
 
   useEffect(() => {
     fetchTodos();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, refreshTrigger]);
 
   // Close on click outside
