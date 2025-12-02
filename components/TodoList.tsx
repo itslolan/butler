@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Transaction } from '@/lib/supabase';
+import { formatCurrency } from '@/lib/chart-utils';
 
 interface TodoListProps {
   userId: string;
@@ -79,7 +80,7 @@ export default function TodoList({ userId, onSelectTodo, refreshTrigger = 0 }: T
                       {todo.merchant}
                     </span>
                     <span className="text-sm font-mono text-slate-700 dark:text-slate-300 shrink-0 ml-2">
-                      ${Math.abs(todo.amount).toFixed(2)}
+                      {formatCurrency(Math.abs(todo.amount), todo.currency || 'USD')}
                     </span>
                   </div>
                   

@@ -30,6 +30,7 @@ export interface Document {
   credit_limit?: number | null;
   minimum_payment?: number | null;
   due_date?: Date | string | null;
+  currency?: string;
   metadata?: Record<string, any>;
   created_at?: Date | string;
   updated_at?: Date | string;
@@ -50,6 +51,7 @@ export interface Transaction {
   needs_clarification?: boolean;
   clarification_question?: string | null;
   suggested_actions?: string[] | null;
+  currency?: string;
   metadata?: Record<string, any>;
   created_at?: Date | string;
 }
@@ -61,6 +63,7 @@ export interface AccountSnapshot {
   snapshot_date: Date | string;
   snapshot_type: 'month_start' | 'month_end';
   balance: number;
+  currency?: string;
   document_id?: string;
   created_at?: Date | string;
 }

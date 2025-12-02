@@ -7,10 +7,10 @@ import { ChartConfig, ChartDataPoint, MonthlyData, CategoryData } from './chart-
 /**
  * Format a number as currency
  */
-export function formatCurrency(value: number): string {
+export function formatCurrency(value: number, currencyCode: string = 'USD'): string {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
-    currency: 'USD',
+    currency: currencyCode,
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value);
@@ -19,13 +19,23 @@ export function formatCurrency(value: number): string {
 /**
  * Format a number as compact currency (e.g., $1.2K, $3.4M)
  */
-export function formatCompactCurrency(value: number): string {
+export function formatCompactCurrency(value: number, currencyCode: string = 'USD'): string {
+  // Get currency symbol
+  const formatter = new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: currencyCode,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  });
+  const parts = formatter.formatToParts(0);
+  const currencySymbol = parts.find(part => part.type === 'currency')?.value || '$';
+  
   if (Math.abs(value) >= 1000000) {
-    return `$${(value / 1000000).toFixed(1)}M`;
+    return `${currencySymbol}${(value / 1000000).toFixed(1)}M`;
   } else if (Math.abs(value) >= 1000) {
-    return `$${(value / 1000).toFixed(1)}K`;
+    return `${currencySymbol}${(value / 1000).toFixed(1)}K`;
   }
-  return formatCurrency(value);
+  return formatCurrency(value, currencyCode);
 }
 
 /**

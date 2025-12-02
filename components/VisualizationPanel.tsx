@@ -25,6 +25,7 @@ export default function VisualizationPanel({ userId = 'default-user', refreshTri
     totalIncome: number;
     totalExpenses: number;
     netResult: number;
+    currency?: string;
   } | null>(null);
 
   const [loading, setLoading] = useState(true);
@@ -87,7 +88,8 @@ export default function VisualizationPanel({ userId = 'default-user', refreshTri
         setMetrics({
           totalIncome,
           totalExpenses,
-          netResult: totalIncome - totalExpenses
+          netResult: totalIncome - totalExpenses,
+          currency: incomeData.currency || spendingData.currency || categoryData.currency
         });
       }
 
@@ -149,7 +151,7 @@ export default function VisualizationPanel({ userId = 'default-user', refreshTri
     <div className="bg-white dark:bg-gray-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm hover:shadow-md transition-shadow">
       <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">{label}</p>
       <h3 className="text-2xl font-semibold text-slate-900 dark:text-white mt-1 tracking-tight">
-        {formatCompactCurrency(value)}
+        {formatCompactCurrency(value, metrics?.currency || 'USD')}
       </h3>
       {trend && (
         <p className={`text-xs font-medium mt-1 ${color === 'green' ? 'text-emerald-600' : color === 'red' ? 'text-rose-600' : 'text-blue-600'}`}>

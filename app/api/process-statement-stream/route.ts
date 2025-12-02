@@ -19,6 +19,7 @@ Return a JSON object with this exact structure:
   "issuer": string or null,
   "accountId": string or null,
   "accountName": string or null,
+  "currency": string (ISO 4217 code like "USD", "EUR", "GBP", "INR", etc.),
   "statementDate": "YYYY-MM-DD" or null,
   "previousBalance": number or null,
   "newBalance": number or null,
@@ -57,8 +58,9 @@ Return a JSON object with this exact structure:
 1. **accountId**: Extract the full account number or last 4 digits (e.g., "1234" or "****1234")
 2. **accountName**: Extract the account nickname or card name if visible (e.g., "Chase Freedom", "Checking Account", "Visa Signature", "Platinum Card"). This helps identify the account across multiple statements.
 3. **issuer**: The bank or financial institution name (e.g., "Chase", "Bank of America", "American Express")
-4. **firstTransactionDate**: The date of the EARLIEST transaction in the document
-5. **lastTransactionDate**: The date of the LATEST transaction in the document
+4. **currency**: Identify the currency used in the statement from currency symbols ($, €, £, ¥, ₹, etc.) or text. Return the ISO 4217 code (USD for $, EUR for €, GBP for £, JPY for ¥, INR for ₹, etc.). If unclear, default to "USD".
+5. **firstTransactionDate**: The date of the EARLIEST transaction in the document
+6. **lastTransactionDate**: The date of the LATEST transaction in the document
 
 **Transaction Type Classification:**
 - **income**: Salary, wages, direct deposits from employers, business income, freelance payments, investment income, refunds, reimbursements
@@ -398,6 +400,7 @@ export async function POST(request: NextRequest) {
           issuer: extractedData.issuer || null,
           account_id: extractedData.accountId || null,
           account_name: accountName,
+          currency: extractedData.currency || 'USD',
           statement_date: extractedData.statementDate || null,
           previous_balance: extractedData.previousBalance || null,
           new_balance: extractedData.newBalance || null,
@@ -430,6 +433,7 @@ export async function POST(request: NextRequest) {
             needs_clarification: txn.clarificationNeeded || false,
             clarification_question: txn.clarificationQuestion || null,
             suggested_actions: txn.suggestedActions || null,
+            currency: extractedData.currency || 'USD',
             metadata: {},
           }));
 
@@ -468,7 +472,8 @@ export async function POST(request: NextRequest) {
             transactionsToInsert.map((txn: any) => ({
               date: txn.date,
               amount: txn.amount,
-            }))
+            })),
+            extractedData.currency || 'USD'
           );
           
           if (snapshots.length > 0) {

@@ -29,7 +29,8 @@ export function calculateMonthlySnapshots(
   endBalance: number,
   startDate: string,
   endDate: string,
-  transactions: Transaction[]
+  transactions: Transaction[],
+  currency?: string
 ): AccountSnapshot[] {
   const snapshots: AccountSnapshot[] = [];
   
@@ -122,6 +123,7 @@ export function calculateMonthlySnapshots(
       snapshot_date: boundaryDateStr,
       snapshot_type: snapshotType,
       balance,
+      currency: currency || 'USD',
       document_id: documentId,
     });
   }
