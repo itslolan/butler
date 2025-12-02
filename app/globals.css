@@ -42,3 +42,51 @@ body {
   }
 }
 
+/* Custom Scrollbar Styling - Mac-like auto-hiding behavior */
+@layer base {
+  /* Firefox */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+
+  /* Show scrollbar on hover */
+  *:hover {
+    scrollbar-color: #cbd5e1 transparent; /* slate-300 */
+  }
+
+  .dark *:hover {
+    scrollbar-color: #475569 transparent; /* slate-600 */
+  }
+}
+
+/* Webkit (Chrome, Edge, Safari) */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border-radius: 20px;
+}
+
+/* Show scrollbar thumb when hovering over the scrollable element */
+*:hover::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1; /* slate-300 */
+}
+
+/* Dark mode overrides */
+@media (prefers-color-scheme: dark) {
+  *:hover {
+    scrollbar-color: #475569 transparent;
+  }
+  
+  *:hover::-webkit-scrollbar-thumb {
+    background-color: #475569; /* slate-600 */
+  }
+}
