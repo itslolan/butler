@@ -9,6 +9,7 @@ import { ChartConfig } from '@/lib/chart-types';
 interface ToolCall {
   name: string;
   args: any;
+  reasoning?: string;
   result?: any;
   duration?: string;
   resultCount?: number | null;
@@ -160,6 +161,7 @@ Please reply with the correct category or explain what this transaction is.`;
                 currentToolCall = {
                   name: event.data.name,
                   args: event.data.args,
+                  reasoning: event.data.reasoning,
                 };
                 toolCalls.push(currentToolCall as ToolCall);
                 setMessages(prev => {
@@ -366,23 +368,35 @@ Please reply with the correct category or explain what this transaction is.`;
                   
                   <div className="mt-2 p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-slate-800 space-y-2 text-xs max-w-xl">
                     {message.toolCalls.map((call, callIndex) => (
-                      <div key={callIndex} className="pl-2 border-l-2 border-blue-100 dark:border-blue-900/30">
-                        <div className="flex items-center gap-2 mb-0.5">
-                          <span className="font-mono text-[10px] bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-700 dark:text-slate-300">
-                            {call.name}
-                          </span>
-                          {call.duration && (
-                            <span className="text-slate-400">{call.duration}</span>
-                          )}
-                          {!call.result && (
-                            <span className="text-blue-500 text-[10px] animate-pulse">executing...</span>
-                          )}
-                        </div>
-                        {Object.keys(call.args).length > 0 && (
-                          <pre className="text-[10px] text-slate-500 dark:text-slate-500 overflow-x-auto py-0.5">
-                            {JSON.stringify(call.args).slice(0, 100)}{JSON.stringify(call.args).length > 100 ? '...' : ''}
-                          </pre>
+                      <div key={callIndex} className="space-y-1.5">
+                        {call.reasoning && (
+                          <div className="text-xs text-slate-600 dark:text-slate-400 italic leading-relaxed px-2 py-1.5 bg-slate-50 dark:bg-slate-800/50 rounded">
+                            {call.reasoning}
+                          </div>
                         )}
+                        <div className="pl-2 border-l-2 border-blue-100 dark:border-blue-900/30">
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <span className="font-mono text-[10px] bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-700 dark:text-slate-300">
+                              {call.name}
+                            </span>
+                            {call.duration && (
+                              <span className="text-slate-400">{call.duration}</span>
+                            )}
+                            {!call.result && (
+                              <span className="text-blue-500 text-[10px] animate-pulse">executing...</span>
+                            )}
+                          </div>
+                          {(() => {
+                            // Filter out reasoning from args to avoid duplication
+                            const { reasoning, ...argsWithoutReasoning } = call.args;
+                            const hasArgs = Object.keys(argsWithoutReasoning).length > 0;
+                            return hasArgs && (
+                              <pre className="text-[10px] text-slate-500 dark:text-slate-500 overflow-x-auto py-0.5">
+                                {JSON.stringify(argsWithoutReasoning).slice(0, 100)}{JSON.stringify(argsWithoutReasoning).length > 100 ? '...' : ''}
+                              </pre>
+                            );
+                          })()}
+                        </div>
                       </div>
                     ))}
                   </div>

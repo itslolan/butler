@@ -677,6 +677,331 @@ export async function getCategoryBreakdown(
 }
 
 /**
+ * Get distinct categories with transaction counts
+ */
+export async function getDistinctCategories(
+  userId: string,
+  filters?: {
+    startDate?: string;
+    endDate?: string;
+    transactionType?: string;
+  }
+): Promise<Array<{ category: string; count: number }>> {
+  let query = supabase
+    .from('transactions')
+    .select('category')
+    .eq('user_id', userId);
+
+  if (filters?.startDate) {
+    query = query.gte('date', filters.startDate);
+  }
+
+  if (filters?.endDate) {
+    query = query.lte('date', filters.endDate);
+  }
+
+  if (filters?.transactionType) {
+    query = query.eq('transaction_type', filters.transactionType);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw new Error(`Failed to get distinct categories: ${error.message}`);
+  }
+
+  // Aggregate by category
+  const categoryMap = new Map<string, number>();
+  
+  for (const txn of data || []) {
+    const category = txn.category || 'Uncategorized';
+    categoryMap.set(category, (categoryMap.get(category) || 0) + 1);
+  }
+
+  // Convert to array and sort by count descending
+  const result = Array.from(categoryMap.entries())
+    .map(([category, count]) => ({ category, count }))
+    .sort((a, b) => b.count - a.count);
+
+  return result;
+}
+
+/**
+ * Get distinct merchants with transaction counts
+ */
+export async function getDistinctMerchants(
+  userId: string,
+  filters?: {
+    startDate?: string;
+    endDate?: string;
+    category?: string;
+  }
+): Promise<Array<{ merchant: string; count: number }>> {
+  let query = supabase
+    .from('transactions')
+    .select('merchant')
+    .eq('user_id', userId);
+
+  if (filters?.startDate) {
+    query = query.gte('date', filters.startDate);
+  }
+
+  if (filters?.endDate) {
+    query = query.lte('date', filters.endDate);
+  }
+
+  if (filters?.category) {
+    query = query.ilike('category', `%${filters.category}%`);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw new Error(`Failed to get distinct merchants: ${error.message}`);
+  }
+
+  // Aggregate by merchant
+  const merchantMap = new Map<string, number>();
+  
+  for (const txn of data || []) {
+    const merchant = txn.merchant || 'Unknown';
+    merchantMap.set(merchant, (merchantMap.get(merchant) || 0) + 1);
+  }
+
+  // Convert to array and sort by count descending
+  const result = Array.from(merchantMap.entries())
+    .map(([merchant, count]) => ({ merchant, count }))
+    .sort((a, b) => b.count - a.count);
+
+  return result;
+}
+
+/**
+ * Get distinct account names
+ */
+export async function getDistinctAccountNames(userId: string): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('transactions')
+    .select('account_name')
+    .eq('user_id', userId);
+
+  if (error) {
+    throw new Error(`Failed to get distinct account names: ${error.message}`);
+  }
+
+  // Get unique account names
+  const accountNames = new Set<string>();
+  for (const txn of data || []) {
+    if (txn.account_name) {
+      accountNames.add(txn.account_name);
+    }
+  }
+
+  return Array.from(accountNames).sort();
+}
+
+/**
+ * Bulk update transactions by merchant
+ */
+export async function bulkUpdateTransactionsByMerchant(
+  userId: string,
+  merchant: string,
+  updates: {
+    category?: string;
+    transactionType?: string;
+    spendClassification?: string;
+  },
+  filters?: {
+    startDate?: string;
+    endDate?: string;
+  }
+): Promise<{ updatedCount: number }> {
+  // First, find matching transactions
+  let query = supabase
+    .from('transactions')
+    .select('id')
+    .eq('user_id', userId)
+    .ilike('merchant', `%${merchant}%`);
+
+  if (filters?.startDate) {
+    query = query.gte('date', filters.startDate);
+  }
+
+  if (filters?.endDate) {
+    query = query.lte('date', filters.endDate);
+  }
+
+  const { data: transactions, error: selectError } = await query;
+
+  if (selectError) {
+    throw new Error(`Failed to find transactions: ${selectError.message}`);
+  }
+
+  if (!transactions || transactions.length === 0) {
+    return { updatedCount: 0 };
+  }
+
+  // Build update object
+  const updateData: any = {};
+  if (updates.category !== undefined) updateData.category = updates.category;
+  if (updates.transactionType !== undefined) updateData.transaction_type = updates.transactionType;
+  if (updates.spendClassification !== undefined) updateData.spend_classification = updates.spendClassification;
+
+  // Update all matching transactions
+  const ids = transactions.map(t => t.id);
+  const { error: updateError } = await supabase
+    .from('transactions')
+    .update(updateData)
+    .in('id', ids);
+
+  if (updateError) {
+    throw new Error(`Failed to update transactions: ${updateError.message}`);
+  }
+
+  return { updatedCount: transactions.length };
+}
+
+/**
+ * Bulk update transactions by category
+ */
+export async function bulkUpdateTransactionsByCategory(
+  userId: string,
+  oldCategory: string,
+  newCategory: string,
+  filters?: {
+    startDate?: string;
+    endDate?: string;
+  }
+): Promise<{ updatedCount: number }> {
+  // First, find matching transactions
+  let query = supabase
+    .from('transactions')
+    .select('id')
+    .eq('user_id', userId)
+    .ilike('category', `%${oldCategory}%`);
+
+  if (filters?.startDate) {
+    query = query.gte('date', filters.startDate);
+  }
+
+  if (filters?.endDate) {
+    query = query.lte('date', filters.endDate);
+  }
+
+  const { data: transactions, error: selectError } = await query;
+
+  if (selectError) {
+    throw new Error(`Failed to find transactions: ${selectError.message}`);
+  }
+
+  if (!transactions || transactions.length === 0) {
+    return { updatedCount: 0 };
+  }
+
+  // Update all matching transactions
+  const ids = transactions.map(t => t.id);
+  const { error: updateError } = await supabase
+    .from('transactions')
+    .update({ category: newCategory })
+    .in('id', ids);
+
+  if (updateError) {
+    throw new Error(`Failed to update transactions: ${updateError.message}`);
+  }
+
+  return { updatedCount: transactions.length };
+}
+
+/**
+ * Bulk update transactions by filters
+ */
+export async function bulkUpdateTransactionsByFilters(
+  userId: string,
+  filters: {
+    merchant?: string;
+    category?: string;
+    transactionType?: string;
+    startDate?: string;
+    endDate?: string;
+    minAmount?: number;
+    maxAmount?: number;
+    accountName?: string;
+  },
+  updates: {
+    category?: string;
+    transactionType?: string;
+    spendClassification?: string;
+  }
+): Promise<{ updatedCount: number }> {
+  // Build query to find matching transactions
+  let query = supabase
+    .from('transactions')
+    .select('id')
+    .eq('user_id', userId);
+
+  if (filters.merchant) {
+    query = query.ilike('merchant', `%${filters.merchant}%`);
+  }
+
+  if (filters.category) {
+    query = query.ilike('category', `%${filters.category}%`);
+  }
+
+  if (filters.transactionType) {
+    query = query.eq('transaction_type', filters.transactionType);
+  }
+
+  if (filters.startDate) {
+    query = query.gte('date', filters.startDate);
+  }
+
+  if (filters.endDate) {
+    query = query.lte('date', filters.endDate);
+  }
+
+  if (filters.minAmount !== undefined) {
+    query = query.gte('amount', filters.minAmount);
+  }
+
+  if (filters.maxAmount !== undefined) {
+    query = query.lte('amount', filters.maxAmount);
+  }
+
+  if (filters.accountName) {
+    query = query.ilike('account_name', `%${filters.accountName}%`);
+  }
+
+  const { data: transactions, error: selectError } = await query;
+
+  if (selectError) {
+    throw new Error(`Failed to find transactions: ${selectError.message}`);
+  }
+
+  if (!transactions || transactions.length === 0) {
+    return { updatedCount: 0 };
+  }
+
+  // Build update object
+  const updateData: any = {};
+  if (updates.category !== undefined) updateData.category = updates.category;
+  if (updates.transactionType !== undefined) updateData.transaction_type = updates.transactionType;
+  if (updates.spendClassification !== undefined) updateData.spend_classification = updates.spendClassification;
+
+  // Update all matching transactions
+  const ids = transactions.map(t => t.id);
+  const { error: updateError } = await supabase
+    .from('transactions')
+    .update(updateData)
+    .in('id', ids);
+
+  if (updateError) {
+    throw new Error(`Failed to update transactions: ${updateError.message}`);
+  }
+
+  return { updatedCount: transactions.length };
+}
+
+/**
  * Get income vs expenses comparison by month
  * Returns monthly totals for both income and expenses
  */

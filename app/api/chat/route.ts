@@ -5,7 +5,15 @@ import {
   searchTransactions, 
   getAllMetadata,
   getAccountSnapshots,
-  calculateNetWorth 
+  calculateNetWorth,
+  getDistinctCategories,
+  getDistinctMerchants,
+  getDistinctAccountNames,
+  bulkUpdateTransactionsByMerchant,
+  bulkUpdateTransactionsByCategory,
+  bulkUpdateTransactionsByFilters,
+  getCategoryBreakdown,
+  getMonthlySpendingTrend
 } from '@/lib/db-tools';
 
 export const runtime = 'nodejs';
@@ -39,6 +47,11 @@ You have access to four data sources:
 - When filtering data, be flexible with date ranges and partial string matches
 - If you need to calculate aggregates (totals, averages), retrieve the relevant transactions and compute them
 - Use categorize_transaction tool when user clarifies a transaction type
+
+**Tool Reasoning:**
+- When calling any function, ALWAYS include a "reasoning" parameter (max 50 words)
+- Explain WHY you're calling this function and WHAT you intend to do with the results
+- Be specific about your plan (e.g., "Searching transactions from Jan-Dec 2024 to calculate total spending and identify top categories")
 
 **Transaction Clarification Optimization:**
 - When a system message includes "TRANSACTION_ID: [uuid]", use that ID directly with categorize_transaction
@@ -215,6 +228,62 @@ async function executeToolCall(name: string, args: any, effectiveUserId: string)
           error: 'Invalid chart configuration'
         };
       }
+    } else if (name === 'get_distinct_categories') {
+      functionResult = await getDistinctCategories(effectiveUserId, {
+        startDate: args.startDate,
+        endDate: args.endDate,
+        transactionType: args.transactionType,
+      });
+    } else if (name === 'get_distinct_merchants') {
+      functionResult = await getDistinctMerchants(effectiveUserId, {
+        startDate: args.startDate,
+        endDate: args.endDate,
+        category: args.category,
+      });
+    } else if (name === 'get_distinct_account_names') {
+      functionResult = await getDistinctAccountNames(effectiveUserId);
+    } else if (name === 'bulk_update_transactions_by_merchant') {
+      functionResult = await bulkUpdateTransactionsByMerchant(
+        effectiveUserId,
+        args.merchant,
+        {
+          category: args.category,
+          transactionType: args.transactionType,
+          spendClassification: args.spendClassification,
+        },
+        {
+          startDate: args.startDate,
+          endDate: args.endDate,
+        }
+      );
+    } else if (name === 'bulk_update_transactions_by_category') {
+      functionResult = await bulkUpdateTransactionsByCategory(
+        effectiveUserId,
+        args.oldCategory,
+        args.newCategory,
+        {
+          startDate: args.startDate,
+          endDate: args.endDate,
+        }
+      );
+    } else if (name === 'bulk_update_transactions_by_filters') {
+      functionResult = await bulkUpdateTransactionsByFilters(
+        effectiveUserId,
+        args.filters || {},
+        args.updates || {}
+      );
+    } else if (name === 'get_category_breakdown') {
+      functionResult = await getCategoryBreakdown(
+        effectiveUserId,
+        args.months || 6,
+        args.specificMonth
+      );
+    } else if (name === 'get_monthly_spending_trend') {
+      functionResult = await getMonthlySpendingTrend(
+        effectiveUserId,
+        args.months || 6,
+        args.specificMonth
+      );
     } else {
       functionResult = { error: 'Unknown function' };
     }
@@ -257,6 +326,10 @@ export async function POST(request: NextRequest) {
             parameters: {
               type: SchemaType.OBJECT,
               properties: {
+                reasoning: {
+                  type: SchemaType.STRING,
+                  description: 'Explain why you are calling this function and what you plan to do with the results (max 50 words)',
+                },
                 documentType: {
                   type: SchemaType.STRING,
                   description: 'Filter by document type: bank_statement, credit_card_statement, or unknown',
@@ -286,6 +359,7 @@ export async function POST(request: NextRequest) {
                   description: 'Filter by maximum new balance',
                 },
               },
+              required: ['reasoning'],
             },
           },
           {
@@ -294,6 +368,10 @@ export async function POST(request: NextRequest) {
             parameters: {
               type: SchemaType.OBJECT,
               properties: {
+                reasoning: {
+                  type: SchemaType.STRING,
+                  description: 'Explain why you are calling this function and what you plan to do with the results (max 50 words)',
+                },
                 accountName: {
                   type: SchemaType.STRING,
                   description: 'Filter by account name/nickname (partial match, case-insensitive). IMPORTANT: Use this to query transactions from a specific account across multiple statement periods.',
@@ -327,6 +405,7 @@ export async function POST(request: NextRequest) {
                   description: 'Filter by maximum transaction amount',
                 },
               },
+              required: ['reasoning'],
             },
           },
           {
@@ -334,7 +413,13 @@ export async function POST(request: NextRequest) {
             description: 'Retrieve the full metadata text blob containing markdown summaries from all uploaded statements. Use sparingly.',
             parameters: {
               type: SchemaType.OBJECT,
-              properties: {},
+              properties: {
+                reasoning: {
+                  type: SchemaType.STRING,
+                  description: 'Explain why you are calling this function and what you plan to do with the results (max 50 words)',
+                },
+              },
+              required: ['reasoning'],
             },
           },
           {
@@ -343,6 +428,10 @@ export async function POST(request: NextRequest) {
             parameters: {
               type: SchemaType.OBJECT,
               properties: {
+                reasoning: {
+                  type: SchemaType.STRING,
+                  description: 'Explain why you are calling this function and what you plan to do with the results (max 50 words)',
+                },
                 transaction_id: {
                   type: SchemaType.STRING,
                   description: 'The ID of the transaction to categorize',
@@ -352,7 +441,7 @@ export async function POST(request: NextRequest) {
                   description: 'The transaction type: income, expense, transfer, or other',
                 },
               },
-              required: ['transaction_id', 'transaction_type'],
+              required: ['reasoning', 'transaction_id', 'transaction_type'],
             },
           },
           {
@@ -361,6 +450,10 @@ export async function POST(request: NextRequest) {
             parameters: {
               type: SchemaType.OBJECT,
               properties: {
+                reasoning: {
+                  type: SchemaType.STRING,
+                  description: 'Explain why you are calling this function and what you plan to do with the results (max 50 words)',
+                },
                 accountName: {
                   type: SchemaType.STRING,
                   description: 'Optional: Filter by account name',
@@ -374,6 +467,7 @@ export async function POST(request: NextRequest) {
                   description: 'Optional: End date (YYYY-MM-DD)',
                 },
               },
+              required: ['reasoning'],
             },
           },
           {
@@ -382,12 +476,16 @@ export async function POST(request: NextRequest) {
             parameters: {
               type: SchemaType.OBJECT,
               properties: {
+                reasoning: {
+                  type: SchemaType.STRING,
+                  description: 'Explain why you are calling this function and what you plan to do with the results (max 50 words)',
+                },
                 date: {
                   type: SchemaType.STRING,
                   description: 'The date to calculate net worth for (YYYY-MM-DD)',
                 },
               },
-              required: ['date'],
+              required: ['reasoning', 'date'],
             },
           },
           {
@@ -396,6 +494,10 @@ export async function POST(request: NextRequest) {
             parameters: {
               type: SchemaType.OBJECT,
               properties: {
+                reasoning: {
+                  type: SchemaType.STRING,
+                  description: 'Explain why you are calling this function and what you plan to do with the results (max 50 words)',
+                },
                 type: {
                   type: SchemaType.STRING,
                   description: 'Chart type: line (for trends over time), bar (for comparisons), pie (for breakdowns/percentages), area (for cumulative trends)',
@@ -443,7 +545,255 @@ export async function POST(request: NextRequest) {
                   description: 'Whether to format values as currency (true for monetary amounts)',
                 },
               },
-              required: ['type', 'title', 'description', 'data'],
+              required: ['reasoning', 'type', 'title', 'description', 'data'],
+            },
+          },
+          {
+            name: 'get_distinct_categories',
+            description: 'Get a list of all distinct transaction categories with counts. Useful for discovering what categories exist.',
+            parameters: {
+              type: SchemaType.OBJECT,
+              properties: {
+                reasoning: {
+                  type: SchemaType.STRING,
+                  description: 'Explain why you are calling this function and what you plan to do with the results (max 50 words)',
+                },
+                startDate: {
+                  type: SchemaType.STRING,
+                  description: 'Optional: Filter categories from transactions on or after this date (YYYY-MM-DD)',
+                },
+                endDate: {
+                  type: SchemaType.STRING,
+                  description: 'Optional: Filter categories from transactions on or before this date (YYYY-MM-DD)',
+                },
+                transactionType: {
+                  type: SchemaType.STRING,
+                  description: 'Optional: Filter by transaction type (income, expense, transfer, other)',
+                },
+              },
+              required: ['reasoning'],
+            },
+          },
+          {
+            name: 'get_distinct_merchants',
+            description: 'Get a list of all distinct merchants with transaction counts. Useful for discovering what merchants exist.',
+            parameters: {
+              type: SchemaType.OBJECT,
+              properties: {
+                reasoning: {
+                  type: SchemaType.STRING,
+                  description: 'Explain why you are calling this function and what you plan to do with the results (max 50 words)',
+                },
+                startDate: {
+                  type: SchemaType.STRING,
+                  description: 'Optional: Filter merchants from transactions on or after this date (YYYY-MM-DD)',
+                },
+                endDate: {
+                  type: SchemaType.STRING,
+                  description: 'Optional: Filter merchants from transactions on or before this date (YYYY-MM-DD)',
+                },
+                category: {
+                  type: SchemaType.STRING,
+                  description: 'Optional: Filter by category',
+                },
+              },
+              required: ['reasoning'],
+            },
+          },
+          {
+            name: 'get_distinct_account_names',
+            description: 'Get a list of all distinct account names. Useful for discovering what accounts the user has.',
+            parameters: {
+              type: SchemaType.OBJECT,
+              properties: {
+                reasoning: {
+                  type: SchemaType.STRING,
+                  description: 'Explain why you are calling this function and what you plan to do with the results (max 50 words)',
+                },
+              },
+              required: ['reasoning'],
+            },
+          },
+          {
+            name: 'bulk_update_transactions_by_merchant',
+            description: 'Bulk update all transactions from a specific merchant. Useful for recategorizing all transactions from a merchant at once.',
+            parameters: {
+              type: SchemaType.OBJECT,
+              properties: {
+                reasoning: {
+                  type: SchemaType.STRING,
+                  description: 'Explain why you are calling this function and what you plan to do with the results (max 50 words)',
+                },
+                merchant: {
+                  type: SchemaType.STRING,
+                  description: 'The merchant name to match (partial match, case-insensitive)',
+                },
+                category: {
+                  type: SchemaType.STRING,
+                  description: 'Optional: New category to set',
+                },
+                transactionType: {
+                  type: SchemaType.STRING,
+                  description: 'Optional: New transaction type to set (income, expense, transfer, other)',
+                },
+                spendClassification: {
+                  type: SchemaType.STRING,
+                  description: 'Optional: New spend classification (essential, discretionary)',
+                },
+                startDate: {
+                  type: SchemaType.STRING,
+                  description: 'Optional: Only update transactions on or after this date (YYYY-MM-DD)',
+                },
+                endDate: {
+                  type: SchemaType.STRING,
+                  description: 'Optional: Only update transactions on or before this date (YYYY-MM-DD)',
+                },
+              },
+              required: ['reasoning', 'merchant'],
+            },
+          },
+          {
+            name: 'bulk_update_transactions_by_category',
+            description: 'Bulk update all transactions in a specific category to a new category. Useful for renaming or merging categories.',
+            parameters: {
+              type: SchemaType.OBJECT,
+              properties: {
+                reasoning: {
+                  type: SchemaType.STRING,
+                  description: 'Explain why you are calling this function and what you plan to do with the results (max 50 words)',
+                },
+                oldCategory: {
+                  type: SchemaType.STRING,
+                  description: 'The current category to match (partial match, case-insensitive)',
+                },
+                newCategory: {
+                  type: SchemaType.STRING,
+                  description: 'The new category name to set',
+                },
+                startDate: {
+                  type: SchemaType.STRING,
+                  description: 'Optional: Only update transactions on or after this date (YYYY-MM-DD)',
+                },
+                endDate: {
+                  type: SchemaType.STRING,
+                  description: 'Optional: Only update transactions on or before this date (YYYY-MM-DD)',
+                },
+              },
+              required: ['reasoning', 'oldCategory', 'newCategory'],
+            },
+          },
+          {
+            name: 'bulk_update_transactions_by_filters',
+            description: 'Bulk update transactions matching multiple filter criteria. Most flexible option for complex bulk updates.',
+            parameters: {
+              type: SchemaType.OBJECT,
+              properties: {
+                reasoning: {
+                  type: SchemaType.STRING,
+                  description: 'Explain why you are calling this function and what you plan to do with the results (max 50 words)',
+                },
+                filters: {
+                  type: SchemaType.OBJECT,
+                  description: 'Filter criteria to match transactions',
+                  properties: {
+                    merchant: {
+                      type: SchemaType.STRING,
+                      description: 'Filter by merchant name (partial match)',
+                    },
+                    category: {
+                      type: SchemaType.STRING,
+                      description: 'Filter by category (partial match)',
+                    },
+                    transactionType: {
+                      type: SchemaType.STRING,
+                      description: 'Filter by transaction type',
+                    },
+                    startDate: {
+                      type: SchemaType.STRING,
+                      description: 'Filter transactions on or after this date (YYYY-MM-DD)',
+                    },
+                    endDate: {
+                      type: SchemaType.STRING,
+                      description: 'Filter transactions on or before this date (YYYY-MM-DD)',
+                    },
+                    minAmount: {
+                      type: SchemaType.NUMBER,
+                      description: 'Filter by minimum amount',
+                    },
+                    maxAmount: {
+                      type: SchemaType.NUMBER,
+                      description: 'Filter by maximum amount',
+                    },
+                    accountName: {
+                      type: SchemaType.STRING,
+                      description: 'Filter by account name (partial match)',
+                    },
+                  },
+                },
+                updates: {
+                  type: SchemaType.OBJECT,
+                  description: 'Fields to update on matching transactions',
+                  properties: {
+                    category: {
+                      type: SchemaType.STRING,
+                      description: 'New category to set',
+                    },
+                    transactionType: {
+                      type: SchemaType.STRING,
+                      description: 'New transaction type to set',
+                    },
+                    spendClassification: {
+                      type: SchemaType.STRING,
+                      description: 'New spend classification to set',
+                    },
+                  },
+                },
+              },
+              required: ['reasoning', 'filters', 'updates'],
+            },
+          },
+          {
+            name: 'get_category_breakdown',
+            description: 'Get spending breakdown by category with totals, counts, and percentages. More detailed than get_distinct_categories.',
+            parameters: {
+              type: SchemaType.OBJECT,
+              properties: {
+                reasoning: {
+                  type: SchemaType.STRING,
+                  description: 'Explain why you are calling this function and what you plan to do with the results (max 50 words)',
+                },
+                months: {
+                  type: SchemaType.NUMBER,
+                  description: 'Number of months to analyze (default: 6)',
+                },
+                specificMonth: {
+                  type: SchemaType.STRING,
+                  description: 'Optional: Analyze a specific month (YYYY-MM format)',
+                },
+              },
+              required: ['reasoning'],
+            },
+          },
+          {
+            name: 'get_monthly_spending_trend',
+            description: 'Get monthly spending totals over time. Useful for trend analysis.',
+            parameters: {
+              type: SchemaType.OBJECT,
+              properties: {
+                reasoning: {
+                  type: SchemaType.STRING,
+                  description: 'Explain why you are calling this function and what you plan to do with the results (max 50 words)',
+                },
+                months: {
+                  type: SchemaType.NUMBER,
+                  description: 'Number of months to analyze (default: 6)',
+                },
+                specificMonth: {
+                  type: SchemaType.STRING,
+                  description: 'Optional: Get spending for a specific month (YYYY-MM format)',
+                },
+              },
+              required: ['reasoning'],
             },
           },
         ],
@@ -503,7 +853,11 @@ export async function POST(request: NextRequest) {
               const { name, args } = call;
               
               // Send tool call event
-              sendEvent('tool_call', { name, args });
+              sendEvent('tool_call', { 
+                name, 
+                args,
+                reasoning: args.reasoning 
+              });
 
               const startTime = Date.now();
               const functionResult = await executeToolCall(name, args, effectiveUserId);
