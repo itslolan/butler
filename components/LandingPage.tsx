@@ -77,141 +77,80 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Dashboard Preview */}
-      <section className="px-6 pb-32">
-        <div className="max-w-6xl mx-auto">
-          <div className="relative rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-gray-900 shadow-2xl overflow-hidden group">
-            <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-blue-500/20 to-transparent"></div>
-            
-            {/* Abstract Dashboard UI SVG */}
-            <div className="w-full aspect-[16/10] bg-slate-100 dark:bg-gray-950 p-4 md:p-8 flex items-center justify-center overflow-hidden">
-              <div className="w-full h-full max-w-5xl bg-white dark:bg-gray-900 rounded-xl shadow-xl border border-slate-200 dark:border-slate-800 flex overflow-hidden relative">
-                
-                {/* Left Column - Data Viz */}
-                <div className="flex-1 p-6 border-r border-slate-100 dark:border-slate-800 flex flex-col gap-6 bg-slate-50/30 dark:bg-gray-900/50">
-                  {/* Header / KPIs */}
-                  <div className="grid grid-cols-3 gap-4">
-                    {[1, 2, 3].map((i) => (
-                      <div key={i} className="h-20 rounded-lg bg-white dark:bg-gray-800 border border-slate-100 dark:border-slate-700 p-3 flex flex-col justify-between shadow-sm">
-                        <div className="w-16 h-2 rounded-full bg-slate-100 dark:bg-gray-700"></div>
-                        <div className="w-10 h-4 rounded bg-blue-100 dark:bg-blue-900/30"></div>
-                      </div>
-                    ))}
-                  </div>
+      {/* Why not just use ChatGPT? */}
+      <section className="py-24 px-6 bg-slate-50/50 dark:bg-gray-900/50 border-y border-slate-100 dark:border-slate-800">
+        <div className="max-w-3xl mx-auto">
+          <div className="text-center mb-16">
+            <h2 className="text-3xl md:text-4xl font-bold text-slate-900 dark:text-white mb-6">Why not just use ChatGPT?</h2>
+          </div>
 
-                  {/* Main Chart Area */}
-                  <div className="flex-1 rounded-xl bg-white dark:bg-gray-800 border border-slate-100 dark:border-slate-700 p-4 shadow-sm relative overflow-hidden">
-                     <div className="flex justify-between items-center mb-6">
-                        <div className="w-32 h-3 rounded-full bg-slate-100 dark:bg-gray-700"></div>
-                        <div className="w-16 h-2 rounded-full bg-slate-100 dark:bg-gray-700"></div>
-                     </div>
-                     {/* Animated Line Chart SVG */}
-                     <svg className="w-full h-full absolute bottom-0 left-0 right-0 p-4" preserveAspectRatio="none" viewBox="0 0 100 50">
-                        <path 
-                          d="M0,40 Q10,35 20,38 T40,30 T60,20 T80,25 T100,10" 
-                          fill="none" 
-                          stroke="url(#gradient)" 
-                          strokeWidth="2"
-                          className="drop-shadow-md"
-                        />
-                        <path 
-                          d="M0,40 Q10,35 20,38 T40,30 T60,20 T80,25 T100,10 V50 H0 Z" 
-                          fill="url(#fillGradient)" 
-                          className="opacity-20"
-                        />
-                        <defs>
-                          <linearGradient id="gradient" x1="0" y1="0" x2="1" y2="0">
-                            <stop offset="0%" stopColor="#3B82F6" />
-                            <stop offset="100%" stopColor="#6366F1" />
-                          </linearGradient>
-                          <linearGradient id="fillGradient" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor="#3B82F6" />
-                            <stop offset="100%" stopColor="transparent" />
-                          </linearGradient>
-                        </defs>
-                        {/* Animated dots */}
-                        <circle cx="20" cy="38" r="1.5" className="fill-blue-500 animate-pulse" />
-                        <circle cx="60" cy="20" r="1.5" className="fill-indigo-500 animate-pulse delay-75" />
-                        <circle cx="100" cy="10" r="1.5" className="fill-indigo-600 animate-pulse delay-150" />
-                     </svg>
-                  </div>
-
-                  {/* Secondary Charts */}
-                  <div className="h-1/3 grid grid-cols-2 gap-4">
-                    <div className="rounded-xl bg-white dark:bg-gray-800 border border-slate-100 dark:border-slate-700 p-4 shadow-sm flex items-center justify-center relative">
-                      {/* Pie Chart Representation */}
-                      <svg viewBox="0 0 32 32" className="w-20 h-20 transform -rotate-90">
-                        <circle r="16" cx="16" cy="16" fill="transparent" stroke="#E2E8F0" strokeWidth="32" className="dark:stroke-gray-700"/>
-                        <circle r="16" cx="16" cy="16" fill="transparent" stroke="#3B82F6" strokeWidth="32" strokeDasharray="70 100" className="opacity-80" />
-                        <circle r="16" cx="16" cy="16" fill="transparent" stroke="#6366F1" strokeWidth="32" strokeDasharray="30 100" strokeDashoffset="-70" className="opacity-80" />
-                      </svg>
-                    </div>
-                    <div className="rounded-xl bg-white dark:bg-gray-800 border border-slate-100 dark:border-slate-700 p-4 shadow-sm flex flex-col gap-2 justify-end">
-                       <div className="w-full h-2 bg-slate-100 dark:bg-gray-700 rounded-full overflow-hidden">
-                          <div className="h-full w-3/4 bg-blue-500 rounded-full"></div>
-                       </div>
-                       <div className="w-full h-2 bg-slate-100 dark:bg-gray-700 rounded-full overflow-hidden">
-                          <div className="h-full w-1/2 bg-indigo-500 rounded-full"></div>
-                       </div>
-                    </div>
-                  </div>
+          <div className="space-y-12">
+            <div className="flex gap-6 items-start">
+                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400 mt-1">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                 </div>
-
-                {/* Right Column - Chat Interface */}
-                <div className="w-1/3 flex flex-col bg-white dark:bg-gray-900 relative">
-                  <div className="h-14 border-b border-slate-100 dark:border-slate-800 flex items-center px-4 gap-2">
-                    <div className="w-3 h-3 rounded-full bg-red-400/20"></div>
-                    <div className="w-3 h-3 rounded-full bg-yellow-400/20"></div>
-                    <div className="w-3 h-3 rounded-full bg-green-400/20"></div>
-                  </div>
-                  
-                  <div className="flex-1 p-4 space-y-4 overflow-hidden relative">
-                     {/* Chat Bubbles */}
-                     <div className="flex items-start gap-2">
-                        <div className="w-6 h-6 rounded-full bg-slate-200 dark:bg-gray-700 flex-shrink-0"></div>
-                        <div className="bg-slate-100 dark:bg-gray-800 p-2 rounded-lg rounded-tl-none text-[10px] text-slate-400 w-3/4 space-y-1">
-                           <div className="w-full h-1.5 bg-slate-300 dark:bg-gray-600 rounded"></div>
-                           <div className="w-2/3 h-1.5 bg-slate-300 dark:bg-gray-600 rounded"></div>
-                        </div>
-                     </div>
-
-                     <div className="flex items-start gap-2 flex-row-reverse">
-                        <div className="w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900/30 flex-shrink-0"></div>
-                        <div className="bg-blue-600 p-2 rounded-lg rounded-tr-none w-2/3">
-                           <div className="w-full h-1.5 bg-white/40 rounded mb-1"></div>
-                           <div className="w-1/2 h-1.5 bg-white/40 rounded"></div>
-                        </div>
-                     </div>
-
-                     <div className="flex items-start gap-2 animate-pulse">
-                        <div className="w-6 h-6 rounded-full bg-slate-200 dark:bg-gray-700 flex-shrink-0"></div>
-                        <div className="bg-slate-100 dark:bg-gray-800 p-2 rounded-lg rounded-tl-none w-1/2 space-y-1">
-                           <div className="w-3/4 h-1.5 bg-slate-300 dark:bg-gray-600 rounded"></div>
-                        </div>
-                     </div>
-                     
-                     {/* Floating 'Processing' Card */}
-                     <div className="absolute bottom-4 left-4 right-4 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-slate-100 dark:border-slate-700 p-3 flex items-center gap-3 animate-[bounce_3s_infinite]">
-                        <div className="w-8 h-8 rounded bg-red-100 dark:bg-red-900/20 flex items-center justify-center text-red-500">
-                           <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" /><path fillRule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clipRule="evenodd" /></svg>
-                        </div>
-                        <div className="flex-1">
-                           <div className="h-2 w-20 bg-slate-200 dark:bg-gray-600 rounded mb-1"></div>
-                           <div className="h-1.5 w-12 bg-slate-100 dark:bg-gray-700 rounded"></div>
-                        </div>
-                        <div className="h-4 w-4 rounded-full border-2 border-blue-500 border-t-transparent animate-spin"></div>
-                     </div>
-                  </div>
+                <div>
+                    <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Advanced Duplicate Detection</h3>
+                    <p className="text-lg text-slate-600 dark:text-slate-400 leading-relaxed">
+                        Adphex does advanced duplicate detection so that you don&apos;t have to worry about whether you uploaded your document twice or more times.
+                    </p>
                 </div>
-
-              </div>
             </div>
+
+            <div className="flex gap-6 items-start">
+                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-600 dark:text-indigo-400 mt-1">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" /></svg>
+                </div>
+                <div>
+                    <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Interactive Metrics</h3>
+                    <p className="text-lg text-slate-600 dark:text-slate-400 leading-relaxed">
+                        Adphex allows you to track important metrics using interactive graphs and diagrams, allowing you to &quot;just glance&quot; to understand their financial health.
+                    </p>
+                </div>
+            </div>
+
+            <div className="flex gap-6 items-start">
+                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center text-green-600 dark:text-green-400 mt-1">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                </div>
+                <div>
+                    <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Historic Financial Data</h3>
+                    <p className="text-lg text-slate-600 dark:text-slate-400 leading-relaxed">
+                        Adphex allows the user to ask any financial question and get answers based on years of historic financial data.
+                    </p>
+                </div>
+            </div>
+
+             <div className="flex gap-6 items-start">
+                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-purple-600 dark:text-purple-400 mt-1">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                </div>
+                <div>
+                    <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Personalized Tips</h3>
+                    <p className="text-lg text-slate-600 dark:text-slate-400 leading-relaxed">
+                        Adphex gives personalized tips on saving more money and improving financial health.
+                    </p>
+                </div>
+            </div>
+
+             <div className="flex gap-6 items-start">
+                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-yellow-100 dark:bg-yellow-900/30 flex items-center justify-center text-yellow-600 dark:text-yellow-400 mt-1">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                </div>
+                <div>
+                    <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Your Personal Butler</h3>
+                    <p className="text-lg text-slate-600 dark:text-slate-400 leading-relaxed">
+                        Adphex is your own personal butler who handles all your money for you.
+                    </p>
+                </div>
+            </div>
+
           </div>
         </div>
       </section>
 
       {/* Features Grid */}
-      <section id="features" className="py-24 bg-slate-50 dark:bg-gray-900/50">
+      <section id="features" className="py-24 bg-white dark:bg-gray-900">
         <div className="max-w-6xl mx-auto px-6">
           <div className="text-center mb-16">
             <h2 className="text-3xl font-bold text-slate-900 dark:text-white mb-4">Everything you need to understand your cashflow</h2>
@@ -222,7 +161,7 @@ export default function LandingPage() {
 
           <div className="grid md:grid-cols-3 gap-8">
             {features.map((feature, i) => (
-              <div key={i} className="bg-white dark:bg-gray-900 p-8 rounded-2xl border border-slate-100 dark:border-slate-800 hover:border-blue-100 dark:hover:border-blue-900/30 hover:shadow-lg transition-all group">
+              <div key={i} className="bg-slate-50 dark:bg-gray-950 p-8 rounded-2xl border border-slate-100 dark:border-slate-800 hover:border-blue-100 dark:hover:border-blue-900/30 hover:shadow-lg transition-all group">
                 <div className="w-12 h-12 bg-blue-50 dark:bg-blue-900/20 rounded-xl flex items-center justify-center text-blue-600 dark:text-blue-400 mb-6 group-hover:scale-110 transition-transform duration-300">
                   {feature.icon}
                 </div>
@@ -232,80 +171,6 @@ export default function LandingPage() {
                 </p>
               </div>
             ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Why not just use ChatGPT? */}
-      <section className="py-24 px-6 bg-gradient-to-br from-blue-50 via-indigo-50/30 to-purple-50/20 dark:from-gray-900 dark:via-blue-950/30 dark:to-purple-950/20 border-y border-slate-200 dark:border-slate-800">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-16">
-            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-sm font-semibold border border-blue-200 dark:border-blue-800 mb-6">
-              Why Adphex?
-            </div>
-            <h2 className="text-4xl md:text-5xl font-bold text-slate-900 dark:text-white mb-6">Why not just use ChatGPT?</h2>
-            <p className="text-xl text-slate-600 dark:text-slate-400 max-w-2xl mx-auto leading-relaxed">
-              ChatGPT is great, but Adphex is built specifically for your finances. Here&apos;s why it&apos;s better.
-            </p>
-          </div>
-
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8 mb-8">
-            {/* Item 1: Advanced Duplicate Detection */}
-            <div className="bg-white dark:bg-gray-900 p-8 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-indigo-200 dark:hover:border-indigo-900/50 hover:shadow-xl transition-all group">
-              <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-600 dark:from-indigo-600 dark:to-indigo-700 flex items-center justify-center text-white mb-6 group-hover:scale-110 transition-transform duration-300 shadow-lg">
-                <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-              </div>
-              <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-3">Advanced Duplicate Detection</h3>
-              <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
-                Adphex does advanced duplicate detection so that you don&apos;t have to worry about whether you uploaded your document twice or more times.
-              </p>
-            </div>
-
-            {/* Item 2: Interactive Metrics */}
-            <div className="bg-white dark:bg-gray-900 p-8 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-blue-200 dark:hover:border-blue-900/50 hover:shadow-xl transition-all group">
-              <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 dark:from-blue-600 dark:to-blue-700 flex items-center justify-center text-white mb-6 group-hover:scale-110 transition-transform duration-300 shadow-lg">
-                <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" /></svg>
-              </div>
-              <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-3">Interactive Metrics</h3>
-              <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
-                Adphex allows you to track important metrics using interactive graphs and diagrams, allowing you to &quot;just glance&quot; to understand your financial health.
-              </p>
-            </div>
-
-            {/* Item 3: Historic Financial Data */}
-            <div className="bg-white dark:bg-gray-900 p-8 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-green-200 dark:hover:border-green-900/50 hover:shadow-xl transition-all group">
-              <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-green-500 to-green-600 dark:from-green-600 dark:to-green-700 flex items-center justify-center text-white mb-6 group-hover:scale-110 transition-transform duration-300 shadow-lg">
-                <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-              </div>
-              <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-3">Historic Financial Data</h3>
-              <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
-                Adphex allows you to ask any financial question and get answers based on years of historic financial data.
-              </p>
-            </div>
-          </div>
-
-          <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
-            {/* Item 4: Personalized Tips */}
-            <div className="bg-white dark:bg-gray-900 p-8 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-purple-200 dark:hover:border-purple-900/50 hover:shadow-xl transition-all group">
-              <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-purple-500 to-purple-600 dark:from-purple-600 dark:to-purple-700 flex items-center justify-center text-white mb-6 group-hover:scale-110 transition-transform duration-300 shadow-lg">
-                <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-              </div>
-              <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-3">Personalized Tips</h3>
-              <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
-                Adphex gives personalized tips on saving more money and improving financial health.
-              </p>
-            </div>
-
-            {/* Item 5: Personal Butler */}
-            <div className="bg-white dark:bg-gray-900 p-8 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-yellow-200 dark:hover:border-yellow-900/50 hover:shadow-xl transition-all group">
-              <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-yellow-500 to-yellow-600 dark:from-yellow-600 dark:to-yellow-700 flex items-center justify-center text-white mb-6 group-hover:scale-110 transition-transform duration-300 shadow-lg">
-                <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
-              </div>
-              <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-3">Your Personal Assistant</h3>
-              <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
-                Adphex is your own personal assistant who handles all your money for you.
-              </p>
-            </div>
           </div>
         </div>
       </section>
@@ -398,4 +263,3 @@ const steps = [
     description: 'Chat with your data. "How much did I spend on coffee last month?" or "What is my net worth trend?"',
   },
 ];
-
