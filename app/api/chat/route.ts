@@ -856,7 +856,7 @@ export async function POST(request: NextRequest) {
               sendEvent('tool_call', { 
                 name, 
                 args,
-                reasoning: args.reasoning 
+                reasoning: (args as any)?.reasoning 
               });
 
               const startTime = Date.now();
