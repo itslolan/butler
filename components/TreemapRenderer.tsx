@@ -89,7 +89,7 @@ export default function TreemapRenderer({ data, currency, height = 400, showLege
                   fontWeight="500"
                   style={{ pointerEvents: 'none' }}
                 >
-                  {currency ? formatCurrency(size) : size}
+                  {currency ? formatCurrency(size, 'USD') : size}
                 </text>
               </>
             )}
@@ -108,7 +108,7 @@ export default function TreemapRenderer({ data, currency, height = 400, showLege
           <p className="font-semibold text-gray-900 dark:text-white text-sm">{data.group}</p>
           <p className="font-medium text-gray-700 dark:text-gray-200 text-xs mt-1">{data.name}</p>
           <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-            {currency ? formatCurrency(data.size) : data.size}
+            {currency ? formatCurrency(data.size, 'USD') : data.size}
           </p>
         </div>
       );
@@ -160,7 +160,7 @@ export default function TreemapRenderer({ data, currency, height = 400, showLege
                   {groupName}
                 </h4>
                 <span className="text-xs text-gray-500 dark:text-gray-400 ml-auto">
-                  {currency ? formatCurrency(groupData.total) : groupData.total}
+                  {currency ? formatCurrency(groupData.total, 'USD') : groupData.total}
                 </span>
               </div>
               

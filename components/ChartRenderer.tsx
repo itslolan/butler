@@ -45,7 +45,7 @@ export default function ChartRenderer({ config, height = 300, className, showLeg
           <p className="font-semibold text-gray-900 dark:text-white mb-1 text-xs">{label}</p>
           {payload.map((entry: any, index: number) => (
             <p key={index} className="text-xs font-medium" style={{ color: entry.color }}>
-              {entry.name}: {currency ? formatCurrency(entry.value) : entry.value.toLocaleString()}
+              {entry.name}: {currency ? formatCurrency(entry.value, 'USD') : entry.value.toLocaleString()}
             </p>
           ))}
         </div>
@@ -57,7 +57,7 @@ export default function ChartRenderer({ config, height = 300, className, showLeg
   // Format axis ticks
   const formatYAxisTick = (value: number) => {
     if (currency) {
-      return formatCompactCurrency(value);
+      return formatCompactCurrency(value, 'USD');
     }
     return value.toLocaleString();
   };
