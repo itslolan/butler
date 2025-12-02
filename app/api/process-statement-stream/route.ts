@@ -34,6 +34,7 @@ Return a JSON object with this exact structure:
       "amount": number,
       "transactionType": "income" | "expense" | "transfer" | "other",
       "category": string or null,
+      "spendClassification": "essential" | "discretionary" | null,
       "description": string or null,
       "confidence": number (0.0 to 1.0),
       "clarificationNeeded": boolean,
@@ -82,6 +83,21 @@ Return a JSON object with this exact structure:
 - Identify all income transactions and list separately in incomeTransactions array
 - Detect payment frequency patterns (monthly on day X, biweekly, irregular)
 - Include confidence scores for income identification
+
+**Spend Classification (Essential vs Discretionary):**
+For expense transactions, classify as:
+- **essential**: Necessary living expenses - Rent, Mortgage, Utilities (electric, water, gas, internet, phone), Groceries, Healthcare, Insurance, Transportation/Gas, Loans, Basic necessities
+- **discretionary**: Optional/lifestyle expenses - Dining out, Entertainment, Shopping, Travel, Subscriptions (streaming, gym), Electronics, Hobbies, Alcohol/Bars, Non-essential purchases
+- **null**: For income, transfers, or if uncertain
+
+Examples:
+- Rent payment → essential
+- Electric bill → essential
+- Grocery store → essential
+- Gas station → essential
+- Restaurant → discretionary
+- Amazon shopping → discretionary
+- Netflix subscription → discretionary
 
 Extract all transactions visible in the document. Categorize them logically (Food, Travel, Utilities, Entertainment, Shopping, etc.).
 For amounts, use positive numbers for credits/deposits and negative numbers for debits/charges.
@@ -410,6 +426,7 @@ export async function POST(request: NextRequest) {
             category: txn.category || null,
             description: txn.description || null,
             transaction_type: txn.transactionType || null,
+            spend_classification: txn.spendClassification || null,
             needs_clarification: txn.clarificationNeeded || false,
             clarification_question: txn.clarificationQuestion || null,
             suggested_actions: txn.suggestedActions || null,

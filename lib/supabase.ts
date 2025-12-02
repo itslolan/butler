@@ -46,6 +46,7 @@ export interface Transaction {
   category?: string | null;
   description?: string | null;
   transaction_type?: 'income' | 'expense' | 'transfer' | 'other' | null;
+  spend_classification?: 'essential' | 'discretionary' | null;
   needs_clarification?: boolean;
   clarification_question?: string | null;
   suggested_actions?: string[] | null;

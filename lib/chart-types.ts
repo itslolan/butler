@@ -63,5 +63,6 @@ export interface CategoryData {
   total: number;
   percentage: number;
   count: number;
+  spend_classification?: string | null;
 }
 

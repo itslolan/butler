@@ -567,11 +567,11 @@ export async function getCategoryBreakdown(
   userId: string,
   months: number = 6,
   specificMonth?: string // Optional: 'YYYY-MM'
-): Promise<Array<{ category: string; total: number; percentage: number; count: number }>> {
+): Promise<Array<{ category: string; total: number; percentage: number; count: number; spend_classification?: string | null }>> {
   
   let query = supabase
     .from('transactions')
-    .select('category, amount, transaction_type, date')
+    .select('category, amount, transaction_type, date, spend_classification')
     .eq('user_id', userId)
     .in('transaction_type', ['expense', 'other']);
 
@@ -604,17 +604,18 @@ export async function getCategoryBreakdown(
   }
 
   // Aggregate by category
-  const categoryMap = new Map<string, { total: number; count: number }>();
+  const categoryMap = new Map<string, { total: number; count: number; spend_classification?: string | null }>();
   let grandTotal = 0;
   
   for (const txn of data) {
     const category = txn.category || 'Uncategorized';
     const absAmount = Math.abs(Number(txn.amount));
     
-    const current = categoryMap.get(category) || { total: 0, count: 0 };
+    const current = categoryMap.get(category) || { total: 0, count: 0, spend_classification: txn.spend_classification };
     categoryMap.set(category, {
       total: current.total + absAmount,
       count: current.count + 1,
+      spend_classification: current.spend_classification || txn.spend_classification, // Use first non-null value
     });
     
     grandTotal += absAmount;
@@ -626,6 +627,7 @@ export async function getCategoryBreakdown(
     total: data.total,
     count: data.count,
     percentage: grandTotal > 0 ? (data.total / grandTotal) * 100 : 0,
+    spend_classification: data.spend_classification,
   }));
   
   // Sort by total descending

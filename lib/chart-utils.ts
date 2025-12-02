@@ -202,12 +202,15 @@ export function createSpendingTrendChart(monthlyData: MonthlyData[]): ChartConfi
 }
 
 /**
- * Category grouping definitions
+ * Category grouping definitions (DEPRECATED - now stored in database)
+ * Kept only as fallback for transactions without spend_classification
  */
-const CATEGORY_GROUPS: Record<string, 'Essentials' | 'Discretionary'> = {
+const CATEGORY_GROUPS_FALLBACK: Record<string, 'Essentials' | 'Discretionary'> = {
   // Essentials - necessary expenses
   'Groceries': 'Essentials',
   'Housing': 'Essentials',
+  'Rent': 'Essentials',
+  'Mortgage': 'Essentials',
   'Utilities': 'Essentials',
   'Gas/Automotive': 'Essentials',
   'Transportation': 'Essentials',
@@ -267,7 +270,18 @@ export function createCategoryBreakdownChart(categoryData: CategoryData[]): Char
   };
 
   categoryData.forEach(cat => {
-    const group = CATEGORY_GROUPS[cat.category] || 'Discretionary';
+    // Use database spend_classification if available, otherwise fall back to hardcoded mapping
+    let group: 'Essentials' | 'Discretionary';
+    
+    if (cat.spend_classification === 'essential') {
+      group = 'Essentials';
+    } else if (cat.spend_classification === 'discretionary') {
+      group = 'Discretionary';
+    } else {
+      // Fallback to hardcoded mapping for backwards compatibility
+      group = CATEGORY_GROUPS_FALLBACK[cat.category] || 'Discretionary';
+    }
+    
     grouped[group].push(cat);
   });
 
