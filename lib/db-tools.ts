@@ -495,7 +495,8 @@ export async function getMonthlySpendingTrend(
     .eq('user_id', userId)
     .in('transaction_type', ['expense', 'other'])
     .gte('date', startDate)
-    .order('date', { ascending: true });
+    .order('date', { ascending: true })
+    .limit(5000);
 
   if (endDate) {
     query = query.lte('date', endDate);
@@ -591,7 +592,7 @@ export async function getCategoryBreakdown(
     query = query.gte('date', startDate);
   }
   
-  const { data, error } = await query;
+  const { data, error } = await query.limit(5000);
 
   if (error) {
     throw new Error(`Failed to get category breakdown: ${error.message}`);
@@ -662,7 +663,8 @@ export async function getIncomeVsExpenses(
     .select('date, amount, transaction_type')
     .eq('user_id', userId)
     .gte('date', startDate)
-    .order('date', { ascending: true });
+    .order('date', { ascending: true })
+    .limit(5000);
 
   if (endDate) {
     query = query.lte('date', endDate);
