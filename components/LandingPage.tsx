@@ -236,6 +236,84 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* Why not just use ChatGPT? */}
+      <section className="py-24 px-6 bg-white dark:bg-gray-950 border-t border-slate-100 dark:border-slate-800">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-16">
+            <h2 className="text-3xl font-bold text-slate-900 dark:text-white mb-4">Why not just use ChatGPT?</h2>
+            <p className="text-slate-600 dark:text-slate-400 max-w-xl mx-auto">
+              ChatGPT is great, but Butler is built specifically for your finances. Here's why it's better.
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-12">
+            <div className="space-y-8">
+              <div className="flex gap-4">
+                <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                </div>
+                <div>
+                  <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">Advanced Duplicate Detection</h3>
+                  <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
+                    Don't worry about uploading the same document twice. Butler intelligently detects and merges duplicates so your financial data stays clean and accurate.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-4">
+                <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center text-blue-600 dark:text-blue-400">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" /></svg>
+                </div>
+                <div>
+                  <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">Interactive Visualizations</h3>
+                  <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
+                    "Just glance" to understand your financial health. Butler turns your data into interactive graphs and diagrams that make trends instantly visible.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-4">
+                <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-green-50 dark:bg-green-900/20 flex items-center justify-center text-green-600 dark:text-green-400">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                </div>
+                <div>
+                  <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">Long-term Financial Memory</h3>
+                  <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
+                    Ask any financial question based on years of history. Butler remembers every transaction from every statement you've ever uploaded.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-8">
+              <div className="flex gap-4">
+                <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-purple-50 dark:bg-purple-900/20 flex items-center justify-center text-purple-600 dark:text-purple-400">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                </div>
+                <div>
+                  <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">Personalized Financial Tips</h3>
+                  <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
+                    Get tailored advice on how to save more money and improve your financial health based on your actual spending habits.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-4">
+                <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-yellow-50 dark:bg-yellow-900/20 flex items-center justify-center text-yellow-600 dark:text-yellow-400">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                </div>
+                <div>
+                  <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">Your Personal Butler</h3>
+                  <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
+                    Butler handles all the boring money stuff for you. It's like having a dedicated personal assistant who cares about your financial success.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* How It Works */}
       <section className="py-24 px-6 border-t border-slate-100 dark:border-slate-800">
         <div className="max-w-4xl mx-auto">
