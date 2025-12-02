@@ -85,11 +85,19 @@ export default function VisualizationPanel({ userId = 'default-user', refreshTri
       if (incomeData && incomeData.data) {
         const totalIncome = incomeData.data.reduce((sum: number, d: any) => sum + (d.value || 0), 0);
         const totalExpenses = incomeData.data.reduce((sum: number, d: any) => sum + (d.value2 || 0), 0);
+        
+        // Extract currency - handle both boolean (old format) and string (new format)
+        let currencyCode = 'USD';
+        const rawCurrency = incomeData.currency || spendingData.currency || categoryData.currency;
+        if (typeof rawCurrency === 'string') {
+          currencyCode = rawCurrency;
+        }
+        
         setMetrics({
           totalIncome,
           totalExpenses,
           netResult: totalIncome - totalExpenses,
-          currency: incomeData.currency || spendingData.currency || categoryData.currency
+          currency: currencyCode
         });
       }
 
