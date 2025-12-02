@@ -252,6 +252,14 @@ Please reply with the correct category or explain what this transaction is.`;
     await sendMessage(input);
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Submit on Enter, but allow Shift+Enter for new lines
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit(e as any);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full bg-white dark:bg-gray-900">
       {/* Messages container */}
@@ -423,17 +431,28 @@ Please reply with the correct category or explain what this transaction is.`;
 
       {/* Input form */}
       <div className="p-4 bg-white dark:bg-gray-900 border-t border-slate-100 dark:border-slate-800">
-        <form onSubmit={handleSubmit} className="max-w-3xl mx-auto relative flex items-center gap-2">
-          <input
-            type="text"
+        <form onSubmit={handleSubmit} className="max-w-3xl mx-auto relative flex items-end gap-2">
+          <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask a follow-up..."
+            onKeyDown={handleKeyDown}
+            placeholder="Ask a follow-up... (Shift+Enter for new line)"
             disabled={isLoading}
+            rows={1}
             className="flex-1 px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl 
                      focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500
                      text-sm text-slate-900 dark:text-white placeholder:text-slate-400
-                     disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
+                     disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm
+                     resize-none overflow-hidden min-h-[44px] max-h-[200px]"
+            style={{
+              height: 'auto',
+              overflowY: input.split('\n').length > 5 ? 'auto' : 'hidden'
+            }}
+            onInput={(e) => {
+              const target = e.target as HTMLTextAreaElement;
+              target.style.height = 'auto';
+              target.style.height = Math.min(target.scrollHeight, 200) + 'px';
+            }}
           />
           <button
             type="submit"
