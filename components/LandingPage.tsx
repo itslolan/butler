@@ -237,78 +237,74 @@ export default function LandingPage() {
       </section>
 
       {/* Why not just use ChatGPT? */}
-      <section className="py-24 px-6 bg-white dark:bg-gray-950 border-t border-slate-100 dark:border-slate-800">
+      <section className="py-24 px-6 bg-gradient-to-br from-blue-50 via-indigo-50/30 to-purple-50/20 dark:from-gray-900 dark:via-blue-950/30 dark:to-purple-950/20 border-y border-slate-200 dark:border-slate-800">
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-16">
-            <h2 className="text-3xl font-bold text-slate-900 dark:text-white mb-4">Why not just use ChatGPT?</h2>
-            <p className="text-slate-600 dark:text-slate-400 max-w-xl mx-auto">
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-sm font-semibold border border-blue-200 dark:border-blue-800 mb-6">
+              Why Butler?
+            </div>
+            <h2 className="text-4xl md:text-5xl font-bold text-slate-900 dark:text-white mb-6">Why not just use ChatGPT?</h2>
+            <p className="text-xl text-slate-600 dark:text-slate-400 max-w-2xl mx-auto leading-relaxed">
               ChatGPT is great, but Butler is built specifically for your finances. Here's why it's better.
             </p>
           </div>
 
-          <div className="grid md:grid-cols-2 gap-12">
-            <div className="space-y-8">
-              <div className="flex gap-4">
-                <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                </div>
-                <div>
-                  <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">Advanced Duplicate Detection</h3>
-                  <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
-                    Don't worry about uploading the same document twice. Butler intelligently detects and merges duplicates so your financial data stays clean and accurate.
-                  </p>
-                </div>
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8 mb-8">
+            {/* Item 1: Advanced Duplicate Detection */}
+            <div className="bg-white dark:bg-gray-900 p-8 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-indigo-200 dark:hover:border-indigo-900/50 hover:shadow-xl transition-all group">
+              <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-600 dark:from-indigo-600 dark:to-indigo-700 flex items-center justify-center text-white mb-6 group-hover:scale-110 transition-transform duration-300 shadow-lg">
+                <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
               </div>
-
-              <div className="flex gap-4">
-                <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center text-blue-600 dark:text-blue-400">
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" /></svg>
-                </div>
-                <div>
-                  <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">Interactive Visualizations</h3>
-                  <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
-                    "Just glance" to understand your financial health. Butler turns your data into interactive graphs and diagrams that make trends instantly visible.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex gap-4">
-                <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-green-50 dark:bg-green-900/20 flex items-center justify-center text-green-600 dark:text-green-400">
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                </div>
-                <div>
-                  <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">Long-term Financial Memory</h3>
-                  <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
-                    Ask any financial question based on years of history. Butler remembers every transaction from every statement you've ever uploaded.
-                  </p>
-                </div>
-              </div>
+              <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-3">Advanced Duplicate Detection</h3>
+              <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
+                Butler does advanced duplicate detection so that you don't have to worry about whether you uploaded your document twice or more times.
+              </p>
             </div>
 
-            <div className="space-y-8">
-              <div className="flex gap-4">
-                <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-purple-50 dark:bg-purple-900/20 flex items-center justify-center text-purple-600 dark:text-purple-400">
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                </div>
-                <div>
-                  <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">Personalized Financial Tips</h3>
-                  <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
-                    Get tailored advice on how to save more money and improve your financial health based on your actual spending habits.
-                  </p>
-                </div>
+            {/* Item 2: Interactive Metrics */}
+            <div className="bg-white dark:bg-gray-900 p-8 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-blue-200 dark:hover:border-blue-900/50 hover:shadow-xl transition-all group">
+              <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 dark:from-blue-600 dark:to-blue-700 flex items-center justify-center text-white mb-6 group-hover:scale-110 transition-transform duration-300 shadow-lg">
+                <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" /></svg>
               </div>
+              <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-3">Interactive Metrics</h3>
+              <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
+                Butler allows you to track important metrics using interactive graphs and diagrams, allowing you to "just glance" to understand your financial health.
+              </p>
+            </div>
 
-              <div className="flex gap-4">
-                <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-yellow-50 dark:bg-yellow-900/20 flex items-center justify-center text-yellow-600 dark:text-yellow-400">
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
-                </div>
-                <div>
-                  <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-2">Your Personal Butler</h3>
-                  <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
-                    Butler handles all the boring money stuff for you. It's like having a dedicated personal assistant who cares about your financial success.
-                  </p>
-                </div>
+            {/* Item 3: Historic Financial Data */}
+            <div className="bg-white dark:bg-gray-900 p-8 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-green-200 dark:hover:border-green-900/50 hover:shadow-xl transition-all group">
+              <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-green-500 to-green-600 dark:from-green-600 dark:to-green-700 flex items-center justify-center text-white mb-6 group-hover:scale-110 transition-transform duration-300 shadow-lg">
+                <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
               </div>
+              <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-3">Historic Financial Data</h3>
+              <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
+                Butler allows you to ask any financial question and get answers based on years of historic financial data.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+            {/* Item 4: Personalized Tips */}
+            <div className="bg-white dark:bg-gray-900 p-8 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-purple-200 dark:hover:border-purple-900/50 hover:shadow-xl transition-all group">
+              <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-purple-500 to-purple-600 dark:from-purple-600 dark:to-purple-700 flex items-center justify-center text-white mb-6 group-hover:scale-110 transition-transform duration-300 shadow-lg">
+                <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+              </div>
+              <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-3">Personalized Tips</h3>
+              <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
+                Butler gives personalized tips on saving more money and improving financial health.
+              </p>
+            </div>
+
+            {/* Item 5: Personal Butler */}
+            <div className="bg-white dark:bg-gray-900 p-8 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-yellow-200 dark:hover:border-yellow-900/50 hover:shadow-xl transition-all group">
+              <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-yellow-500 to-yellow-600 dark:from-yellow-600 dark:to-yellow-700 flex items-center justify-center text-white mb-6 group-hover:scale-110 transition-transform duration-300 shadow-lg">
+                <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+              </div>
+              <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-3">Your Personal Butler</h3>
+              <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
+                Butler is your own personal butler who handles all your money for you.
+              </p>
             </div>
           </div>
         </div>
