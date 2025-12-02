@@ -6,22 +6,21 @@ import remarkGfm from 'remark-gfm';
 import ChartRenderer from './ChartRenderer';
 import { ChartConfig } from '@/lib/chart-types';
 
+interface ToolCall {
+  name: string;
+  args: any;
+  result?: any;
+  duration?: string;
+  resultCount?: number | null;
+}
+
 interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string;
   chartConfig?: ChartConfig;
   suggestedActions?: string[];
-  debug?: {
-    functionCalls: Array<{
-      function: string;
-      arguments: any;
-      result: any;
-      duration: string;
-      resultCount: number | null;
-    }>;
-    totalCalls: number;
-    reasoning?: string[] | null;
-  };
+  toolCalls?: ToolCall[];
+  isStreaming?: boolean;
 }
 
 interface ChatInterfaceProps {
@@ -89,6 +88,15 @@ Please reply with the correct category or explain what this transaction is.`;
     setMessages(newMessages);
     setIsLoading(true);
 
+    // Create placeholder assistant message
+    const assistantMessageIndex = newMessages.length;
+    setMessages([...newMessages, { 
+      role: 'assistant', 
+      content: '',
+      isStreaming: true,
+      toolCalls: [],
+    }]);
+
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
@@ -106,32 +114,132 @@ Please reply with the correct category or explain what this transaction is.`;
         throw new Error(errorData.error || 'Failed to get response');
       }
 
-      const data = await response.json();
-      setMessages([...newMessages, { 
-        role: 'assistant', 
-        content: data.message,
-        chartConfig: data.chartConfig, // Include chart config if present
-        debug: data.debug 
-      }]);
-      
-      // Check if a transaction was categorized (todo resolved)
-      if (data.debug?.functionCalls) {
-        const hasCategorization = data.debug.functionCalls.some(
-          (call: any) => call.function === 'categorize_transaction' && call.result?.success
-        );
-        if (hasCategorization && onTodoResolved) {
-          onTodoResolved();
+      // Process the stream
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+
+      if (!reader) {
+        throw new Error('No response body');
+      }
+
+      let buffer = '';
+      let textContent = '';
+      let toolCalls: ToolCall[] = [];
+      let chartConfig: ChartConfig | undefined;
+      let currentToolCall: Partial<ToolCall> | null = null;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+
+          try {
+            const event = JSON.parse(line);
+
+            switch (event.type) {
+              case 'text_delta':
+                textContent += event.data.text;
+                setMessages(prev => {
+                  const updated = [...prev];
+                  updated[assistantMessageIndex] = {
+                    ...updated[assistantMessageIndex],
+                    content: textContent,
+                  };
+                  return updated;
+                });
+                break;
+
+              case 'tool_call':
+                currentToolCall = {
+                  name: event.data.name,
+                  args: event.data.args,
+                };
+                toolCalls.push(currentToolCall as ToolCall);
+                setMessages(prev => {
+                  const updated = [...prev];
+                  updated[assistantMessageIndex] = {
+                    ...updated[assistantMessageIndex],
+                    toolCalls: [...toolCalls],
+                  };
+                  return updated;
+                });
+                break;
+
+              case 'tool_result':
+                if (currentToolCall && currentToolCall.name === event.data.name) {
+                  currentToolCall.result = event.data.result;
+                  currentToolCall.duration = event.data.duration;
+                  currentToolCall.resultCount = event.data.resultCount;
+                  setMessages(prev => {
+                    const updated = [...prev];
+                    updated[assistantMessageIndex] = {
+                      ...updated[assistantMessageIndex],
+                      toolCalls: [...toolCalls],
+                    };
+                    return updated;
+                  });
+                }
+                currentToolCall = null;
+                break;
+
+              case 'chart_config':
+                chartConfig = event.data.config;
+                setMessages(prev => {
+                  const updated = [...prev];
+                  updated[assistantMessageIndex] = {
+                    ...updated[assistantMessageIndex],
+                    chartConfig,
+                  };
+                  return updated;
+                });
+                break;
+
+              case 'done':
+                // Mark streaming as complete
+                setMessages(prev => {
+                  const updated = [...prev];
+                  updated[assistantMessageIndex] = {
+                    ...updated[assistantMessageIndex],
+                    isStreaming: false,
+                  };
+                  return updated;
+                });
+
+                // Check if a transaction was categorized
+                const hasCategorization = toolCalls.some(
+                  call => call.name === 'categorize_transaction' && call.result?.success
+                );
+                if (hasCategorization && onTodoResolved) {
+                  onTodoResolved();
+                }
+                break;
+
+              case 'error':
+                throw new Error(event.data.message);
+            }
+          } catch (parseError) {
+            console.error('Error parsing event:', parseError, 'Line:', line);
+          }
         }
       }
     } catch (error: any) {
       console.error('Error sending message:', error);
-      setMessages([
-        ...newMessages,
-        {
+      setMessages(prev => {
+        const updated = [...prev];
+        updated[assistantMessageIndex] = {
           role: 'assistant',
           content: `Sorry, I encountered an error: ${error.message}. Please try again.`,
-        },
-      ]);
+          isStreaming: false,
+        };
+        return updated;
+      });
     } finally {
       setIsLoading(false);
     }
@@ -204,7 +312,7 @@ Please reply with the correct category or explain what this transaction is.`;
               ) : (
                 <div className="prose prose-sm prose-slate dark:prose-invert max-w-none">
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {message.content}
+                    {message.content || (message.isStreaming ? '_Thinking..._' : '')}
                   </ReactMarkdown>
                 </div>
               )}
@@ -241,53 +349,42 @@ Please reply with the correct category or explain what this transaction is.`;
               </div>
             )}
             
-            {/* Debug trace - show reasoning and function calls */}
-            {message.debug && (message.debug.functionCalls.length > 0 || message.debug.reasoning) && (
+            {/* Tool calls - show in collapsible section */}
+            {message.role === 'assistant' && message.toolCalls && message.toolCalls.length > 0 && (
               <div className="mt-2 ml-1">
-                <details className="group">
+                <details className="group" open={message.isStreaming}>
                   <summary className="list-none cursor-pointer text-[10px] font-medium text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors flex items-center gap-1 select-none">
                     <span className="opacity-70 group-open:rotate-90 transition-transform">▶</span>
-                    <span>Analyzed using {message.debug.totalCalls} tool{message.debug.totalCalls !== 1 ? 's' : ''}</span>
+                    <span>
+                      {message.isStreaming ? (
+                        <>Working... ({message.toolCalls.length} tool{message.toolCalls.length !== 1 ? 's' : ''})</>
+                      ) : (
+                        <>Analyzed using {message.toolCalls.length} tool{message.toolCalls.length !== 1 ? 's' : ''}</>
+                      )}
+                    </span>
                   </summary>
                   
-                  <div className="mt-2 p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-slate-800 space-y-3 text-xs max-w-xl">
-                    {/* Reasoning section */}
-                    {message.debug.reasoning && message.debug.reasoning.length > 0 && (
-                      <div className="space-y-1.5">
-                         <p className="font-semibold text-purple-600 dark:text-purple-400 text-[11px] uppercase tracking-wider">Reasoning</p>
-                         <div className="space-y-1 pl-2 border-l-2 border-purple-100 dark:border-purple-900/30">
-                          {message.debug.reasoning.map((step, stepIndex) => (
-                            <p key={stepIndex} className="text-slate-600 dark:text-slate-400 leading-relaxed">
-                              {step}
-                            </p>
-                          ))}
+                  <div className="mt-2 p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-slate-800 space-y-2 text-xs max-w-xl">
+                    {message.toolCalls.map((call, callIndex) => (
+                      <div key={callIndex} className="pl-2 border-l-2 border-blue-100 dark:border-blue-900/30">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <span className="font-mono text-[10px] bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-700 dark:text-slate-300">
+                            {call.name}
+                          </span>
+                          {call.duration && (
+                            <span className="text-slate-400">{call.duration}</span>
+                          )}
+                          {!call.result && (
+                            <span className="text-blue-500 text-[10px] animate-pulse">executing...</span>
+                          )}
                         </div>
+                        {Object.keys(call.args).length > 0 && (
+                          <pre className="text-[10px] text-slate-500 dark:text-slate-500 overflow-x-auto py-0.5">
+                            {JSON.stringify(call.args).slice(0, 100)}{JSON.stringify(call.args).length > 100 ? '...' : ''}
+                          </pre>
+                        )}
                       </div>
-                    )}
-                    
-                    {/* Function calls section */}
-                    {message.debug.functionCalls.length > 0 && (
-                      <div className="space-y-1.5">
-                        <p className="font-semibold text-blue-600 dark:text-blue-400 text-[11px] uppercase tracking-wider">Tools Used</p>
-                        <div className="space-y-2">
-                          {message.debug.functionCalls.map((call, callIndex) => (
-                            <div key={callIndex} className="pl-2 border-l-2 border-blue-100 dark:border-blue-900/30">
-                              <div className="flex items-center gap-2 mb-0.5">
-                                <span className="font-mono text-[10px] bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-700 dark:text-slate-300">
-                                  {call.function}
-                                </span>
-                                <span className="text-slate-400">{call.duration}</span>
-                              </div>
-                              {Object.keys(call.arguments).length > 0 && (
-                                <pre className="text-[10px] text-slate-500 dark:text-slate-500 overflow-x-auto py-0.5">
-                                  {JSON.stringify(call.arguments).slice(0, 100)}{JSON.stringify(call.arguments).length > 100 ? '...' : ''}
-                                </pre>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
+                    ))}
                   </div>
                 </details>
               </div>
@@ -295,7 +392,7 @@ Please reply with the correct category or explain what this transaction is.`;
           </div>
         ))}
         
-        {isLoading && (
+        {isLoading && messages[messages.length - 1]?.role !== 'assistant' && (
           <div className="flex justify-start max-w-3xl mx-auto w-full">
             <div className="bg-white dark:bg-gray-800 border border-slate-100 dark:border-gray-700 rounded-xl px-4 py-3 rounded-tl-none shadow-sm">
               <div className="flex items-center space-x-1.5">

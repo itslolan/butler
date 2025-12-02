@@ -139,6 +139,92 @@ interface Message {
   parts: { text: string }[];
 }
 
+// Helper function to execute a tool call
+async function executeToolCall(name: string, args: any, effectiveUserId: string) {
+  let functionResult;
+  
+  try {
+    if (name === 'search_documents') {
+      functionResult = await searchDocuments(effectiveUserId, args);
+    } else if (name === 'search_transactions') {
+      functionResult = await searchTransactions(effectiveUserId, args);
+    } else if (name === 'get_all_metadata') {
+      functionResult = await getAllMetadata(effectiveUserId);
+    } else if (name === 'categorize_transaction') {
+      // Call the clarify-transaction API
+      const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 
+                     process.env.NEXT_PUBLIC_BASE_URL || 
+                     'http://localhost:3000';
+      const apiUrl = `${baseUrl}/api/clarify-transaction`;
+      
+      console.log(`[chat API] Calling categorize_transaction - URL: ${apiUrl}, TxnID: ${args.transaction_id}, Type: ${args.transaction_type}`);
+
+      try {
+        const response = await fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            transaction_id: args.transaction_id,
+            transaction_type: args.transaction_type,
+          }),
+        });
+
+        console.log(`[chat API] categorize_transaction response - Status: ${response.status}, OK: ${response.ok}`);
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error(`[chat API] categorize_transaction failed - Status: ${response.status} ${response.statusText}, Body: ${errorText}`);
+          functionResult = { 
+            error: `API error: ${response.status} ${response.statusText}`,
+            details: errorText,
+          };
+        } else {
+          functionResult = await response.json();
+          console.log(`[chat API] categorize_transaction success - Result: ${JSON.stringify(functionResult)}`);
+        }
+      } catch (fetchError: any) {
+        console.error(`[chat API] categorize_transaction fetch error - ${fetchError.name}: ${fetchError.message}`);
+        console.error(`[chat API] Fetch error details - URL: ${apiUrl}, Stack: ${fetchError.stack}`);
+        functionResult = { 
+          error: `Fetch failed: ${fetchError.message}`,
+          error_type: fetchError.name,
+          details: fetchError.stack,
+        };
+      }
+    } else if (name === 'get_account_snapshots') {
+      functionResult = await getAccountSnapshots(
+        effectiveUserId,
+        args.accountName,
+        args.startDate,
+        args.endDate
+      );
+    } else if (name === 'calculate_net_worth') {
+      functionResult = await calculateNetWorth(effectiveUserId, args.date);
+    } else if (name === 'render_chart') {
+      // Validate and return chart config
+      const { validateChartConfig } = await import('@/lib/chart-types');
+      if (validateChartConfig(args)) {
+        functionResult = { 
+          success: true, 
+          chartConfig: args,
+          message: 'Chart configuration is valid and will be rendered'
+        };
+      } else {
+        functionResult = { 
+          success: false, 
+          error: 'Invalid chart configuration'
+        };
+      }
+    } else {
+      functionResult = { error: 'Unknown function' };
+    }
+  } catch (error: any) {
+    functionResult = { error: error.message };
+  }
+
+  return functionResult;
+}
+
 export async function POST(request: NextRequest) {
   try {
     if (!process.env.GEMINI_API_KEY) {
@@ -367,19 +453,16 @@ export async function POST(request: NextRequest) {
     const model = genAI.getGenerativeModel({
       model: GEMINI_MODEL,
       systemInstruction: SYSTEM_PROMPT,
-      tools: tools as any, // Type assertion to bypass strict typing
+      tools: tools as any,
       generationConfig: {
-        // Enable thinking/reasoning mode
         temperature: 0.7,
       },
     });
 
     // Convert messages to Gemini format
-    // Filter out the initial assistant greeting and convert to Gemini format
     const history: Message[] = messages
       .slice(0, -1)
       .filter((msg: any, index: number) => {
-        // Skip the first message if it's from assistant (the greeting)
         if (index === 0 && msg.role === 'assistant') {
           return false;
         }
@@ -393,194 +476,100 @@ export async function POST(request: NextRequest) {
     const chat = model.startChat({ history });
 
     const lastMessage = messages[messages.length - 1];
-    let result = await chat.sendMessage(lastMessage.content);
 
-    // Track all function calls and reasoning for debugging
-    const debugTrace: any[] = [];
-    const reasoningSteps: string[] = [];
-
-    // Capture initial reasoning if available
-    try {
-      const candidates = result.response.candidates;
-      if (candidates && candidates[0]?.content?.parts) {
-        for (const part of candidates[0].content.parts) {
-          if (part.text && !result.response.functionCalls()) {
-            // This is reasoning/thinking before function calls
-            reasoningSteps.push(part.text);
-          }
-        }
-      }
-    } catch (e) {
-      // Ignore if reasoning extraction fails
-    }
-
-    // Handle function calls
-    let functionCallCount = 0;
-    const maxFunctionCalls = 10;
-
-    while (result.response.functionCalls && result.response.functionCalls() && functionCallCount < maxFunctionCalls) {
-      functionCallCount++;
-      const functionCalls = result.response.functionCalls()!;
-      
-      // Capture reasoning before this function call iteration
-      try {
-        const candidates = result.response.candidates;
-        if (candidates && candidates[0]?.content?.parts) {
-          for (const part of candidates[0].content.parts) {
-            if (part.text) {
-              reasoningSteps.push(`[Iteration ${functionCallCount}] ${part.text}`);
-            }
-          }
-        }
-      } catch (e) {
-        // Ignore if reasoning extraction fails
-      }
-
-      const functionResponses = [];
-      
-      for (const call of functionCalls) {
-        const { name, args } = call;
-
-        let functionResult;
-        const startTime = Date.now();
-        
+    // Create a streaming response
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      async start(controller) {
         try {
-          if (name === 'search_documents') {
-            functionResult = await searchDocuments(effectiveUserId, args);
-          } else if (name === 'search_transactions') {
-            functionResult = await searchTransactions(effectiveUserId, args);
-          } else if (name === 'get_all_metadata') {
-            functionResult = await getAllMetadata(effectiveUserId);
-          } else if (name === 'categorize_transaction') {
-            // Call the clarify-transaction API
-            // Try multiple environment variable names for the base URL
-            const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 
-                           process.env.NEXT_PUBLIC_BASE_URL || 
-                           'http://localhost:3000';
-            const apiUrl = `${baseUrl}/api/clarify-transaction`;
-            
-            console.log(`[chat API] Calling categorize_transaction - URL: ${apiUrl}, TxnID: ${(args as any).transaction_id}, Type: ${(args as any).transaction_type}`);
+          // Helper to send event
+          const sendEvent = (type: string, data: any) => {
+            const event = { type, data };
+            controller.enqueue(encoder.encode(JSON.stringify(event) + '\n'));
+          };
 
-            try {
-              const response = await fetch(apiUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  transaction_id: (args as any).transaction_id,
-                  transaction_type: (args as any).transaction_type,
-                }),
+          let result = await chat.sendMessage(lastMessage.content);
+          let functionCallCount = 0;
+          const maxFunctionCalls = 10;
+          let chartConfig = null;
+
+          // Handle function calls in a loop
+          while (result.response.functionCalls && result.response.functionCalls() && functionCallCount < maxFunctionCalls) {
+            functionCallCount++;
+            const functionCalls = result.response.functionCalls()!;
+            const functionResponses = [];
+
+            for (const call of functionCalls) {
+              const { name, args } = call;
+              
+              // Send tool call event
+              sendEvent('tool_call', { name, args });
+
+              const startTime = Date.now();
+              const functionResult = await executeToolCall(name, args, effectiveUserId);
+              const duration = Date.now() - startTime;
+
+              // Send tool result event
+              sendEvent('tool_result', { 
+                name, 
+                result: functionResult,
+                duration: `${duration}ms`,
+                resultCount: Array.isArray(functionResult) ? functionResult.length : null,
               });
 
-              console.log(`[chat API] categorize_transaction response - Status: ${response.status}, OK: ${response.ok}`);
-
-              if (!response.ok) {
-                const errorText = await response.text();
-                console.error(`[chat API] categorize_transaction failed - Status: ${response.status} ${response.statusText}, Body: ${errorText}`);
-                functionResult = { 
-                  error: `API error: ${response.status} ${response.statusText}`,
-                  details: errorText,
-                };
-              } else {
-                functionResult = await response.json();
-                console.log(`[chat API] categorize_transaction success - Result: ${JSON.stringify(functionResult)}`);
+              // Check for chart config
+              if (name === 'render_chart' && functionResult?.success && functionResult?.chartConfig) {
+                chartConfig = functionResult.chartConfig;
+                sendEvent('chart_config', { config: chartConfig });
               }
-            } catch (fetchError: any) {
-              console.error(`[chat API] categorize_transaction fetch error - ${fetchError.name}: ${fetchError.message}`);
-              console.error(`[chat API] Fetch error details - URL: ${apiUrl}, Stack: ${fetchError.stack}`);
-              functionResult = { 
-                error: `Fetch failed: ${fetchError.message}`,
-                error_type: fetchError.name,
-                details: fetchError.stack,
-              };
+
+              functionResponses.push({
+                functionResponse: {
+                  name: name,
+                  response: {
+                    name: name,
+                    content: functionResult,
+                  },
+                },
+              });
             }
-          } else if (name === 'get_account_snapshots') {
-            functionResult = await getAccountSnapshots(
-              effectiveUserId,
-              (args as any).accountName,
-              (args as any).startDate,
-              (args as any).endDate
-            );
-          } else if (name === 'calculate_net_worth') {
-            functionResult = await calculateNetWorth(effectiveUserId, (args as any).date);
-          } else if (name === 'render_chart') {
-            // Validate and return chart config
-            const { validateChartConfig } = await import('@/lib/chart-types');
-            if (validateChartConfig(args)) {
-              functionResult = { 
-                success: true, 
-                chartConfig: args,
-                message: 'Chart configuration is valid and will be rendered'
-              };
-            } else {
-              functionResult = { 
-                success: false, 
-                error: 'Invalid chart configuration'
-              };
-            }
-          } else {
-            functionResult = { error: 'Unknown function' };
+
+            // Send function responses back to model
+            result = await chat.sendMessage(functionResponses);
           }
+
+          // Stream the final text response
+          const responseText = result.response.text();
+          
+          // Split text into chunks and stream them
+          const CHUNK_SIZE = 50; // Characters per chunk
+          for (let i = 0; i < responseText.length; i += CHUNK_SIZE) {
+            const chunk = responseText.slice(i, i + CHUNK_SIZE);
+            sendEvent('text_delta', { text: chunk });
+            // Small delay to simulate streaming
+            await new Promise(resolve => setTimeout(resolve, 10));
+          }
+
+          // Send done event
+          sendEvent('done', { 
+            totalToolCalls: functionCallCount,
+            chartConfig,
+          });
+
+          controller.close();
         } catch (error: any) {
-          functionResult = { error: error.message };
+          console.error('Error in streaming chat:', error);
+          const errorEvent = { type: 'error', data: { message: error.message } };
+          controller.enqueue(encoder.encode(JSON.stringify(errorEvent) + '\n'));
+          controller.close();
         }
+      },
+    });
 
-        const duration = Date.now() - startTime;
-
-        // Log the function call for debugging
-        debugTrace.push({
-          function: name,
-          arguments: args,
-          result: functionResult,
-          duration: `${duration}ms`,
-          resultCount: Array.isArray(functionResult) ? functionResult.length : null,
-        });
-
-        functionResponses.push({
-          functionResponse: {
-            name: name,
-            response: {
-              name: name,
-              content: functionResult,
-            },
-          },
-        });
-      }
-
-      result = await chat.sendMessage(functionResponses);
-    }
-
-    const responseText = result.response.text();
-
-    // Capture final reasoning
-    try {
-      const candidates = result.response.candidates;
-      if (candidates && candidates[0]?.content?.parts) {
-        for (const part of candidates[0].content.parts) {
-          if (part.text && part.text !== responseText) {
-            reasoningSteps.push(`[Final] ${part.text}`);
-          }
-        }
-      }
-    } catch (e) {
-      // Ignore if reasoning extraction fails
-    }
-
-    // Extract chart configs from function calls
-    let chartConfig = null;
-    for (const trace of debugTrace) {
-      if (trace.function === 'render_chart' && trace.result?.success && trace.result?.chartConfig) {
-        chartConfig = trace.result.chartConfig;
-        break; // Use the first chart
-      }
-    }
-
-    return NextResponse.json({
-      message: responseText,
-      chartConfig, // Include chart config if present
-      debug: {
-        functionCalls: debugTrace,
-        totalCalls: debugTrace.length,
-        reasoning: reasoningSteps.length > 0 ? reasoningSteps : null,
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Transfer-Encoding': 'chunked',
       },
     });
   } catch (error: any) {
@@ -591,4 +580,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

@@ -467,6 +467,64 @@ export async function calculateNetWorth(userId: string, date: string): Promise<{
 }
 
 /**
+ * Helper function to fetch all records with pagination
+ */
+async function fetchAllTransactions(
+  userId: string,
+  filters: {
+    transactionTypes?: string[];
+    startDate?: string;
+    endDate?: string;
+    selectFields?: string;
+  }
+): Promise<any[]> {
+  const PAGE_SIZE = 1000;
+  let allData: any[] = [];
+  let page = 0;
+  let hasMore = true;
+
+  while (hasMore) {
+    let query = supabase
+      .from('transactions')
+      .select(filters.selectFields || '*')
+      .eq('user_id', userId)
+      .order('date', { ascending: true })
+      .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+
+    if (filters.transactionTypes && filters.transactionTypes.length > 0) {
+      query = query.in('transaction_type', filters.transactionTypes);
+    }
+
+    if (filters.startDate) {
+      query = query.gte('date', filters.startDate);
+    }
+
+    if (filters.endDate) {
+      query = query.lte('date', filters.endDate);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      throw new Error(`Failed to fetch transactions: ${error.message}`);
+    }
+
+    if (!data || data.length === 0) {
+      hasMore = false;
+    } else {
+      allData = allData.concat(data);
+      if (data.length < PAGE_SIZE) {
+        hasMore = false;
+      } else {
+        page++;
+      }
+    }
+  }
+
+  return allData;
+}
+
+/**
  * Get monthly spending trend for a user
  * Aggregates expenses by month for the last N months OR a specific month
  */
@@ -488,25 +546,13 @@ export async function getMonthlySpendingTrend(
     startDate = monthsAgo.toISOString().split('T')[0];
   }
   
-  // Get all expense transactions in the date range
-  let query = supabase
-    .from('transactions')
-    .select('date, amount, transaction_type')
-    .eq('user_id', userId)
-    .in('transaction_type', ['expense', 'other'])
-    .gte('date', startDate)
-    .order('date', { ascending: true })
-    .limit(5000);
-
-  if (endDate) {
-    query = query.lte('date', endDate);
-  }
-
-  const { data, error } = await query;
-
-  if (error) {
-    throw new Error(`Failed to get spending trend: ${error.message}`);
-  }
+  // Get all expense transactions in the date range using pagination
+  const data = await fetchAllTransactions(userId, {
+    transactionTypes: ['expense', 'other'],
+    startDate,
+    endDate,
+    selectFields: 'date, amount, transaction_type',
+  });
 
   if (!data || data.length === 0) {
     if (specificMonth) {
@@ -569,34 +615,29 @@ export async function getCategoryBreakdown(
   specificMonth?: string // Optional: 'YYYY-MM'
 ): Promise<Array<{ category: string; total: number; percentage: number; count: number; spend_classification?: string | null }>> {
   
-  let query = supabase
-    .from('transactions')
-    .select('category, amount, transaction_type, date, spend_classification')
-    .eq('user_id', userId)
-    .in('transaction_type', ['expense', 'other']);
+  let startDate: string;
+  let endDate: string | undefined;
 
   if (specificMonth) {
     // Filter for specific month
-    const startOfMonth = `${specificMonth}-01`;
+    startDate = `${specificMonth}-01`;
     // Calculate end of month
     const [year, month] = specificMonth.split('-').map(Number);
-    const endDate = new Date(year, month, 0).toISOString().split('T')[0]; // Last day of month
-    
-    query = query.gte('date', startOfMonth).lte('date', endDate);
+    endDate = new Date(year, month, 0).toISOString().split('T')[0]; // Last day of month
   } else {
     // Default: last N months - start from the 1st of the month N months ago
     const now = new Date();
     const monthsAgo = new Date(now.getFullYear(), now.getMonth() - months, 1);
-    const startDate = monthsAgo.toISOString().split('T')[0];
-    
-    query = query.gte('date', startDate);
+    startDate = monthsAgo.toISOString().split('T')[0];
   }
   
-  const { data, error } = await query.limit(5000);
-
-  if (error) {
-    throw new Error(`Failed to get category breakdown: ${error.message}`);
-  }
+  // Get all transactions using pagination
+  const data = await fetchAllTransactions(userId, {
+    transactionTypes: ['expense', 'other'],
+    startDate,
+    endDate,
+    selectFields: 'category, amount, transaction_type, date, spend_classification',
+  });
 
   if (!data || data.length === 0) {
     return [];
@@ -657,24 +698,12 @@ export async function getIncomeVsExpenses(
     startDate = monthsAgo.toISOString().split('T')[0];
   }
   
-  // Get all transactions in the date range
-  let query = supabase
-    .from('transactions')
-    .select('date, amount, transaction_type')
-    .eq('user_id', userId)
-    .gte('date', startDate)
-    .order('date', { ascending: true })
-    .limit(5000);
-
-  if (endDate) {
-    query = query.lte('date', endDate);
-  }
-
-  const { data, error } = await query;
-
-  if (error) {
-    throw new Error(`Failed to get income vs expenses: ${error.message}`);
-  }
+  // Get all transactions in the date range using pagination
+  const data = await fetchAllTransactions(userId, {
+    startDate,
+    endDate,
+    selectFields: 'date, amount, transaction_type',
+  });
 
   // Initialize monthly data
   const monthlyData = new Map<string, { income: number; expenses: number }>();
