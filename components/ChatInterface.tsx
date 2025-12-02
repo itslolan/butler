@@ -27,13 +27,38 @@ interface Message {
 interface ChatInterfaceProps {
   userId?: string;
   onTodoResolved?: () => void;
+  isDemoMode?: boolean;
+  maxQuestions?: number;
+  questionCount?: number;
+  onQuestionCountChange?: (count: number) => void;
+  onQuestionLimit?: () => void;
 }
 
-const ChatInterface = forwardRef(({ userId = 'default-user', onTodoResolved }: ChatInterfaceProps, ref) => {
+const ChatInterface = forwardRef(({ 
+  userId = 'default-user', 
+  onTodoResolved,
+  isDemoMode = false,
+  maxQuestions = Infinity,
+  questionCount: externalQuestionCount,
+  onQuestionCountChange,
+  onQuestionLimit,
+}: ChatInterfaceProps, ref) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [internalQuestionCount, setInternalQuestionCount] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  
+  // Use external question count if provided, otherwise use internal state
+  const questionCount = externalQuestionCount !== undefined ? externalQuestionCount : internalQuestionCount;
+  
+  const updateQuestionCount = (count: number) => {
+    if (onQuestionCountChange) {
+      onQuestionCountChange(count);
+    } else {
+      setInternalQuestionCount(count);
+    }
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -82,8 +107,30 @@ Please reply with the correct category or explain what this transaction is.`;
   const sendMessage = async (content: string) => {
     if (!content.trim() || isLoading) return;
 
+    // Check if we've reached the question limit in demo mode
+    if (isDemoMode && questionCount >= maxQuestions) {
+      if (onQuestionLimit) {
+        onQuestionLimit();
+      }
+      return;
+    }
+
     const userMessage = content.trim();
     setInput('');
+    
+    // Increment question count for demo mode
+    if (isDemoMode) {
+      const newCount = questionCount + 1;
+      updateQuestionCount(newCount);
+      
+      // Check if we've reached the limit before sending
+      if (newCount > maxQuestions) {
+        if (onQuestionLimit) {
+          onQuestionLimit();
+        }
+        return;
+      }
+    }
     
     const newMessages = [...messages, { role: 'user' as const, content: userMessage }];
     setMessages(newMessages);
@@ -432,39 +479,57 @@ Please reply with the correct category or explain what this transaction is.`;
 
       {/* Input form */}
       <div className="p-4 bg-white dark:bg-gray-900 border-t border-slate-100 dark:border-slate-800">
-        <form onSubmit={handleSubmit} className="max-w-3xl mx-auto relative flex items-end gap-2">
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask a follow-up... (Shift+Enter for new line)"
-            disabled={isLoading}
-            rows={1}
-            className="flex-1 px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl 
-                     focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500
-                     text-sm text-slate-900 dark:text-white placeholder:text-slate-400
-                     disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm
-                     resize-none overflow-hidden min-h-[44px] max-h-[200px]"
-            style={{
-              height: 'auto',
-              overflowY: input.split('\n').length > 5 ? 'auto' : 'hidden'
-            }}
-            onInput={(e) => {
-              const target = e.target as HTMLTextAreaElement;
-              target.style.height = 'auto';
-              target.style.height = Math.min(target.scrollHeight, 200) + 'px';
-            }}
-          />
-          <button
-            type="submit"
-            disabled={isLoading || !input.trim()}
-            className="px-4 py-3 bg-slate-900 dark:bg-blue-600 text-white rounded-xl font-medium text-sm
-                     hover:bg-slate-800 dark:hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-slate-900/20 dark:focus:ring-blue-500/40
-                     disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm shrink-0"
-          >
-            Send
-          </button>
-        </form>
+        {isDemoMode && questionCount >= maxQuestions ? (
+          <div className="max-w-3xl mx-auto p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl">
+            <div className="flex items-center gap-3">
+              <svg className="w-5 h-5 text-yellow-600 dark:text-yellow-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <div className="flex-1">
+                <p className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
+                  You&apos;ve reached the demo limit of {maxQuestions} questions.
+                </p>
+                <p className="text-xs text-yellow-700 dark:text-yellow-300 mt-1">
+                  Sign up to continue asking unlimited questions.
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="max-w-3xl mx-auto relative flex items-end gap-2">
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={isDemoMode ? `Ask a question... (${maxQuestions - questionCount} remaining)` : "Ask a follow-up... (Shift+Enter for new line)"}
+              disabled={isLoading || (isDemoMode && questionCount >= maxQuestions)}
+              rows={1}
+              className="flex-1 px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl 
+                       focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500
+                       text-sm text-slate-900 dark:text-white placeholder:text-slate-400
+                       disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm
+                       resize-none overflow-hidden min-h-[44px] max-h-[200px]"
+              style={{
+                height: 'auto',
+                overflowY: input.split('\n').length > 5 ? 'auto' : 'hidden'
+              }}
+              onInput={(e) => {
+                const target = e.target as HTMLTextAreaElement;
+                target.style.height = 'auto';
+                target.style.height = Math.min(target.scrollHeight, 200) + 'px';
+              }}
+            />
+            <button
+              type="submit"
+              disabled={isLoading || !input.trim() || (isDemoMode && questionCount >= maxQuestions)}
+              className="px-4 py-3 bg-slate-900 dark:bg-blue-600 text-white rounded-xl font-medium text-sm
+                       hover:bg-slate-800 dark:hover:bg-blue-500 focus:outline-none focus:ring-2 focus:ring-slate-900/20 dark:focus:ring-blue-500/40
+                       disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm shrink-0"
+            >
+              Send
+            </button>
+          </form>
+        )}
       </div>
     </div>
   );

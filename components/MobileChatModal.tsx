@@ -8,9 +8,24 @@ interface MobileChatModalProps {
   chatInterfaceRef: React.RefObject<any>;
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
+  isDemoMode?: boolean;
+  maxQuestions?: number;
+  questionCount?: number;
+  onQuestionCountChange?: (count: number) => void;
+  onQuestionLimit?: () => void;
 }
 
-export default function MobileChatModal({ userId, chatInterfaceRef, isOpen, onOpenChange }: MobileChatModalProps) {
+export default function MobileChatModal({ 
+  userId, 
+  chatInterfaceRef, 
+  isOpen, 
+  onOpenChange,
+  isDemoMode = false,
+  maxQuestions,
+  questionCount,
+  onQuestionCountChange,
+  onQuestionLimit,
+}: MobileChatModalProps) {
   return (
     <>
       {/* Floating Action Bar - Only visible on mobile */}
@@ -82,7 +97,15 @@ export default function MobileChatModal({ userId, chatInterfaceRef, isOpen, onOp
 
             {/* Chat Interface */}
             <div className="flex-1 min-h-0 overflow-hidden">
-              <ChatInterface ref={chatInterfaceRef} userId={userId} />
+              <ChatInterface 
+                ref={chatInterfaceRef} 
+                userId={userId}
+                isDemoMode={isDemoMode}
+                maxQuestions={maxQuestions}
+                questionCount={questionCount}
+                onQuestionCountChange={onQuestionCountChange}
+                onQuestionLimit={onQuestionLimit}
+              />
             </div>
           </div>
         </div>

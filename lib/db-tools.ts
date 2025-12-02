@@ -539,6 +539,8 @@ export async function getMonthlySpendingTrend(
     const now = new Date();
     const monthsAgo = new Date(now.getFullYear(), now.getMonth() - months, 1);
     startDate = monthsAgo.toISOString().split('T')[0];
+    // Set endDate to today to ensure we get all recent data
+    endDate = now.toISOString().split('T')[0];
   }
   
   // Get all expense transactions in the date range using pagination
@@ -583,18 +585,14 @@ export async function getMonthlySpendingTrend(
     }];
   }
 
-  // Fill in missing months with 0 for range
+  // Initialize result with all months in range first
   const result: Array<{ month: string; total: number }> = [];
   const now = new Date();
   for (let i = months - 1; i >= 0; i--) {
     const d = new Date(now);
     d.setMonth(now.getMonth() - i);
     const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    
-    result.push({
-      month: monthKey,
-      total: monthlyMap.get(monthKey) || 0,
-    });
+    result.push({ month: monthKey, total: monthlyMap.get(monthKey) || 0 });
   }
   
   return result;
@@ -1016,6 +1014,8 @@ export async function getIncomeVsExpenses(
     const now = new Date();
     const monthsAgo = new Date(now.getFullYear(), now.getMonth() - months, 1);
     startDate = monthsAgo.toISOString().split('T')[0];
+    // Set endDate to today to ensure we get all recent data
+    endDate = now.toISOString().split('T')[0];
   }
   
   // Get all transactions in the date range using pagination
@@ -1048,26 +1048,28 @@ export async function getIncomeVsExpenses(
       const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
       
       const current = monthlyData.get(monthKey);
-      // Only update if the month is in our map (handles edge cases where transaction date might be slightly off or logic mismatch)
-      // For specificMonth mode, this ensures we only count for that month
-      if (current || (!specificMonth && !current)) {
-        // If not in map and we are in range mode, we might need to handle it? 
-        // But we pre-filled the map, so it should be there if within range.
-        // If specificMonth is set, we only care about that key.
-        
-        // Let's be safe:
-        if (!current && specificMonth) continue;
-        
-        const target = current || monthlyData.get(monthKey) || { income: 0, expenses: 0 };
-        if (!current && !specificMonth) monthlyData.set(monthKey, target);
-
+      
+      // If month is in our pre-filled map, update it
+      if (current) {
         const absAmount = Math.abs(Number(txn.amount));
         
         if (txn.transaction_type === 'income') {
-          target.income += absAmount;
+          current.income += absAmount;
         } else if (txn.transaction_type === 'expense' || txn.transaction_type === 'other') {
-          target.expenses += absAmount;
+          current.expenses += absAmount;
         }
+      } else if (!specificMonth) {
+        // If not in map and we're in range mode, add it (edge case for data outside expected range)
+        const absAmount = Math.abs(Number(txn.amount));
+        const newEntry = { income: 0, expenses: 0 };
+        
+        if (txn.transaction_type === 'income') {
+          newEntry.income = absAmount;
+        } else if (txn.transaction_type === 'expense' || txn.transaction_type === 'other') {
+          newEntry.expenses = absAmount;
+        }
+        
+        monthlyData.set(monthKey, newEntry);
       }
     }
   }
