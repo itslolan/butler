@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import "./globals.css";
 import { AuthProvider } from "@/components/AuthProvider";
 
@@ -16,8 +17,12 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <AuthProvider>{children}</AuthProvider>
+        {/* 100% privacy-first analytics */}
+        <Script 
+          src="https://scripts.simpleanalyticscdn.com/latest.js" 
+          data-collect-dnt="true" 
+        />
       </body>
     </html>
   );
 }
-
