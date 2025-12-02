@@ -453,15 +453,64 @@ export async function POST(request: NextRequest) {
             functionResult = await getAllMetadata(effectiveUserId);
           } else if (name === 'categorize_transaction') {
             // Call the clarify-transaction API
-            const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/clarify-transaction`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                transaction_id: (args as any).transaction_id,
-                transaction_type: (args as any).transaction_type,
-              }),
+            const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+            const apiUrl = `${baseUrl}/api/clarify-transaction`;
+            
+            console.log('[chat API] Calling categorize_transaction', {
+              api_url: apiUrl,
+              transaction_id: (args as any).transaction_id,
+              transaction_type: (args as any).transaction_type,
+              timestamp: new Date().toISOString(),
             });
-            functionResult = await response.json();
+
+            try {
+              const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  transaction_id: (args as any).transaction_id,
+                  transaction_type: (args as any).transaction_type,
+                }),
+              });
+
+              console.log('[chat API] categorize_transaction response received', {
+                status: response.status,
+                status_text: response.statusText,
+                ok: response.ok,
+                headers: Object.fromEntries(response.headers.entries()),
+              });
+
+              if (!response.ok) {
+                const errorText = await response.text();
+                console.error('[chat API] categorize_transaction failed', {
+                  status: response.status,
+                  status_text: response.statusText,
+                  error_body: errorText,
+                });
+                functionResult = { 
+                  error: `API error: ${response.status} ${response.statusText}`,
+                  details: errorText,
+                };
+              } else {
+                functionResult = await response.json();
+                console.log('[chat API] categorize_transaction success', {
+                  result: functionResult,
+                });
+              }
+            } catch (fetchError: any) {
+              console.error('[chat API] categorize_transaction fetch error', {
+                error_name: fetchError.name,
+                error_message: fetchError.message,
+                error_stack: fetchError.stack,
+                error_cause: fetchError.cause,
+                api_url: apiUrl,
+              });
+              functionResult = { 
+                error: `Fetch failed: ${fetchError.message}`,
+                error_type: fetchError.name,
+                details: fetchError.stack,
+              };
+            }
           } else if (name === 'get_account_snapshots') {
             functionResult = await getAccountSnapshots(
               effectiveUserId,

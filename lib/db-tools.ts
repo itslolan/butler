@@ -275,17 +275,52 @@ export async function updateTransactionType(
   id: string,
   transactionType: 'income' | 'expense' | 'transfer' | 'other'
 ): Promise<void> {
-  const { error } = await supabase
-    .from('transactions')
-    .update({ 
-      transaction_type: transactionType,
-      needs_clarification: false,
-      clarification_question: null,
-    })
-    .eq('id', id);
+  console.log('[updateTransactionType] Starting transaction update', {
+    transaction_id: id,
+    transaction_type: transactionType,
+    timestamp: new Date().toISOString(),
+  });
 
-  if (error) {
-    throw new Error(`Failed to update transaction type: ${error.message}`);
+  try {
+    const { data, error } = await supabase
+      .from('transactions')
+      .update({ 
+        transaction_type: transactionType,
+        needs_clarification: false,
+        clarification_question: null,
+      })
+      .eq('id', id)
+      .select();
+
+    if (error) {
+      console.error('[updateTransactionType] Supabase error:', {
+        error_message: error.message,
+        error_details: error.details,
+        error_hint: error.hint,
+        error_code: error.code,
+        transaction_id: id,
+        transaction_type: transactionType,
+        timestamp: new Date().toISOString(),
+      });
+      throw new Error(`Failed to update transaction type: ${error.message} (code: ${error.code}, details: ${error.details})`);
+    }
+
+    console.log('[updateTransactionType] Transaction updated successfully', {
+      transaction_id: id,
+      transaction_type: transactionType,
+      updated_rows: data?.length || 0,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error('[updateTransactionType] Unexpected error:', {
+      error_name: error.name,
+      error_message: error.message,
+      error_stack: error.stack,
+      transaction_id: id,
+      transaction_type: transactionType,
+      timestamp: new Date().toISOString(),
+    });
+    throw error;
   }
 }
 
