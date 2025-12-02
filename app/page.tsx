@@ -237,10 +237,6 @@ export default function Home() {
               A
             </div>
             <h1 className="font-semibold text-lg tracking-tight">Adphex</h1>
-            <div className="h-4 w-[1px] bg-slate-200 dark:bg-slate-700 mx-1"></div>
-            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border border-green-200 dark:border-green-800">
-              Connected
-            </span>
           </div>
           
           <div className="flex items-center gap-4">
