@@ -13,9 +13,9 @@ export default function LandingPage() {
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white font-bold shadow-sm">
-              B
+              A
             </div>
-            <span className="font-semibold text-lg tracking-tight">Butler</span>
+            <span className="font-semibold text-lg tracking-tight">Adphex</span>
           </div>
           
           <div className="flex items-center gap-4">
@@ -216,7 +216,7 @@ export default function LandingPage() {
           <div className="text-center mb-16">
             <h2 className="text-3xl font-bold text-slate-900 dark:text-white mb-4">Everything you need to understand your cashflow</h2>
             <p className="text-slate-600 dark:text-slate-400 max-w-xl mx-auto">
-              Stop manually tagging transactions. Butler automates the tedious parts of personal finance.
+              Stop manually tagging transactions. Adphex automates the tedious parts of personal finance.
             </p>
           </div>
 
@@ -241,11 +241,11 @@ export default function LandingPage() {
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-16">
             <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-sm font-semibold border border-blue-200 dark:border-blue-800 mb-6">
-              Why Butler?
+              Why Adphex?
             </div>
             <h2 className="text-4xl md:text-5xl font-bold text-slate-900 dark:text-white mb-6">Why not just use ChatGPT?</h2>
             <p className="text-xl text-slate-600 dark:text-slate-400 max-w-2xl mx-auto leading-relaxed">
-              ChatGPT is great, but Butler is built specifically for your finances. Here's why it's better.
+              ChatGPT is great, but Adphex is built specifically for your finances. Here's why it's better.
             </p>
           </div>
 
@@ -257,7 +257,7 @@ export default function LandingPage() {
               </div>
               <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-3">Advanced Duplicate Detection</h3>
               <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
-                Butler does advanced duplicate detection so that you don't have to worry about whether you uploaded your document twice or more times.
+                Adphex does advanced duplicate detection so that you don't have to worry about whether you uploaded your document twice or more times.
               </p>
             </div>
 
@@ -268,7 +268,7 @@ export default function LandingPage() {
               </div>
               <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-3">Interactive Metrics</h3>
               <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
-                Butler allows you to track important metrics using interactive graphs and diagrams, allowing you to "just glance" to understand your financial health.
+                Adphex allows you to track important metrics using interactive graphs and diagrams, allowing you to "just glance" to understand your financial health.
               </p>
             </div>
 
@@ -279,7 +279,7 @@ export default function LandingPage() {
               </div>
               <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-3">Historic Financial Data</h3>
               <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
-                Butler allows you to ask any financial question and get answers based on years of historic financial data.
+                Adphex allows you to ask any financial question and get answers based on years of historic financial data.
               </p>
             </div>
           </div>
@@ -292,7 +292,7 @@ export default function LandingPage() {
               </div>
               <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-3">Personalized Tips</h3>
               <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
-                Butler gives personalized tips on saving more money and improving financial health.
+                Adphex gives personalized tips on saving more money and improving financial health.
               </p>
             </div>
 
@@ -301,9 +301,9 @@ export default function LandingPage() {
               <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-yellow-500 to-yellow-600 dark:from-yellow-600 dark:to-yellow-700 flex items-center justify-center text-white mb-6 group-hover:scale-110 transition-transform duration-300 shadow-lg">
                 <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
               </div>
-              <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-3">Your Personal Butler</h3>
+              <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-3">Your Personal Assistant</h3>
               <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
-                Butler is your own personal butler who handles all your money for you.
+                Adphex is your own personal assistant who handles all your money for you.
               </p>
             </div>
           </div>
@@ -337,7 +337,7 @@ export default function LandingPage() {
         <div className="relative max-w-3xl mx-auto space-y-8">
           <h2 className="text-4xl md:text-5xl font-bold tracking-tight">Ready to take control?</h2>
           <p className="text-xl text-slate-300 max-w-xl mx-auto">
-            Join thousands who have ditched their spreadsheets for Butler&apos;s AI insights.
+            Join thousands who have ditched their spreadsheets for Adphex&apos;s AI insights.
           </p>
           <Link 
             href="/login"
@@ -352,8 +352,8 @@ export default function LandingPage() {
       <footer className="py-12 px-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-gray-950">
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6 text-sm text-slate-500 dark:text-slate-400">
           <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded bg-slate-200 dark:bg-slate-800 flex items-center justify-center font-bold text-slate-700 dark:text-slate-300 text-xs">B</div>
-            <span>© 2025 Butler. All rights reserved.</span>
+            <div className="w-6 h-6 rounded bg-slate-200 dark:bg-slate-800 flex items-center justify-center font-bold text-slate-700 dark:text-slate-300 text-xs">A</div>
+            <span>© 2025 Adphex. All rights reserved.</span>
           </div>
           <div className="flex gap-8">
             <a href="#" className="hover:text-slate-900 dark:hover:text-white transition-colors">Privacy</a>
@@ -369,7 +369,7 @@ export default function LandingPage() {
 const features = [
   {
     title: 'Bank Statement Analysis',
-    description: 'Upload PDFs or images. Butler parses messy layouts and extracts clean, structured transaction data instantly.',
+    description: 'Upload PDFs or images. Adphex parses messy layouts and extracts clean, structured transaction data instantly.',
     icon: <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 011.414.586l4 4a1 1 0 01.586 1.414V19a2 2 0 01-2 2z" /></svg>
   },
   {
@@ -379,7 +379,7 @@ const features = [
   },
   {
     title: 'Duplicate Detection',
-    description: 'Our advanced algorithms ensure no duplicate transactions are logged, even if you make mistakes saving them, your Butler is smart enough to take care of everything.',
+    description: 'Our advanced algorithms ensure no duplicate transactions are logged, even if you make mistakes saving them, Adphex is smart enough to take care of everything.',
     icon: <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
   },
 ];
@@ -391,7 +391,7 @@ const steps = [
   },
   {
     title: 'AI Processing',
-    description: 'Butler scans the document, extracting dates, merchants, and amounts while identifying account details.',
+    description: 'Adphex scans the document, extracting dates, merchants, and amounts while identifying account details.',
   },
   {
     title: 'Ask Questions',

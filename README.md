@@ -1,6 +1,6 @@
-# 🤵 Butler - AI Financial Assistant
+# Adphex - AI Financial Assistant
 
-Butler helps users manage and understand their finances using AI-powered analysis of bank and credit card statements.
+Adphex helps users manage and understand their finances using AI-powered analysis of bank and credit card statements.
 
 ## Features
 
@@ -107,7 +107,7 @@ npm run dev
 
 ### Chat Assistant
 
-Butler's AI assistant uses function calling to:
+Adphex's AI assistant uses function calling to:
 - **search_documents**: Query uploaded statements
 - **search_transactions**: Find specific transactions with filters (including transaction type)
 - **get_all_metadata**: Retrieve summary text
@@ -179,7 +179,7 @@ The assistant provides detailed, data-rich responses with:
 ```
 User: "What's my financial health for October?"
 
-Butler: "Your financial health for October 2025:
+Adphex: "Your financial health for October 2025:
 
 **Income**: $5,250.00
 **Expenses**: $3,120.45
@@ -200,7 +200,7 @@ Great job maintaining a healthy savings rate! 💰"
 ```
 User: "Calculate my net worth on October 31st"
 
-Butler: "Your net worth on Oct 31, 2025 is $15,250.50 based on 3 accounts:
+Adphex: "Your net worth on Oct 31, 2025 is $15,250.50 based on 3 accounts:
 
 **Assets:**
 - Checking Account: $8,500.00
@@ -224,7 +224,7 @@ System: "I found 2 transactions that need clarification:
 
 User: "The first is my salary, the second is business income"
 
-Butler: "Thanks! I've categorized both as income. Your total income for this period is $2,650."
+Adphex: "Thanks! I've categorized both as income. Your total income for this period is $2,650."
 ```
 
 ## Technology Stack

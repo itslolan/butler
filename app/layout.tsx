@@ -3,7 +3,7 @@ import "./globals.css";
 import { AuthProvider } from "@/components/AuthProvider";
 
 export const metadata: Metadata = {
-  title: "Butler - Financial Health Tracker",
+  title: "Adphex - Financial Health Tracker",
   description: "Track your expenses and financial health with AI-powered analysis",
 };
 

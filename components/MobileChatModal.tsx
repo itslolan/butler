@@ -51,10 +51,10 @@ export default function MobileChatModal({ userId, chatInterfaceRef, isOpen, onOp
             <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-gray-900 shrink-0">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white font-bold shadow-sm">
-                  B
+                  A
                 </div>
                 <div>
-                  <h2 className="font-semibold text-slate-900 dark:text-white">Chat with Butler</h2>
+                  <h2 className="font-semibold text-slate-900 dark:text-white">Chat with Adphex</h2>
                   <p className="text-xs text-slate-500 dark:text-slate-400">AI Financial Assistant</p>
                 </div>
               </div>

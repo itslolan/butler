@@ -484,8 +484,7 @@ export async function getMonthlySpendingTrend(
     endDate = new Date(year, month, 0).toISOString().split('T')[0];
   } else {
     const now = new Date();
-    const monthsAgo = new Date(now);
-    monthsAgo.setMonth(now.getMonth() - months);
+    const monthsAgo = new Date(now.getFullYear(), now.getMonth() - months, 1);
     startDate = monthsAgo.toISOString().split('T')[0];
   }
   
@@ -584,10 +583,9 @@ export async function getCategoryBreakdown(
     
     query = query.gte('date', startOfMonth).lte('date', endDate);
   } else {
-    // Default: last N months
+    // Default: last N months - start from the 1st of the month N months ago
     const now = new Date();
-    const monthsAgo = new Date(now);
-    monthsAgo.setMonth(now.getMonth() - months);
+    const monthsAgo = new Date(now.getFullYear(), now.getMonth() - months, 1);
     const startDate = monthsAgo.toISOString().split('T')[0];
     
     query = query.gte('date', startDate);
@@ -654,8 +652,7 @@ export async function getIncomeVsExpenses(
     endDate = new Date(year, month, 0).toISOString().split('T')[0];
   } else {
     const now = new Date();
-    const monthsAgo = new Date(now);
-    monthsAgo.setMonth(now.getMonth() - months);
+    const monthsAgo = new Date(now.getFullYear(), now.getMonth() - months, 1);
     startDate = monthsAgo.toISOString().split('T')[0];
   }
   

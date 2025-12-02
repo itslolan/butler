@@ -155,7 +155,7 @@ Please reply with the correct category or explain what this transaction is.`;
               How can I help you today?
             </h3>
             <p className="text-sm text-slate-500 dark:text-slate-400 mb-8 max-w-xs">
-              Ask Butler anything about your finances. Here are some examples:
+              Ask Adphex anything about your finances. Here are some examples:
             </p>
             
             <div className="grid gap-3 w-full max-w-sm">

@@ -84,7 +84,7 @@ export default function LoginPage() {
         {/* Logo/Title */}
         <div className="text-center space-y-2">
           <h1 className="text-4xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">
-            🤵 Butler
+            Adphex
           </h1>
           <p className="text-sm text-slate-600 dark:text-slate-400">
             Your AI-powered financial assistant

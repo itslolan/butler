@@ -234,9 +234,9 @@ export default function Home() {
         <header className="h-16 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-gray-900 flex items-center justify-between px-6 shrink-0 z-10">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white font-bold shadow-sm">
-              B
+              A
             </div>
-            <h1 className="font-semibold text-lg tracking-tight">Butler</h1>
+            <h1 className="font-semibold text-lg tracking-tight">Adphex</h1>
             <div className="h-4 w-[1px] bg-slate-200 dark:bg-slate-700 mx-1"></div>
             <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border border-green-200 dark:border-green-800">
               Connected
