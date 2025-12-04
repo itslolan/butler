@@ -1,0 +1,22 @@
+{
+  "name": "Adphex - AI-Powered Financial Assistant",
+  "short_name": "Adphex",
+  "description": "Get trusted answers about your finances with AI-powered analysis. Upload bank statements, track expenses, and get personalized financial insights.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#2563eb",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
+

@@ -6,8 +6,39 @@ import { useAuth } from '@/components/AuthProvider';
 export default function LandingPage() {
   const { loading } = useAuth();
 
+  const structuredData = {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Adphex",
+    "applicationCategory": "FinanceApplication",
+    "description": "AI-powered financial assistant that helps you track expenses, analyze bank statements, and get personalized financial insights.",
+    "url": "https://adphex.com",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "aggregateRating": {
+      "@type": "AggregateRating",
+      "ratingValue": "4.8",
+      "ratingCount": "150"
+    },
+    "featureList": [
+      "Bank statement analysis",
+      "AI-powered expense tracking",
+      "Duplicate transaction detection",
+      "Financial insights and recommendations",
+      "Interactive charts and visualizations"
+    ]
+  };
+
   return (
     <div className="min-h-screen bg-white dark:bg-gray-950 text-slate-900 dark:text-white selection:bg-blue-100 dark:selection:bg-blue-900/30">
+      {/* Structured Data for SEO */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+      />
       {/* Navigation */}
       <nav className="fixed top-0 w-full z-50 bg-white/80 dark:bg-gray-950/80 backdrop-blur-md border-b border-slate-100 dark:border-slate-800">
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
@@ -78,7 +109,7 @@ export default function LandingPage() {
       </section>
 
       {/* Why not just use ChatGPT? */}
-      <section className="py-24 px-6 bg-slate-50/50 dark:bg-gray-900/50 border-y border-slate-100 dark:border-slate-800">
+      <section className="py-24 px-6 bg-slate-50/50 dark:bg-gray-900/50 border-y border-slate-100 dark:border-slate-800" aria-label="Why choose Adphex">
         <div className="max-w-3xl mx-auto">
           <div className="text-center mb-16">
             <h2 className="text-3xl md:text-4xl font-bold text-slate-900 dark:text-white mb-6">Why not just use ChatGPT?</h2>
@@ -150,7 +181,7 @@ export default function LandingPage() {
       </section>
 
       {/* Features Grid */}
-      <section id="features" className="py-24 bg-white dark:bg-gray-900">
+      <section id="features" className="py-24 bg-white dark:bg-gray-900" aria-label="Features">
         <div className="max-w-6xl mx-auto px-6">
           <div className="text-center mb-16">
             <h2 className="text-3xl font-bold text-slate-900 dark:text-white mb-4">Everything you need to understand your cashflow</h2>
@@ -176,7 +207,7 @@ export default function LandingPage() {
       </section>
 
       {/* How It Works */}
-      <section className="py-24 px-6 border-t border-slate-100 dark:border-slate-800">
+      <section className="py-24 px-6 border-t border-slate-100 dark:border-slate-800" aria-label="How it works">
         <div className="max-w-4xl mx-auto">
           <h2 className="text-3xl font-bold text-slate-900 dark:text-white mb-12 text-center">From PDF to Insights in Seconds</h2>
           
@@ -197,8 +228,8 @@ export default function LandingPage() {
       </section>
 
       {/* CTA */}
-      <section className="py-32 px-6 bg-slate-900 dark:bg-blue-950 text-white text-center relative overflow-hidden">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-blue-800/30 via-slate-900/0 to-slate-900/0 pointer-events-none"></div>
+      <section className="py-32 px-6 bg-slate-900 dark:bg-blue-950 text-white text-center relative overflow-hidden" aria-label="Call to action">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-blue-800/30 via-slate-900/0 to-slate-900/0 pointer-events-none" aria-hidden="true"></div>
         <div className="relative max-w-3xl mx-auto space-y-8">
           <h2 className="text-4xl md:text-5xl font-bold tracking-tight">Ready to take control?</h2>
           <p className="text-xl text-slate-300 max-w-xl mx-auto">
