@@ -60,7 +60,7 @@ export default function LandingPage() {
             </p>
           </div>
           
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-center gap-4 pt-4">
             <div className="flex flex-col items-center">
               <Link 
                 href="/demo"
@@ -70,12 +70,15 @@ export default function LandingPage() {
               </Link>
               <span className="text-xs text-slate-500 dark:text-slate-400 mt-1">No signup required</span>
             </div>
-            <Link 
-              href="/login"
-              className="w-full sm:w-auto px-8 py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl font-semibold hover:bg-slate-800 dark:hover:bg-slate-100 transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
-            >
-              Start Analyzing Free
-            </Link>
+            <div className="flex flex-col items-center">
+              <Link 
+                href="/login"
+                className="w-full sm:w-auto px-8 py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl font-semibold hover:bg-slate-800 dark:hover:bg-slate-100 transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+              >
+                Signup for Free
+              </Link>
+              <span className="text-xs text-slate-500 dark:text-slate-400 mt-1 h-4"></span>
+            </div>
           </div>
         </div>
       </section>
