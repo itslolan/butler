@@ -13,14 +13,16 @@ import {
   bulkUpdateTransactionsByCategory,
   bulkUpdateTransactionsByFilters,
   getCategoryBreakdown,
-  getMonthlySpendingTrend
+  getMonthlySpendingTrend,
+  getAllMemories,
+  upsertMemory
 } from '@/lib/db-tools';
 
 export const runtime = 'nodejs';
 
 const GEMINI_MODEL = 'gemini-3-pro-preview';
 
-const SYSTEM_PROMPT = `You are Adphex, an AI financial assistant. You help users understand their financial data by querying structured databases.
+const BASE_SYSTEM_PROMPT = `You are Adphex, an AI financial assistant. You help users understand their financial data by querying structured databases.
 
 You have access to four data sources:
 
@@ -35,6 +37,8 @@ You have access to four data sources:
    - Use this to track net worth over time
    
 4. **Metadata Text**: A markdown document containing all metadata summaries from uploaded statements (may be noisy or duplicate structured data)
+
+5. **User Memories**: Contextual information about the user's financial patterns, preferences, and notable facts (e.g., salary amounts, spending patterns, account relationships)
 
 **Currency Handling:**
 - Each transaction, document, and account snapshot includes a currency field (ISO 4217 code like USD, EUR, GBP, INR, etc.)
@@ -308,6 +312,87 @@ async function executeToolCall(name: string, args: any, effectiveUserId: string,
   return functionResult;
 }
 
+/**
+ * Extract memories from chat conversation and save them
+ * Uses LLM to identify memory-worthy information and detect corrections
+ */
+async function extractAndSaveMemories(
+  userId: string,
+  messages: Array<{ role: string; content: string }>,
+  assistantResponse: string
+): Promise<void> {
+  if (!process.env.GEMINI_API_KEY) {
+    return;
+  }
+
+  try {
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-2.0-flash-exp',
+      generationConfig: {
+        responseMimeType: 'application/json',
+        temperature: 0.3,
+      },
+    });
+
+    // Get recent conversation context (last 5 messages)
+    const recentMessages = messages.slice(-5);
+    const conversationText = recentMessages
+      .map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
+      .join('\n\n');
+
+    // Get existing memories to help detect conflicts
+    const existingMemories = await getAllMemories(userId);
+
+    const prompt = `Analyze this conversation and extract any notable memories about the user's financial situation. Also detect if the user is correcting or updating existing information.
+
+Conversation:
+${conversationText}
+
+Assistant's latest response:
+${assistantResponse}
+
+${existingMemories ? `Existing memories:\n${existingMemories}\n` : ''}
+
+Extract memories that are:
+1. Notable facts (e.g., "User receives monthly salary of $5000", "User had many guests in June-July")
+2. Corrections/updates (e.g., "User's salary increased to $6000" - this should UPDATE existing salary memory)
+3. Pattern changes (e.g., "User no longer transfers money between accounts")
+
+For corrections: If user says something like "my salary increased to $5000" or "salary is now $5000", this should UPDATE the existing salary memory, not create a new one.
+
+Return a JSON object:
+{
+  "memories": [
+    {
+      "content": "Memory text in bullet point format (e.g., '- User receives monthly salary of $5000 from Company ABC')",
+      "isCorrection": true/false,
+      "conflictsWith": "existing memory content if this is a correction"
+    }
+  ]
+}
+
+If no memories found, return {"memories": []}.`;
+
+    const result = await model.generateContent(prompt);
+    const responseText = result.response.text();
+    const parsed = JSON.parse(responseText);
+
+    if (parsed.memories && Array.isArray(parsed.memories)) {
+      for (const memory of parsed.memories) {
+        if (memory.content && memory.content.trim()) {
+          // Use upsertMemory which handles conflicts automatically
+          await upsertMemory(userId, memory.content);
+          console.log(`[Memory] Extracted from chat: ${memory.content}`);
+        }
+      }
+    }
+  } catch (error: any) {
+    // Don't throw - memory extraction is non-critical
+    console.error('[chat] Error extracting memories:', error.message);
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     if (!process.env.GEMINI_API_KEY) {
@@ -327,6 +412,24 @@ export async function POST(request: NextRequest) {
     }
 
     const effectiveUserId = userId || 'default-user';
+
+    // Retrieve user memories to inject into system prompt
+    let memoriesText = '';
+    try {
+      memoriesText = await getAllMemories(effectiveUserId);
+    } catch (error: any) {
+      console.error('[chat] Error retrieving memories:', error.message);
+    }
+
+    // Build system prompt with memories
+    const SYSTEM_PROMPT = memoriesText 
+      ? `${BASE_SYSTEM_PROMPT}
+
+**User Memories:**
+${memoriesText}
+
+When answering questions, use these memories to provide context-aware responses. If the user provides corrections or updates to information in memories, acknowledge the update.`
+      : BASE_SYSTEM_PROMPT;
 
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
@@ -922,6 +1025,11 @@ export async function POST(request: NextRequest) {
           sendEvent('done', { 
             totalToolCalls: functionCallCount,
             chartConfig,
+          });
+
+          // Extract memories from the conversation (async, don't block response)
+          extractAndSaveMemories(effectiveUserId, messages, responseText).catch((error: any) => {
+            console.error('[chat] Error extracting memories:', error.message);
           });
 
           controller.close();

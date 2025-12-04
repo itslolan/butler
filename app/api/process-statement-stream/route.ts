@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { insertDocument, insertTransactions, appendMetadata, insertAccountSnapshots, getUnclarifiedTransactions, findMatchingTransfer } from '@/lib/db-tools';
+import { insertDocument, insertTransactions, appendMetadata, insertAccountSnapshots, getUnclarifiedTransactions, findMatchingTransfer, getAllMemories, searchTransactions, upsertMemory } from '@/lib/db-tools';
 import { uploadFile, Transaction } from '@/lib/supabase';
 import { calculateMonthlySnapshots } from '@/lib/snapshot-calculator';
 import { generateSuggestedActions } from '@/lib/action-generator';
@@ -9,7 +9,7 @@ export const runtime = 'nodejs';
 
 const GEMINI_MODEL = 'gemini-3-pro-preview';
 
-const SYSTEM_PROMPT = `You are a financial document parser. Extract structured information from bank statements and credit card statements.
+const BASE_SYSTEM_PROMPT = `You are a financial document parser. Extract structured information from bank statements and credit card statements.
 
 **CRITICAL**: Return ONLY valid JSON. Do NOT wrap your response in markdown code blocks. Do NOT include any text before or after the JSON object.
 
@@ -105,6 +105,152 @@ Extract all transactions visible in the document. Categorize them logically (Foo
 For amounts, use positive numbers for credits/deposits and negative numbers for debits/charges.
 Always return valid JSON.`;
 
+/**
+ * Monitor transaction patterns and update memories when patterns change
+ */
+async function monitorPatternChanges(
+  userId: string,
+  newTransactions: any[],
+  extractedData: any
+): Promise<void> {
+  if (!process.env.GEMINI_API_KEY || newTransactions.length === 0) {
+    return;
+  }
+
+  try {
+    // Get existing memories
+    const existingMemories = await getAllMemories(userId);
+    
+    // Analyze income patterns from new transactions
+    const incomeTransactions = newTransactions.filter(t => t.transactionType === 'income');
+    const transferTransactions = newTransactions.filter(t => t.transactionType === 'transfer');
+
+    // Check for salary/income pattern changes
+    if (incomeTransactions.length > 0 && extractedData.incomeTransactions) {
+      for (const incomeTxn of extractedData.incomeTransactions) {
+        if (incomeTxn.frequency && incomeTxn.frequency !== 'irregular' && incomeTxn.confidence > 0.7) {
+          const amount = Math.abs(incomeTxn.amount);
+          const currency = extractedData.currency || 'USD';
+          const currencySymbol = currency === 'USD' ? '$' : currency === 'EUR' ? '€' : currency === 'GBP' ? '£' : currency === 'INR' ? '₹' : currency;
+          
+          // Check if this conflicts with existing salary memory
+          const newMemory = `User receives ${incomeTxn.frequency} ${incomeTxn.source ? `income of ${currencySymbol}${amount.toFixed(2)} from ${incomeTxn.source}` : `salary of ${currencySymbol}${amount.toFixed(2)}`}`;
+          
+          // Check if there's an existing salary memory with different amount
+          if (existingMemories) {
+            const salaryPattern = /salary|income.*\$|income.*€|income.*£|income.*₹/i;
+            const existingSalaryMemories = existingMemories.split('\n').filter(m => salaryPattern.test(m));
+            
+            for (const existingMemory of existingSalaryMemories) {
+              // Extract amount from existing memory
+              const amountMatch = existingMemory.match(/(\$|€|£|₹)([\d,]+\.?\d*)/);
+              if (amountMatch) {
+                const existingAmount = parseFloat(amountMatch[2].replace(/,/g, ''));
+                const tolerance = Math.max(existingAmount * 0.1, 100); // 10% tolerance or $100
+                
+                // If amounts differ significantly, update the memory
+                if (Math.abs(existingAmount - amount) > tolerance) {
+                  await upsertMemory(userId, newMemory);
+                  console.log(`[Pattern Monitoring] Updated salary memory: ${existingAmount} -> ${amount}`);
+                  break;
+                }
+              }
+            }
+            
+            // If no existing salary memory, add new one
+            if (existingSalaryMemories.length === 0) {
+              await upsertMemory(userId, newMemory);
+              console.log(`[Pattern Monitoring] Added new salary memory: ${newMemory}`);
+            }
+          } else {
+            // No existing memories, add new one
+            await upsertMemory(userId, newMemory);
+            console.log(`[Pattern Monitoring] Added new salary memory: ${newMemory}`);
+          }
+        }
+      }
+    }
+
+    // Check for transfer pattern changes
+    if (transferTransactions.length > 0) {
+      // Group transfers by amount and accounts
+      const transferGroups = new Map<string, { count: number; accounts: Set<string>; amount: number }>();
+      
+      for (const txn of transferTransactions) {
+        const amount = Math.abs(txn.amount);
+        const key = `${amount.toFixed(2)}`;
+        
+        if (!transferGroups.has(key)) {
+          transferGroups.set(key, { count: 0, accounts: new Set(), amount });
+        }
+        
+        const group = transferGroups.get(key)!;
+        group.count++;
+        if (txn.account_name) {
+          group.accounts.add(txn.account_name);
+        }
+      }
+      
+      // Check for regular transfer patterns (same amount appearing multiple times)
+      for (const [amountKey, group] of transferGroups.entries()) {
+        if (group.count >= 2) {
+          // This looks like a regular transfer pattern
+          const currency = extractedData.currency || 'USD';
+          const currencySymbol = currency === 'USD' ? '$' : currency === 'EUR' ? '€' : currency === 'GBP' ? '£' : currency === 'INR' ? '₹' : currency;
+          const accounts = Array.from(group.accounts);
+          
+          if (accounts.length >= 2) {
+            const newMemory = `User regularly transfers ${currencySymbol}${group.amount.toFixed(2)} between ${accounts.join(' and ')}`;
+            
+            // Check if this conflicts with existing transfer memory
+            if (existingMemories) {
+              const transferPattern = /transfers.*\$|transfers.*€|transfers.*£|transfers.*₹/i;
+              const existingTransferMemories = existingMemories.split('\n').filter(m => transferPattern.test(m));
+              
+              let foundMatch = false;
+              for (const existingMemory of existingTransferMemories) {
+                // Check if same accounts are mentioned
+                const accountsMatch = accounts.some(acc => existingMemory.includes(acc));
+                if (accountsMatch) {
+                  // Extract amount from existing memory
+                  const amountMatch = existingMemory.match(/(\$|€|£|₹)([\d,]+\.?\d*)/);
+                  if (amountMatch) {
+                    const existingAmount = parseFloat(amountMatch[2].replace(/,/g, ''));
+                    const tolerance = Math.max(existingAmount * 0.1, 50); // 10% tolerance or $50
+                    
+                    // If amounts differ significantly, update the memory
+                    if (Math.abs(existingAmount - group.amount) > tolerance) {
+                      await upsertMemory(userId, newMemory);
+                      console.log(`[Pattern Monitoring] Updated transfer memory: ${existingAmount} -> ${group.amount}`);
+                      foundMatch = true;
+                      break;
+                    } else {
+                      foundMatch = true; // Amount matches, no update needed
+                      break;
+                    }
+                  }
+                }
+              }
+              
+              if (!foundMatch) {
+                await upsertMemory(userId, newMemory);
+                console.log(`[Pattern Monitoring] Added new transfer memory: ${newMemory}`);
+              }
+            } else {
+              // No existing memories, add new one
+              await upsertMemory(userId, newMemory);
+              console.log(`[Pattern Monitoring] Added new transfer memory: ${newMemory}`);
+            }
+          }
+        }
+      }
+    }
+  } catch (error: any) {
+    console.error('[Pattern Monitoring] Error:', error.message);
+    // Don't throw - pattern monitoring is non-critical
+  }
+}
+
 export async function POST(request: NextRequest) {
   const encoder = new TextEncoder();
   
@@ -123,6 +269,28 @@ export async function POST(request: NextRequest) {
           return;
         }
 
+        const formData = await request.formData();
+        const file = formData.get('file') as File;
+        const userId = (formData.get('userId') as string) || 'default-user';
+
+        // Retrieve user memories to inject into system prompt
+        let memoriesText = '';
+        try {
+          memoriesText = await getAllMemories(userId);
+        } catch (error: any) {
+          console.error('[process-statement] Error retrieving memories:', error.message);
+        }
+
+        // Build system prompt with memories
+        const SYSTEM_PROMPT = memoriesText
+          ? `${BASE_SYSTEM_PROMPT}
+
+**User Context/Memories:**
+${memoriesText}
+
+Use these memories to help classify transactions. For example, if you know the user receives a salary of a certain amount from a specific merchant, classify similar transactions accordingly.`
+          : BASE_SYSTEM_PROMPT;
+
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
         const model = genAI.getGenerativeModel({
           model: GEMINI_MODEL,
@@ -131,10 +299,6 @@ export async function POST(request: NextRequest) {
             responseMimeType: 'application/json',
           },
         });
-
-        const formData = await request.formData();
-        const file = formData.get('file') as File;
-        const userId = (formData.get('userId') as string) || 'default-user';
 
         if (!file) {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: 'No file provided' })}\n\n`));
@@ -450,6 +614,13 @@ export async function POST(request: NextRequest) {
         const metadataEntry = `\n\n---\n**Document:** ${file.name} (uploaded ${new Date().toISOString()})\n\n${metadataSummary}\n`;
 
         await appendMetadata(userId, metadataEntry);
+        
+        // Pattern monitoring: Detect changes in regular patterns and update memories
+        try {
+          await monitorPatternChanges(userId, transactionsToInsert, extractedData);
+        } catch (error: any) {
+          console.error('[process-statement] Error monitoring patterns:', error.message);
+        }
         
         // Calculate and save monthly snapshots if we have balance information
         if (accountName && 

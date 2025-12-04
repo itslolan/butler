@@ -1,4 +1,4 @@
-import { supabase, Document, Transaction, UserMetadata, AccountSnapshot } from './supabase';
+import { supabase, Document, Transaction, UserMetadata, AccountSnapshot, UserMemory } from './supabase';
 
 export interface DocumentFilter {
   documentType?: string;
@@ -1085,4 +1085,195 @@ export async function getIncomeVsExpenses(
   result.sort((a, b) => a.month.localeCompare(b.month));
   
   return result;
+}
+
+/**
+ * Get all memories for a user as plain text
+ */
+export async function getAllMemories(userId: string): Promise<string> {
+  const { data, error } = await supabase
+    .from('user_memories')
+    .select('content')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    throw new Error(`Failed to get memories: ${error.message}`);
+  }
+
+  if (!data || data.length === 0) {
+    return '';
+  }
+
+  // Combine all memories into a single text with bullet points
+  return data.map(m => m.content).join('\n');
+}
+
+/**
+ * Append a new memory to the user's memories
+ * Note: This creates a new row. For updating existing memories, use updateMemory or handleConflict.
+ */
+export async function appendMemory(userId: string, newMemory: string): Promise<void> {
+  // Ensure memory starts with bullet point format
+  const formattedMemory = newMemory.startsWith('- ') ? newMemory : `- ${newMemory}`;
+
+  const { error } = await supabase
+    .from('user_memories')
+    .insert({ user_id: userId, content: formattedMemory });
+
+  if (error) {
+    throw new Error(`Failed to append memory: ${error.message}`);
+  }
+}
+
+/**
+ * Update an existing memory by replacing old content with new content
+ */
+export async function updateMemory(userId: string, oldMemory: string, newMemory: string): Promise<void> {
+  const formattedNewMemory = newMemory.startsWith('- ') ? newMemory : `- ${newMemory}`;
+
+  const { error } = await supabase
+    .from('user_memories')
+    .update({ content: formattedNewMemory, updated_at: new Date().toISOString() })
+    .eq('user_id', userId)
+    .eq('content', oldMemory);
+
+  if (error) {
+    throw new Error(`Failed to update memory: ${error.message}`);
+  }
+}
+
+/**
+ * Delete a specific memory
+ */
+export async function deleteMemory(userId: string, memoryToDelete: string): Promise<void> {
+  const { error } = await supabase
+    .from('user_memories')
+    .delete()
+    .eq('user_id', userId)
+    .eq('content', memoryToDelete);
+
+  if (error) {
+    throw new Error(`Failed to delete memory: ${error.message}`);
+  }
+}
+
+/**
+ * Find memories that might conflict with new information
+ * Uses LLM to intelligently detect semantic conflicts
+ */
+export async function findConflictingMemories(
+  userId: string,
+  newMemory: string
+): Promise<Array<{ id: string; content: string }>> {
+  const { data, error } = await supabase
+    .from('user_memories')
+    .select('id, content')
+    .eq('user_id', userId);
+
+  if (error) {
+    throw new Error(`Failed to find conflicting memories: ${error.message}`);
+  }
+
+  if (!data || data.length === 0) {
+    return [];
+  }
+
+  // Use LLM to detect conflicts intelligently
+  if (!process.env.GEMINI_API_KEY) {
+    // Fallback: simple keyword matching if no API key
+    return data.filter(m => {
+      const newLower = newMemory.toLowerCase();
+      const memLower = m.content.toLowerCase();
+      
+      // Check for common conflict patterns
+      const conflictKeywords = ['salary', 'income', 'transfer', 'monthly', 'regularly'];
+      const hasCommonKeyword = conflictKeywords.some(keyword => 
+        newLower.includes(keyword) && memLower.includes(keyword)
+      );
+      
+      return hasCommonKeyword;
+    });
+  }
+
+  try {
+    const { GoogleGenerativeAI } = await import('@google/generative-ai');
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-2.0-flash-exp',
+      generationConfig: {
+        responseMimeType: 'application/json',
+        temperature: 0.3,
+      },
+    });
+
+    const existingMemoriesText = data.map(m => m.content).join('\n');
+    
+    const prompt = `You are analyzing user memories to detect conflicts. Given a new memory and existing memories, identify which existing memories conflict with the new one.
+
+New memory: "${newMemory}"
+
+Existing memories:
+${existingMemoriesText}
+
+A conflict occurs when:
+- Same fact but different value (e.g., "salary is $4000" vs "salary is $5000")
+- Same pattern but different details (e.g., "transfers $2000 monthly" vs "transfers $3000 monthly")
+- Contradictory information about the same thing
+
+Return a JSON array of the EXACT content strings from existing memories that conflict with the new memory. If no conflicts, return empty array [].
+
+Format: ["- memory content 1", "- memory content 2"]`;
+
+    const result = await model.generateContent(prompt);
+    const responseText = result.response.text();
+    const conflictingContents: string[] = JSON.parse(responseText);
+
+    if (!Array.isArray(conflictingContents) || conflictingContents.length === 0) {
+      return [];
+    }
+
+    // Find the memory records that match the conflicting contents
+    return data.filter(m => conflictingContents.includes(m.content));
+  } catch (error: any) {
+    console.error('Error detecting memory conflicts with LLM:', error.message);
+    // Fallback to simple matching
+    return data.filter(m => {
+      const newLower = newMemory.toLowerCase();
+      const memLower = m.content.toLowerCase();
+      const conflictKeywords = ['salary', 'income', 'transfer', 'monthly', 'regularly'];
+      return conflictKeywords.some(keyword => 
+        newLower.includes(keyword) && memLower.includes(keyword)
+      );
+    });
+  }
+}
+
+/**
+ * Smart memory update: checks for conflicts and updates or appends accordingly
+ */
+export async function upsertMemory(userId: string, newMemory: string): Promise<void> {
+  const formattedMemory = newMemory.startsWith('- ') ? newMemory : `- ${newMemory}`;
+  
+  // Find conflicting memories
+  const conflicts = await findConflictingMemories(userId, formattedMemory);
+  
+  if (conflicts.length > 0) {
+    // Update the first conflicting memory (most recent or first found)
+    // Delete others to avoid duplicates
+    for (let i = 0; i < conflicts.length; i++) {
+      if (i === 0) {
+        // Update the first one
+        await updateMemory(userId, conflicts[i].content, formattedMemory);
+      } else {
+        // Delete duplicates
+        await deleteMemory(userId, conflicts[i].content);
+      }
+    }
+    console.log(`[Memory] Updated ${conflicts.length} conflicting memory/memories with: ${formattedMemory}`);
+  } else {
+    // No conflicts, append new memory
+    await appendMemory(userId, formattedMemory);
+    console.log(`[Memory] Added new memory: ${formattedMemory}`);
+  }
 }
