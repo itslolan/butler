@@ -131,20 +131,6 @@ export default function DemoPage() {
             </div>
           </header>
 
-          {/* Info Banner */}
-          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border-b border-blue-100 dark:border-blue-800 px-6 py-3">
-            <div className="max-w-7xl mx-auto flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <svg className="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <p className="text-sm text-blue-900 dark:text-blue-200">
-                  You have <strong>{Math.max(0, 3 - questionCount)}</strong> question{Math.max(0, 3 - questionCount) !== 1 ? 's' : ''} remaining.
-                </p>
-              </div>
-            </div>
-          </div>
-
           <div className="flex-1 flex overflow-hidden min-h-0">
             {/* Main Content Grid */}
             <div className="flex-1 grid grid-cols-12 gap-0 min-h-0">
@@ -158,6 +144,17 @@ export default function DemoPage() {
 
               {/* Right Column: Chat (35%) - Hidden on mobile */}
               <div className="hidden lg:flex col-span-12 lg:col-span-4 flex-col min-h-0 bg-white dark:bg-gray-900">
+                {/* Info Banner - moved to top of chat column */}
+                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border-b border-blue-100 dark:border-blue-800 px-4 py-2">
+                  <div className="flex items-center gap-2">
+                    <svg className="w-4 h-4 text-blue-600 dark:text-blue-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <p className="text-xs text-blue-900 dark:text-blue-200">
+                      You have <strong>{Math.max(0, 3 - questionCount)}</strong> question{Math.max(0, 3 - questionCount) !== 1 ? 's' : ''} remaining.
+                    </p>
+                  </div>
+                </div>
                 <div className="flex-1 min-h-0 overflow-hidden">
                   <ChatInterface 
                     ref={chatInterfaceRef} 

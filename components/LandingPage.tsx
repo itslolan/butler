@@ -25,12 +25,6 @@ export default function LandingPage() {
             >
               Sign In
             </Link>
-            <Link 
-              href="/login"
-              className="px-4 py-2 text-sm font-medium text-white bg-slate-900 dark:bg-white dark:text-slate-900 rounded-full hover:bg-slate-800 dark:hover:bg-slate-100 transition-all shadow-sm hover:shadow-md"
-            >
-              Get Started
-            </Link>
           </div>
         </div>
       </nav>
@@ -72,7 +66,7 @@ export default function LandingPage() {
             </div>
             <div className="flex flex-col items-center">
               <Link 
-                href="/login"
+                href="/signup"
                 className="w-full sm:w-auto px-8 py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl font-semibold hover:bg-slate-800 dark:hover:bg-slate-100 transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
               >
                 Signup for Free
