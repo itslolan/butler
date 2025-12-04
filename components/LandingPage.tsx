@@ -61,24 +61,21 @@ export default function LandingPage() {
           </div>
           
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
-            <Link 
-              href="/demo"
-              className="w-full sm:w-auto px-8 py-4 bg-blue-600 dark:bg-blue-500 text-white rounded-xl font-semibold hover:bg-blue-700 dark:hover:bg-blue-600 transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
-            >
-              Try it out
-            </Link>
+            <div className="flex flex-col items-center">
+              <Link 
+                href="/demo"
+                className="w-full sm:w-auto px-8 py-4 bg-blue-600 dark:bg-blue-500 text-white rounded-xl font-semibold hover:bg-blue-700 dark:hover:bg-blue-600 transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+              >
+                Try it out
+              </Link>
+              <span className="text-xs text-slate-500 dark:text-slate-400 mt-1">No signup required</span>
+            </div>
             <Link 
               href="/login"
               className="w-full sm:w-auto px-8 py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl font-semibold hover:bg-slate-800 dark:hover:bg-slate-100 transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
             >
               Start Analyzing Free
             </Link>
-            <a 
-              href="#features"
-              className="w-full sm:w-auto px-8 py-4 bg-white dark:bg-gray-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 rounded-xl font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-all"
-            >
-              See How It Works
-            </a>
           </div>
         </div>
       </section>
