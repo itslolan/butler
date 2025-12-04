@@ -6,10 +6,15 @@ import { AuthProvider } from "@/components/AuthProvider";
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'https://adphex.com'),
   title: {
-    default: "Adphex - ChatGPT for Your Finances | AI-Powered Financial Assistant",
+    default: "Adphex - ChatGPT for Your Finances | AI-Powered Financial Assistant for Expense Tracking & Budgeting",
     template: "%s | Adphex"
   },
-  description: "Get trusted answers about your finances with AI-powered analysis. Upload bank statements, track expenses, and get personalized financial insights. Save more money with Adphex.",
+  description: "Get trusted answers about your finances with AI-powered analysis. Upload bank statements, track expenses, and get personalized financial insights. Save more money with Adphex's intelligent duplicate detection, automated categorization, and interactive financial dashboards.",
+  viewport: {
+    width: 'device-width',
+    initialScale: 1,
+    maximumScale: 5,
+  },
   keywords: [
     "financial assistant",
     "expense tracker",
@@ -74,6 +79,15 @@ export const metadata: Metadata = {
   },
   category: "Finance",
   manifest: "/manifest.json",
+  icons: {
+    icon: [
+      { url: '/favicon.svg', type: 'image/svg+xml' },
+      { url: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+    ],
+    apple: [
+      { url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' },
+    ],
+  },
   other: {
     "theme-color": "#2563eb",
   },
