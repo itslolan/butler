@@ -189,7 +189,7 @@ export default function LandingPage() {
           <div className="text-center mb-16">
             <h2 className="text-3xl font-bold text-slate-900 dark:text-white mb-4">Everything you need to understand your cashflow</h2>
             <p className="text-slate-600 dark:text-slate-400 max-w-2xl mx-auto">
-              Stop manually tagging transactions. Adphex automates the tedious parts of personal finance management. Our intelligent system handles document parsing, transaction categorization, duplicate detection, and provides real-time insights into your spending habits. Whether you're managing personal finances or tracking business expenses, Adphex gives you the tools to stay on top of your money.
+              Stop manually tagging transactions. Adphex automates the tedious parts of personal finance management. Our intelligent system handles document parsing, transaction categorization, duplicate detection, and provides real-time insights into your spending habits. Whether you&apos;re managing personal finances or tracking business expenses, Adphex gives you the tools to stay on top of your money.
             </p>
           </div>
 
