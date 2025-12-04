@@ -40,7 +40,7 @@ export default function EmailCollectionModal({
 
     const handleClickOutside = (event: MouseEvent) => {
       if (modalRef.current && !modalRef.current.contains(event.target as Node)) {
-        handleSkip();
+        onSkip();
       }
     };
 
@@ -48,7 +48,7 @@ export default function EmailCollectionModal({
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [isOpen]);
+  }, [isOpen, onSkip]);
 
   if (!isOpen) return null;
 
@@ -107,9 +107,9 @@ export default function EmailCollectionModal({
               </svg>
             </div>
             <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Thanks!</h2>
-            <p className="text-slate-600 dark:text-slate-400">
-              We'll keep you updated with financial insights and tips.
-            </p>
+                   <p className="text-slate-600 dark:text-slate-400">
+                     We&apos;ll keep you updated with financial insights and tips.
+                   </p>
           </div>
         ) : (
           <>
