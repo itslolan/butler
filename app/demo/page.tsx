@@ -21,35 +21,35 @@ export default function DemoPage() {
   const [emailModalDismissed, setEmailModalDismissed] = useState(false);
   const chatInterfaceRef = useRef<any>(null);
 
-  // Check if email modal should be shown
-  useEffect(() => {
-    // Check localStorage to see if email was already submitted
-    // Only check on client side
-    if (typeof window !== 'undefined') {
-      try {
-        const emailSubmitted = localStorage.getItem('newsletter-email-submitted');
-        
-        if (!emailSubmitted) {
-          // Show email modal after a brief delay for better UX
-          const timer = setTimeout(() => {
-            setShowEmailModal(true);
-          }, 500);
-          return () => clearTimeout(timer);
-        } else {
-          // Email already submitted, don't show modal
-          setEmailModalDismissed(true);
-          setShowEmailModal(false);
-        }
-      } catch (error) {
-        // If localStorage access fails, show modal anyway
-        console.error('Error accessing localStorage:', error);
-        const timer = setTimeout(() => {
-          setShowEmailModal(true);
-        }, 500);
-        return () => clearTimeout(timer);
-      }
-    }
-  }, []);
+  // TEMPORARILY DISABLED: Check if email modal should be shown
+  // useEffect(() => {
+  //   // Check localStorage to see if email was already submitted
+  //   // Only check on client side
+  //   if (typeof window !== 'undefined') {
+  //     try {
+  //       const emailSubmitted = localStorage.getItem('newsletter-email-submitted');
+  //       
+  //       if (!emailSubmitted) {
+  //         // Show email modal after a brief delay for better UX
+  //         const timer = setTimeout(() => {
+  //           setShowEmailModal(true);
+  //         }, 500);
+  //         return () => clearTimeout(timer);
+  //       } else {
+  //         // Email already submitted, don't show modal
+  //         setEmailModalDismissed(true);
+  //         setShowEmailModal(false);
+  //       }
+  //     } catch (error) {
+  //       // If localStorage access fails, show modal anyway
+  //       console.error('Error accessing localStorage:', error);
+  //       const timer = setTimeout(() => {
+  //         setShowEmailModal(true);
+  //       }, 500);
+  //       return () => clearTimeout(timer);
+  //     }
+  //   }
+  // }, []);
 
   // Load sample data on mount
   useEffect(() => {
@@ -172,12 +172,12 @@ export default function DemoPage() {
           </div>
         </main>
 
-      {/* Email Collection Modal - overlays on top of dashboard */}
-      <EmailCollectionModal
+      {/* TEMPORARILY DISABLED: Email Collection Modal - overlays on top of dashboard */}
+      {/* <EmailCollectionModal
         isOpen={showEmailModal}
         onClose={handleEmailModalClose}
         onSkip={handleEmailModalSkip}
-      />
+      /> */}
 
       {/* Signup Modal - appears after 3 questions */}
       <SignupModal
