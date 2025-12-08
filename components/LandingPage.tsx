@@ -60,6 +60,12 @@ export default function LandingPage() {
           
           <div className="flex items-center gap-4">
             <Link 
+              href="/tools"
+              className="text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+            >
+              Free Tools
+            </Link>
+            <Link 
               href="/login"
               className="text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
             >
@@ -411,10 +417,13 @@ export default function LandingPage() {
 
             {/* Resources */}
             <div>
-              <h3 className="font-semibold text-slate-900 dark:text-white mb-4">Resources</h3>
+              <h3 className="font-semibold text-slate-900 dark:text-white mb-4">Free Tools</h3>
               <ul className="space-y-3 text-sm text-slate-600 dark:text-slate-400">
-                <li><a href="#features" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">Features</a></li>
-                <li><a href="mailto:support@adphex.com" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">Support</a></li>
+                <li><Link href="/tools" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">All Tools</Link></li>
+                <li><Link href="/tools/savings-rate-calculator" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">Savings Rate Calculator</Link></li>
+                <li><Link href="/tools/50-30-20-budget-calculator" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">50/30/20 Budget</Link></li>
+                <li><Link href="/tools/debt-payoff-calculator" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">Debt Payoff Calculator</Link></li>
+                <li><Link href="/tools/net-worth-calculator" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">Net Worth Calculator</Link></li>
               </ul>
             </div>
 
