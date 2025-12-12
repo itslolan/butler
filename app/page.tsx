@@ -13,6 +13,7 @@ import { useAuth } from '@/components/AuthProvider';
 import LandingPage from '@/components/LandingPage';
 import TodoButton from '@/components/TodoButton';
 import TodoList from '@/components/TodoList';
+import BudgetCTAPanel from '@/components/BudgetCTAPanel';
 
 export default function Home() {
   const { user, loading } = useAuth();
@@ -265,6 +266,9 @@ export default function Home() {
                 onSelectTodo={handleTodoSelect}
                 refreshTrigger={chartRefreshKey}
               />
+              
+              {/* Budget CTA Panel - Shows when user hasn't set up budgets yet */}
+              <BudgetCTAPanel userId={user?.id || 'default-user'} />
               
               <VisualizationPanel key={chartRefreshKey} userId={user?.id || 'default-user'} />
             </div>

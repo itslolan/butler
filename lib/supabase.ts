@@ -83,6 +83,25 @@ export interface UserMemory {
   updated_at?: Date | string;
 }
 
+export interface BudgetCategory {
+  id?: string;
+  user_id: string;
+  name: string;
+  is_custom: boolean;
+  display_order?: number;
+  created_at?: Date | string;
+}
+
+export interface Budget {
+  id?: string;
+  user_id: string;
+  category_id: string;
+  month: string; // Format: 'YYYY-MM'
+  budgeted_amount: number;
+  created_at?: Date | string;
+  updated_at?: Date | string;
+}
+
 /**
  * Upload a file to Supabase Storage
  * @param userId - User identifier
