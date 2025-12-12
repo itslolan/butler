@@ -11,6 +11,7 @@ interface ReadyToAssignProps {
   onUndoAutoAssign?: () => void;
   isUndoingAutoAssign?: boolean;
   showUndoAutoAssign?: boolean;
+  onReset?: () => void;
 }
 
 export default function ReadyToAssign({ 
@@ -24,6 +25,7 @@ export default function ReadyToAssign({
   onUndoAutoAssign,
   isUndoingAutoAssign = false,
   showUndoAutoAssign = false,
+  onReset,
 }: ReadyToAssignProps) {
   const isPositive = amount >= 0;
   const isOverbudgeted = amount < 0;
@@ -135,6 +137,16 @@ export default function ReadyToAssign({
                   <span className="text-white text-sm font-medium">Undo</span>
                 </>
               )}
+            </button>
+          )}
+
+          {/* Reset Button */}
+          {onReset && (
+            <button
+              onClick={onReset}
+              className="text-white/50 hover:text-white/80 text-xs font-medium px-2 py-1 transition-colors mt-1"
+            >
+              Reset Setup
             </button>
           )}
         </div>

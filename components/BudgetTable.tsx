@@ -60,6 +60,15 @@ export default function BudgetTable({
       }
 
       const data = await res.json();
+      
+      // Sort categories: Budgeted desc, then Name asc
+      data.categories.sort((a: Category, b: Category) => {
+        if (b.budgeted !== a.budgeted) {
+          return b.budgeted - a.budgeted;
+        }
+        return a.name.localeCompare(b.name);
+      });
+
       setCategories(data.categories);
       onDataLoaded(data);
     } catch (err: any) {

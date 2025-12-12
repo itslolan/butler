@@ -8,6 +8,7 @@ import ChatInterface from '@/components/ChatInterface';
 import MobileChatModal from '@/components/MobileChatModal';
 import BudgetTable from '@/components/BudgetTable';
 import ReadyToAssign from '@/components/ReadyToAssign';
+import BudgetQuestionnaire from '@/components/BudgetQuestionnaire';
 import { useAuth } from '@/components/AuthProvider';
 
 export default function BudgetPage() {
@@ -50,6 +51,8 @@ export default function BudgetPage() {
     budgets: Array<{ categoryId: string; amount: number }>;
   } | null>(null);
 
+  const [showQuestionnaire, setShowQuestionnaire] = useState(false);
+
   // Generate month options (last 12 months + next 1 month)
   const monthOptions = Array.from({ length: 13 }, (_, i) => {
     const d = new Date();
@@ -62,7 +65,21 @@ export default function BudgetPage() {
 
   const handleBudgetDataLoaded = useCallback((data: typeof budgetData) => {
     setBudgetData(data);
+    if (data && data.totalBudgeted === 0) {
+      setShowQuestionnaire(true);
+    }
   }, []);
+
+  const handleQuestionnaireComplete = (data: { income: number; rent?: number }) => {
+    if (!budgetData) return;
+
+    setBudgetData({
+      ...budgetData,
+      income: data.income,
+      readyToAssign: data.income - budgetData.totalBudgeted,
+    });
+    setShowQuestionnaire(false);
+  };
 
   const handleBudgetChange = useCallback((categoryId: string, newAmount: number) => {
     if (!budgetData) return;
@@ -213,6 +230,49 @@ export default function BudgetPage() {
     }
   };
 
+  const handleResetBudget = async () => {
+    if (!budgetData || !user) return;
+
+    // Zero out all categories locally
+    const updatedCategories = budgetData.categories.map(cat => ({
+      ...cat,
+      budgeted: 0,
+      available: 0 - cat.spent, // Recalculate available based on 0 budget
+    }));
+
+    // Optimistic update
+    setBudgetData({
+      ...budgetData,
+      categories: updatedCategories,
+      totalBudgeted: 0,
+      readyToAssign: budgetData.income,
+    });
+    
+    setShowQuestionnaire(true);
+
+    // Save the zeroed budget to server
+    try {
+      const budgets = updatedCategories.map(cat => ({
+        categoryId: cat.id,
+        amount: 0,
+      }));
+
+      await fetch('/api/budget', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          month: selectedMonth,
+          budgets,
+        }),
+      });
+    } catch (error) {
+      console.error('Failed to reset budget on server:', error);
+      // We don't show an error toast here to avoid disrupting the reset flow,
+      // as the user is about to re-enter data anyway.
+    }
+  };
+
   const handleCategoryAdded = () => {
     setRefreshKey(prev => prev + 1);
   };
@@ -358,30 +418,42 @@ export default function BudgetPage() {
                   )}
                 </div>
 
-                {/* Ready to Assign Panel */}
-                <ReadyToAssign 
-                  amount={budgetData?.readyToAssign || 0}
-                  income={budgetData?.income || 0}
-                  totalBudgeted={budgetData?.totalBudgeted || 0}
-                  incomeMonth={budgetData?.incomeMonth}
-                  currentMonth={selectedMonth}
-                  onAutoAssign={handleAutoAssign}
-                  isAutoAssigning={isAutoAssigning}
-                  onUndoAutoAssign={handleUndoAutoAssign}
-                  isUndoingAutoAssign={isUndoingAutoAssign}
-                  showUndoAutoAssign={!!autoAssignUndoSnapshot}
-                />
+                {/* Questionnaire */}
+                {showQuestionnaire && (
+                  <BudgetQuestionnaire 
+                    onComplete={handleQuestionnaireComplete}
+                    onUpload={() => router.push('/')}
+                    initialIncome={budgetData?.income || 0}
+                  />
+                )}
 
-                {/* Budget Table */}
-                <BudgetTable
-                  key={refreshKey}
-                  userId={user.id}
-                  month={selectedMonth}
-                  onDataLoaded={handleBudgetDataLoaded}
-                  onBudgetChange={handleBudgetChange}
-                  onCategoryAdded={handleCategoryAdded}
-                  onCategoryDeleted={handleCategoryDeleted}
-                />
+                <div className={showQuestionnaire ? 'hidden' : 'block'}>
+                  {/* Ready to Assign Panel */}
+                  <ReadyToAssign 
+                    amount={budgetData?.readyToAssign || 0}
+                    income={budgetData?.income || 0}
+                    totalBudgeted={budgetData?.totalBudgeted || 0}
+                    incomeMonth={budgetData?.incomeMonth}
+                    currentMonth={selectedMonth}
+                    onAutoAssign={handleAutoAssign}
+                    isAutoAssigning={isAutoAssigning}
+                    onUndoAutoAssign={handleUndoAutoAssign}
+                    isUndoingAutoAssign={isUndoingAutoAssign}
+                    showUndoAutoAssign={!!autoAssignUndoSnapshot}
+                    onReset={handleResetBudget}
+                  />
+
+                  {/* Budget Table */}
+                  <BudgetTable
+                    key={refreshKey}
+                    userId={user.id}
+                    month={selectedMonth}
+                    onDataLoaded={handleBudgetDataLoaded}
+                    onBudgetChange={handleBudgetChange}
+                    onCategoryAdded={handleCategoryAdded}
+                    onCategoryDeleted={handleCategoryDeleted}
+                  />
+                </div>
               </div>
             </div>
 
