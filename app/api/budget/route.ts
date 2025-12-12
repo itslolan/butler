@@ -65,6 +65,9 @@ export async function GET(request: NextRequest) {
       };
     });
 
+    // Sort by spent amount (highest first)
+    categoryBudgets.sort((a, b) => b.spent - a.spent);
+
     // Calculate ready to assign
     const totalBudgeted = categoryBudgets.reduce((sum, c) => sum + c.budgeted, 0);
     const readyToAssign = data.income - totalBudgeted;

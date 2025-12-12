@@ -93,17 +93,17 @@ export async function getCategoriesFromTransactions(userId: string): Promise<str
 
 /**
  * Initialize budget categories for a user
- * Combines categories from transactions + default freelancer categories
+ * Uses categories from transactions if they exist, otherwise uses default freelancer categories
  */
 export async function initializeBudgetCategories(userId: string): Promise<BudgetCategory[]> {
   // Get existing categories from transactions
   const transactionCategories = await getCategoriesFromTransactions(userId);
   
-  // Combine with default categories (avoid duplicates)
-  const allCategories = new Set<string>([
-    ...transactionCategories,
-    ...DEFAULT_FREELANCER_CATEGORIES,
-  ]);
+  // If user has transactions, use only those categories
+  // Otherwise, use default freelancer categories
+  const allCategories = transactionCategories.length > 0 
+    ? new Set<string>(transactionCategories)
+    : new Set<string>(DEFAULT_FREELANCER_CATEGORIES);
 
   // Create category records
   const categoryRecords: Omit<BudgetCategory, 'id' | 'created_at'>[] = [];
