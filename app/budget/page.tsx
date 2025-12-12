@@ -249,11 +249,12 @@ export default function BudgetPage() {
             </button>
             <div className="flex items-center gap-2">
               <h1 className="font-semibold text-lg tracking-tight">Budget</h1>
-              <span className="text-slate-400 dark:text-slate-600">/</span>
+              {/* Month toggle: desktop only (moved into left panel on mobile) */}
+              <span className="hidden lg:inline text-slate-400 dark:text-slate-600">/</span>
               <select
                 value={selectedMonth}
                 onChange={(e) => setSelectedMonth(e.target.value)}
-                className="text-sm font-medium bg-transparent border-none focus:outline-none focus:ring-0 text-slate-700 dark:text-slate-300 cursor-pointer"
+                className="hidden lg:block text-sm font-medium bg-transparent border-none focus:outline-none focus:ring-0 text-slate-700 dark:text-slate-300 cursor-pointer"
               >
                 {monthOptions.map(opt => (
                   <option key={opt.value} value={opt.value}>
@@ -271,7 +272,7 @@ export default function BudgetPage() {
                 saveMessage.type === 'success' 
                   ? 'text-emerald-600 dark:text-emerald-400' 
                   : 'text-red-600 dark:text-red-400'
-              }`}>
+              } hidden lg:inline`}>
                 {saveMessage.text}
               </span>
             )}
@@ -280,7 +281,7 @@ export default function BudgetPage() {
             <button
               onClick={handleSave}
               disabled={isSaving || isAutoAssigning || isUndoingAutoAssign || !budgetData}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-400 text-white font-medium text-sm rounded-lg transition-colors shadow-sm disabled:cursor-not-allowed"
+              className="hidden lg:inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-400 text-white font-medium text-sm rounded-lg transition-colors shadow-sm disabled:cursor-not-allowed"
             >
               {isSaving ? (
                 <>
@@ -308,6 +309,55 @@ export default function BudgetPage() {
             {/* Left Column: Budget Management (65%) */}
             <div className="col-span-12 lg:col-span-8 flex flex-col h-full lg:border-r border-slate-200 dark:border-slate-800 overflow-y-auto bg-slate-50/50 dark:bg-black/5 p-4 lg:p-6 pb-20 lg:pb-6">
               <div className="max-w-4xl w-full mx-auto space-y-6">
+                {/* Mobile controls (moved from top bar) */}
+                <div className="lg:hidden bg-white dark:bg-gray-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <select
+                      value={selectedMonth}
+                      onChange={(e) => setSelectedMonth(e.target.value)}
+                      className="flex-1 min-w-0 px-3 py-2 text-sm font-medium bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                    >
+                      {monthOptions.map(opt => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+
+                    <button
+                      onClick={handleSave}
+                      disabled={isSaving || isAutoAssigning || isUndoingAutoAssign || !budgetData}
+                      className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-400 text-white font-medium text-sm rounded-xl transition-colors shadow-sm disabled:cursor-not-allowed shrink-0"
+                    >
+                      {isSaving ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          Saving...
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                          Save
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {saveMessage && (
+                    <div className="mt-3">
+                      <span className={`text-sm font-medium ${
+                        saveMessage.type === 'success'
+                          ? 'text-emerald-600 dark:text-emerald-400'
+                          : 'text-red-600 dark:text-red-400'
+                      }`}>
+                        {saveMessage.text}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
                 {/* Ready to Assign Panel */}
                 <ReadyToAssign 
                   amount={budgetData?.readyToAssign || 0}
