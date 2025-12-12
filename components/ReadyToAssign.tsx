@@ -6,6 +6,7 @@ interface ReadyToAssignProps {
   totalBudgeted: number;
   incomeMonth?: string; // The month the income is from (may differ from current month)
   currentMonth?: string; // The month being budgeted
+  onAmountChange?: (newAmount: number) => void;
   onAutoAssign?: () => void;
   isAutoAssigning?: boolean;
   onUndoAutoAssign?: () => void;
@@ -20,6 +21,7 @@ export default function ReadyToAssign({
   totalBudgeted,
   incomeMonth,
   currentMonth,
+  onAmountChange,
   onAutoAssign,
   isAutoAssigning = false,
   onUndoAutoAssign,
@@ -65,9 +67,17 @@ export default function ReadyToAssign({
               ? 'Ready to Assign'
               : 'Overbudgeted'}
           </p>
-          <h2 className="text-4xl font-bold text-white tracking-tight">
-            {formatCurrency(Math.abs(amount))}
-          </h2>
+          <div className="flex items-center gap-2">
+            <span className="text-white/90 text-3xl font-bold">$</span>
+            <input
+              type="number"
+              step="0.01"
+              value={Number.isFinite(amount) ? amount : 0}
+              onChange={(e) => onAmountChange?.(parseFloat(e.target.value) || 0)}
+              className="w-48 text-4xl font-bold text-white tracking-tight bg-transparent border-b border-white/30 focus:border-white/70 focus:outline-none"
+              aria-label="Ready to assign"
+            />
+          </div>
           <p className="text-white/70 text-sm mt-2">
             {formatCurrency(income)} income − {formatCurrency(totalBudgeted)} budgeted
           </p>

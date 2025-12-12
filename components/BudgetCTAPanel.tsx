@@ -7,36 +7,131 @@ interface BudgetCTAPanelProps {
   userId: string;
 }
 
+interface CategorySummary {
+  id: string;
+  name: string;
+  budgeted: number;
+  spent: number;
+}
+
 export default function BudgetCTAPanel({ userId }: BudgetCTAPanelProps) {
   const router = useRouter();
-  const [hasBudgets, setHasBudgets] = useState<boolean | null>(null);
+  const [hasBudgets, setHasBudgets] = useState<boolean>(false);
+  const [topCategories, setTopCategories] = useState<CategorySummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const checkBudgets = async () => {
+    const fetchBudgetData = async () => {
       try {
-        const res = await fetch(`/api/budget?userId=${userId}&checkOnly=true`);
+        // Get current month in YYYY-MM format
+        const now = new Date();
+        const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        
+        const res = await fetch(`/api/budget?userId=${userId}&month=${currentMonth}`);
+        
         if (res.ok) {
           const data = await res.json();
-          setHasBudgets(data.hasBudgets);
+          
+          if (data.totalBudgeted > 0) {
+            setHasBudgets(true);
+            
+            // Sort by budgeted amount (descending) and take top 5
+            const sorted = data.categories
+              .filter((c: any) => c.budgeted > 0)
+              .sort((a: any, b: any) => b.budgeted - a.budgeted)
+              .slice(0, 5)
+              .map((c: any) => ({
+                id: c.id,
+                name: c.name,
+                budgeted: c.budgeted,
+                spent: c.spent
+              }));
+            
+            setTopCategories(sorted);
+          } else {
+            setHasBudgets(false);
+          }
         }
       } catch (error) {
-        console.error('Error checking budgets:', error);
+        console.error('Error fetching budget data:', error);
       } finally {
         setIsLoading(false);
       }
     };
 
-    checkBudgets();
+    fetchBudgetData();
   }, [userId]);
 
-  // Don't show if loading or if user already has budgets
-  if (isLoading || hasBudgets) {
-    return null;
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(value);
+  };
+
+  if (isLoading) {
+    return null; // Or a skeleton if preferred
   }
 
+  // View for users with active budgets
+  if (hasBudgets) {
+    return (
+      <div className="bg-white dark:bg-gray-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
+            Budget Summary
+          </h3>
+          <button
+            onClick={() => router.push('/budget')}
+            className="text-sm font-medium text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors"
+          >
+            View Full Budget →
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          {topCategories.map(category => {
+            const progress = Math.min((category.spent / category.budgeted) * 100, 100);
+            const isOverBudget = category.spent > category.budgeted;
+            
+            return (
+              <div key={category.id} className="space-y-1.5">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium text-slate-700 dark:text-slate-200">
+                    {category.name}
+                  </span>
+                  <span className="text-slate-500 dark:text-slate-400">
+                    <span className={isOverBudget ? 'text-red-600 dark:text-red-400 font-medium' : ''}>
+                      {formatCurrency(category.spent)}
+                    </span>
+                    {' / '}
+                    {formatCurrency(category.budgeted)}
+                  </span>
+                </div>
+                
+                <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                  <div 
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      isOverBudget 
+                        ? 'bg-red-500' 
+                        : 'bg-emerald-500'
+                    }`}
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  // View for users without budgets (Original CTA)
   return (
-    <div className="bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 border border-emerald-200 dark:border-emerald-800 rounded-2xl p-6 shadow-sm">
+    <div className="bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 border border-emerald-200 dark:border-emerald-800 rounded-2xl p-6 shadow-sm mb-6">
       <div className="flex items-start gap-4">
         {/* Icon */}
         <div className="w-12 h-12 rounded-xl bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center shrink-0">
@@ -102,4 +197,3 @@ export default function BudgetCTAPanel({ userId }: BudgetCTAPanelProps) {
     </div>
   );
 }
-

@@ -41,6 +41,12 @@ export default function BudgetPage() {
       available: number;
     }>;
   } | null>(null);
+  
+  // Meta state for additional context (from remote changes)
+  const [budgetMeta, setBudgetMeta] = useState<{
+    hasTransactions: boolean;
+    incomeStats?: { medianMonthlyIncome: number; monthsIncluded: number };
+  } | null>(null);
 
   const [isSaving, setIsSaving] = useState(false);
   const [isAutoAssigning, setIsAutoAssigning] = useState(false);
@@ -64,7 +70,29 @@ export default function BudgetPage() {
   });
 
   const handleBudgetDataLoaded = useCallback((data: typeof budgetData) => {
-    setBudgetData(data);
+    if (!data) {
+      setBudgetData(null);
+      setBudgetMeta(null);
+      return;
+    }
+
+    // Pull meta fields (if present) without polluting the budgetData shape
+    const anyData: any = data;
+    if (typeof anyData.hasTransactions === 'boolean' || anyData.incomeStats) {
+      setBudgetMeta({
+        hasTransactions: Boolean(anyData.hasTransactions),
+        incomeStats: anyData.incomeStats,
+      });
+    }
+
+    setBudgetData({
+      income: anyData.income,
+      incomeMonth: anyData.incomeMonth,
+      totalBudgeted: anyData.totalBudgeted,
+      readyToAssign: anyData.readyToAssign,
+      categories: anyData.categories,
+    });
+
     if (data && data.totalBudgeted === 0) {
       setShowQuestionnaire(true);
     }
@@ -104,6 +132,17 @@ export default function BudgetPage() {
       readyToAssign: budgetData.income - newTotalBudgeted,
     });
   }, [budgetData]);
+
+  const handleReadyToAssignChange = useCallback((newReadyToAssign: number) => {
+    if (!budgetData) return;
+    const newIncome = budgetData.totalBudgeted + newReadyToAssign;
+    setBudgetData({
+      ...budgetData,
+      income: newIncome,
+      incomeMonth: selectedMonth,
+      readyToAssign: newReadyToAssign,
+    });
+  }, [budgetData, selectedMonth]);
 
   const handleSave = async () => {
     if (!budgetData || !user) return;
@@ -435,6 +474,7 @@ export default function BudgetPage() {
                     totalBudgeted={budgetData?.totalBudgeted || 0}
                     incomeMonth={budgetData?.incomeMonth}
                     currentMonth={selectedMonth}
+                    onAmountChange={handleReadyToAssignChange}
                     onAutoAssign={handleAutoAssign}
                     isAutoAssigning={isAutoAssigning}
                     onUndoAutoAssign={handleUndoAutoAssign}
