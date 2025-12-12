@@ -70,25 +70,60 @@ export async function hasBudgetCategories(userId: string): Promise<boolean> {
  * Get distinct categories from user's transactions
  */
 export async function getCategoriesFromTransactions(userId: string): Promise<string[]> {
+  // Fetch categorized transaction categories (non-null, non-empty)
   const { data, error } = await supabase
     .from('transactions')
     .select('category')
     .eq('user_id', userId)
-    .not('category', 'is', null);
+    .not('category', 'is', null)
+    .neq('category', '');
 
   if (error) {
     throw new Error(`Failed to get transaction categories: ${error.message}`);
   }
 
+  // Check if the user has any uncategorized transactions (null or empty string).
+  // If so, we include "Uncategorized" so users with existing transactions don't get starter categories.
+  const { count: uncategorizedCount, error: uncategorizedError } = await supabase
+    .from('transactions')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .or('category.is.null,category.eq.');
+
+  if (uncategorizedError) {
+    throw new Error(`Failed to check uncategorized transactions: ${uncategorizedError.message}`);
+  }
+
   // Get unique categories
   const categories = new Set<string>();
   for (const txn of data || []) {
-    if (txn.category) {
-      categories.add(txn.category);
+    if (txn.category && typeof txn.category === 'string') {
+      const name = txn.category.trim();
+      if (name) categories.add(name);
     }
   }
 
+  if ((uncategorizedCount || 0) > 0) {
+    categories.add('Uncategorized');
+  }
+
   return Array.from(categories).sort();
+}
+
+/**
+ * Check if user has any transactions (categorized or not)
+ */
+export async function hasTransactions(userId: string): Promise<boolean> {
+  const { count, error } = await supabase
+    .from('transactions')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', userId);
+
+  if (error) {
+    throw new Error(`Failed to check transactions: ${error.message}`);
+  }
+
+  return (count || 0) > 0;
 }
 
 /**
@@ -96,13 +131,16 @@ export async function getCategoriesFromTransactions(userId: string): Promise<str
  * Uses categories from transactions if they exist, otherwise uses default freelancer categories
  */
 export async function initializeBudgetCategories(userId: string): Promise<BudgetCategory[]> {
-  // Get existing categories from transactions
-  const transactionCategories = await getCategoriesFromTransactions(userId);
+  // If the user has any existing transactions, we should ONLY initialize from those transactions
+  // (including "Uncategorized" if applicable) — do NOT fall back to starter categories.
+  const [transactionsExist, transactionCategories] = await Promise.all([
+    hasTransactions(userId),
+    getCategoriesFromTransactions(userId),
+  ]);
   
-  // If user has transactions, use only those categories
-  // Otherwise, use default freelancer categories
-  const allCategories = transactionCategories.length > 0 
-    ? new Set<string>(transactionCategories)
+  // If user has transactions, use only those categories; otherwise use default freelancer categories.
+  const allCategories = transactionsExist
+    ? new Set<string>(transactionCategories.length > 0 ? transactionCategories : ['Uncategorized'])
     : new Set<string>(DEFAULT_FREELANCER_CATEGORIES);
 
   // Create category records
