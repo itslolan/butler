@@ -20,10 +20,13 @@ interface BudgetTableProps {
     totalBudgeted: number;
     readyToAssign: number;
     categories: Category[];
+    hasTransactions?: boolean;
+    incomeStats?: { medianMonthlyIncome: number; monthsIncluded: number };
   } | null) => void;
   onBudgetChange: (categoryId: string, newAmount: number) => void;
   onCategoryAdded: () => void;
   onCategoryDeleted: () => void;
+  budgetedOverrides?: Record<string, number> | null;
 }
 
 export default function BudgetTable({
@@ -33,6 +36,7 @@ export default function BudgetTable({
   onBudgetChange,
   onCategoryAdded,
   onCategoryDeleted,
+  budgetedOverrides = null,
 }: BudgetTableProps) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -73,6 +77,21 @@ export default function BudgetTable({
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    if (!budgetedOverrides) return;
+    setCategories(prev =>
+      prev.map(cat => {
+        const overridden = budgetedOverrides[cat.id];
+        if (overridden === undefined) return cat;
+        return {
+          ...cat,
+          budgeted: overridden,
+          available: overridden - cat.spent,
+        };
+      })
+    );
+  }, [budgetedOverrides]);
 
   const handleBudgetInput = (categoryId: string, value: string) => {
     const numValue = parseFloat(value) || 0;

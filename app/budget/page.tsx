@@ -16,6 +16,14 @@ export default function BudgetPage() {
   const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
   const chatInterfaceRef = useRef<any>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [budgetedOverrides, setBudgetedOverrides] = useState<Record<string, number> | null>(null);
+  const [budgetMeta, setBudgetMeta] = useState<{
+    hasTransactions: boolean;
+    incomeStats?: { medianMonthlyIncome: number; monthsIncluded: number };
+  } | null>(null);
+  const [guidedComplete, setGuidedComplete] = useState(false);
+  const [guidedIncome, setGuidedIncome] = useState<string>('0');
+  const [guidedHousing, setGuidedHousing] = useState<string>('');
 
   // Get current month in YYYY-MM format
   const getCurrentMonth = () => {
@@ -61,7 +69,28 @@ export default function BudgetPage() {
   });
 
   const handleBudgetDataLoaded = useCallback((data: typeof budgetData) => {
-    setBudgetData(data);
+    if (!data) {
+      setBudgetData(null);
+      setBudgetMeta(null);
+      return;
+    }
+
+    // Pull meta fields (if present) without polluting the budgetData shape
+    const anyData: any = data;
+    if (typeof anyData.hasTransactions === 'boolean' || anyData.incomeStats) {
+      setBudgetMeta({
+        hasTransactions: Boolean(anyData.hasTransactions),
+        incomeStats: anyData.incomeStats,
+      });
+    }
+
+    setBudgetData({
+      income: anyData.income,
+      incomeMonth: anyData.incomeMonth,
+      totalBudgeted: anyData.totalBudgeted,
+      readyToAssign: anyData.readyToAssign,
+      categories: anyData.categories,
+    });
   }, []);
 
   const handleBudgetChange = useCallback((categoryId: string, newAmount: number) => {
@@ -87,6 +116,80 @@ export default function BudgetPage() {
       readyToAssign: budgetData.income - newTotalBudgeted,
     });
   }, [budgetData]);
+
+  const handleReadyToAssignChange = useCallback((newReadyToAssign: number) => {
+    if (!budgetData) return;
+    const newIncome = budgetData.totalBudgeted + newReadyToAssign;
+    setBudgetData({
+      ...budgetData,
+      income: newIncome,
+      incomeMonth: selectedMonth,
+      readyToAssign: newReadyToAssign,
+    });
+  }, [budgetData, selectedMonth]);
+
+  // Prefill guided inputs once we know transaction/meta state.
+  useEffect(() => {
+    if (!budgetMeta || guidedComplete) return;
+    const doneKey = user?.id ? `adphex_budget_guided_complete:${user.id}` : null;
+    if (doneKey) {
+      const alreadyDone = typeof window !== 'undefined' ? window.localStorage.getItem(doneKey) : null;
+      if (alreadyDone === 'true') {
+        setGuidedComplete(true);
+        return;
+      }
+    }
+
+    const medianIncome = budgetMeta.incomeStats?.medianMonthlyIncome ?? 0;
+    // For brand new users with no transactions, default to 0. Otherwise use median.
+    const initial = budgetMeta.hasTransactions ? medianIncome : 0;
+    setGuidedIncome(String(Math.round((initial || 0) * 100) / 100));
+  }, [budgetMeta, guidedComplete, user?.id]);
+
+  const applyGuidedAnswers = useCallback(() => {
+    if (!budgetData) return;
+
+    const incomeValue = parseFloat(guidedIncome) || 0;
+    const housingValue = guidedHousing.trim() === '' ? null : (parseFloat(guidedHousing) || 0);
+
+    let updatedCategories = budgetData.categories;
+    const overrides: Record<string, number> = {};
+
+    if (housingValue !== null) {
+      const housingCategory = updatedCategories.find(c =>
+        /rent|mortgage|housing/i.test(c.name)
+      );
+      if (housingCategory) {
+        overrides[housingCategory.id] = housingValue;
+        updatedCategories = updatedCategories.map(c => {
+          if (c.id !== housingCategory.id) return c;
+          return {
+            ...c,
+            budgeted: housingValue,
+            available: housingValue - c.spent,
+          };
+        });
+      }
+    }
+
+    const newTotalBudgeted = updatedCategories.reduce((sum, c) => sum + (Number(c.budgeted) || 0), 0);
+    setBudgetedOverrides(Object.keys(overrides).length > 0 ? overrides : null);
+
+    setBudgetData({
+      ...budgetData,
+      income: incomeValue,
+      incomeMonth: selectedMonth,
+      categories: updatedCategories,
+      totalBudgeted: newTotalBudgeted,
+      readyToAssign: incomeValue - newTotalBudgeted,
+    });
+
+    setGuidedComplete(true);
+    const doneKey = user?.id ? `adphex_budget_guided_complete:${user.id}` : null;
+    if (doneKey && typeof window !== 'undefined') {
+      window.localStorage.setItem(doneKey, 'true');
+    }
+  }, [budgetData, guidedHousing, guidedIncome, selectedMonth, user?.id]);
 
   const handleSave = async () => {
     if (!budgetData || !user) return;
@@ -358,6 +461,91 @@ export default function BudgetPage() {
                   )}
                 </div>
 
+                {/* Guided onboarding (for brand new users, or anyone with no budgets yet) */}
+                {budgetMeta && !guidedComplete && (!budgetMeta.hasTransactions || (budgetData?.totalBudgeted || 0) === 0) && (
+                  <div className="bg-white dark:bg-gray-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-5">
+                    <p className="text-sm font-medium text-slate-900 dark:text-white">
+                      Answer the below questions to get started.
+                    </p>
+                    <p className="text-sm text-slate-600 dark:text-slate-300 mt-2 leading-relaxed">
+                      <span className="font-semibold">Want to do this the easy way?</span>{' '}
+                      Just upload your bank statements, and I can 🪄 magically generate budgets for you.
+                      The more months you upload, the better I can learn from your patterns and help you.
+                    </p>
+
+                    <div className="mt-4 space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-slate-800 dark:text-slate-200">
+                          What is your average income in a month?
+                        </label>
+                        <div className="mt-2 relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={guidedIncome}
+                            onChange={(e) => setGuidedIncome(e.target.value)}
+                            placeholder="0.00"
+                            className="w-full pl-7 pr-3 py-2.5 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                          />
+                        </div>
+                        {budgetMeta.incomeStats && budgetMeta.incomeStats.monthsIncluded > 0 && (
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                            You had a median income of{' '}
+                            {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(
+                              budgetMeta.incomeStats.medianMonthlyIncome
+                            )}{' '}
+                            over the last {budgetMeta.incomeStats.monthsIncluded} months.
+                          </p>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-slate-800 dark:text-slate-200">
+                          What is your rent or mortgage amount? <span className="text-slate-400">(Optional)</span>
+                        </label>
+                        <div className="mt-2 relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={guidedHousing}
+                            onChange={(e) => setGuidedHousing(e.target.value)}
+                            placeholder="0.00"
+                            className="w-full pl-7 pr-3 py-2.5 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 p-3">
+                        <p className="text-xs text-slate-600 dark:text-slate-300">
+                          Remember, these figures don’t need to be accurate. Once you start uploading your bank statements,
+                          Adphex will auto adjust all your amounts.
+                        </p>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-3">
+                        <button
+                          onClick={() => router.push('/')}
+                          className="text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline"
+                        >
+                          Upload bank statements
+                        </button>
+                        <button
+                          onClick={applyGuidedAnswers}
+                          disabled={!budgetData}
+                          className="inline-flex items-center gap-2 px-5 py-2.5 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-400 text-white font-medium text-sm rounded-xl transition-colors shadow-sm disabled:cursor-not-allowed"
+                        >
+                          Next
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Ready to Assign Panel */}
                 <ReadyToAssign 
                   amount={budgetData?.readyToAssign || 0}
@@ -365,6 +553,7 @@ export default function BudgetPage() {
                   totalBudgeted={budgetData?.totalBudgeted || 0}
                   incomeMonth={budgetData?.incomeMonth}
                   currentMonth={selectedMonth}
+                  onAmountChange={handleReadyToAssignChange}
                   onAutoAssign={handleAutoAssign}
                   isAutoAssigning={isAutoAssigning}
                   onUndoAutoAssign={handleUndoAutoAssign}
@@ -381,6 +570,7 @@ export default function BudgetPage() {
                   onBudgetChange={handleBudgetChange}
                   onCategoryAdded={handleCategoryAdded}
                   onCategoryDeleted={handleCategoryDeleted}
+                  budgetedOverrides={budgetedOverrides}
                 />
               </div>
             </div>

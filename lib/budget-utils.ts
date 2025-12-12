@@ -126,6 +126,91 @@ export async function hasTransactions(userId: string): Promise<boolean> {
   return (count || 0) > 0;
 }
 
+function median(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 0) {
+    return (sorted[mid - 1] + sorted[mid]) / 2;
+  }
+  return sorted[mid];
+}
+
+async function fetchAllIncomeTransactionsInRange(
+  userId: string,
+  startDate: string
+): Promise<Array<{ date: string; amount: number }>> {
+  const PAGE_SIZE = 1000;
+  let all: Array<{ date: string; amount: number }> = [];
+  let page = 0;
+  let hasMore = true;
+
+  while (hasMore) {
+    const from = page * PAGE_SIZE;
+    const to = from + PAGE_SIZE - 1;
+
+    const { data, error } = await supabase
+      .from('transactions')
+      .select('date, amount')
+      .eq('user_id', userId)
+      .eq('transaction_type', 'income')
+      .gte('date', startDate)
+      .order('date', { ascending: true })
+      .range(from, to);
+
+    if (error) {
+      throw new Error(`Failed to fetch income transactions: ${error.message}`);
+    }
+
+    const rows = (data || []).map((d: any) => ({
+      date: d.date as string,
+      amount: Number(d.amount) || 0,
+    }));
+
+    all = all.concat(rows);
+
+    if (!data || data.length < PAGE_SIZE) {
+      hasMore = false;
+    } else {
+      page++;
+    }
+  }
+
+  return all;
+}
+
+/**
+ * Get median monthly income over the last N months.
+ * Returns median of monthly income totals and the number of months included.
+ */
+export async function getMedianMonthlyIncome(
+  userId: string,
+  monthsBack: number = 12
+): Promise<{ medianMonthlyIncome: number; monthsIncluded: number }> {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth() - monthsBack + 1, 1);
+  const startDate = start.toISOString().split('T')[0];
+
+  const txns = await fetchAllIncomeTransactionsInRange(userId, startDate);
+  if (txns.length === 0) {
+    return { medianMonthlyIncome: 0, monthsIncluded: 0 };
+  }
+
+  const monthlyTotals = new Map<string, number>();
+  for (const txn of txns) {
+    const d = new Date(txn.date);
+    const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const current = monthlyTotals.get(monthKey) || 0;
+    monthlyTotals.set(monthKey, current + Math.abs(Number(txn.amount)));
+  }
+
+  const totals = Array.from(monthlyTotals.values()).filter(v => Number.isFinite(v) && v >= 0);
+  return {
+    medianMonthlyIncome: median(totals),
+    monthsIncluded: totals.length,
+  };
+}
+
 /**
  * Initialize budget categories for a user
  * Uses categories from transactions if they exist, otherwise uses default freelancer categories
