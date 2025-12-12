@@ -4,12 +4,25 @@ interface ReadyToAssignProps {
   amount: number;
   income: number;
   totalBudgeted: number;
+  incomeMonth?: string; // The month the income is from (may differ from current month)
+  currentMonth?: string; // The month being budgeted
+  onAutoAssign?: () => void;
+  isAutoAssigning?: boolean;
 }
 
-export default function ReadyToAssign({ amount, income, totalBudgeted }: ReadyToAssignProps) {
+export default function ReadyToAssign({ 
+  amount, 
+  income, 
+  totalBudgeted,
+  incomeMonth,
+  currentMonth,
+  onAutoAssign,
+  isAutoAssigning = false,
+}: ReadyToAssignProps) {
   const isPositive = amount >= 0;
   const isOverbudgeted = amount < 0;
   const isFullyAssigned = amount === 0 && totalBudgeted > 0;
+  const isUsingDifferentMonth = incomeMonth && currentMonth && incomeMonth !== currentMonth;
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -17,6 +30,12 @@ export default function ReadyToAssign({ amount, income, totalBudgeted }: ReadyTo
       currency: 'USD',
       minimumFractionDigits: 2,
     }).format(value);
+  };
+
+  const formatMonth = (monthStr: string) => {
+    const [year, month] = monthStr.split('-');
+    const date = new Date(parseInt(year), parseInt(month) - 1);
+    return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
   };
 
   return (
@@ -44,6 +63,11 @@ export default function ReadyToAssign({ amount, income, totalBudgeted }: ReadyTo
           <p className="text-white/70 text-sm mt-2">
             {formatCurrency(income)} income − {formatCurrency(totalBudgeted)} budgeted
           </p>
+          {isUsingDifferentMonth && (
+            <p className="text-white/60 text-xs mt-1 italic">
+              Using income from {formatMonth(incomeMonth)} (no income in current month)
+            </p>
+          )}
         </div>
 
         <div className="flex flex-col items-end gap-2">
@@ -63,11 +87,24 @@ export default function ReadyToAssign({ amount, income, totalBudgeted }: ReadyTo
               <span className="text-white text-sm font-medium">Over Budget</span>
             </div>
           ) : (
-            <button className="flex items-center gap-2 bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-full transition-colors">
-              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-              </svg>
-              <span className="text-white text-sm font-medium">Assign</span>
+            <button 
+              onClick={onAutoAssign}
+              disabled={isAutoAssigning || !onAutoAssign}
+              className="flex items-center gap-2 bg-white/20 hover:bg-white/30 disabled:bg-white/10 px-4 py-2 rounded-full transition-colors disabled:cursor-not-allowed"
+            >
+              {isAutoAssigning ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <span className="text-white text-sm font-medium">Analyzing...</span>
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  <span className="text-white text-sm font-medium">Auto Assign using AI</span>
+                </>
+              )}
             </button>
           )}
         </div>
@@ -75,4 +112,3 @@ export default function ReadyToAssign({ amount, income, totalBudgeted }: ReadyTo
     </div>
   );
 }
-

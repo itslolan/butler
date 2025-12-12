@@ -16,6 +16,7 @@ interface BudgetTableProps {
   month: string;
   onDataLoaded: (data: {
     income: number;
+    incomeMonth?: string;
     totalBudgeted: number;
     readyToAssign: number;
     categories: Category[];

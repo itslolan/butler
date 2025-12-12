@@ -75,6 +75,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       month,
       income: data.income,
+      incomeMonth: data.incomeMonth, // May differ from requested month if no income in requested month
       totalBudgeted,
       readyToAssign,
       categories: categoryBudgets,

@@ -28,6 +28,7 @@ export default function BudgetPage() {
   // Budget data state
   const [budgetData, setBudgetData] = useState<{
     income: number;
+    incomeMonth?: string;
     totalBudgeted: number;
     readyToAssign: number;
     categories: Array<{
@@ -41,6 +42,7 @@ export default function BudgetPage() {
   } | null>(null);
 
   const [isSaving, setIsSaving] = useState(false);
+  const [isAutoAssigning, setIsAutoAssigning] = useState(false);
   const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Generate month options (last 12 months + next 1 month)
@@ -117,6 +119,46 @@ export default function BudgetPage() {
     }
   };
 
+  const handleAutoAssign = async () => {
+    if (!user || !budgetData) return;
+
+    setIsAutoAssigning(true);
+    setSaveMessage(null);
+
+    try {
+      const res = await fetch('/api/budget/auto-assign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          month: selectedMonth,
+          income: budgetData.income,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to auto-assign');
+      }
+
+      // Send the chat message explaining the assignment
+      if (data.chatMessage && chatInterfaceRef.current?.sendSystemMessage) {
+        chatInterfaceRef.current.sendSystemMessage(data.chatMessage);
+      }
+
+      // Refresh the budget data to show new allocations
+      setRefreshKey(prev => prev + 1);
+      
+      setSaveMessage({ type: 'success', text: 'AI budget assignment complete!' });
+      setTimeout(() => setSaveMessage(null), 5000);
+    } catch (error: any) {
+      setSaveMessage({ type: 'error', text: error.message });
+    } finally {
+      setIsAutoAssigning(false);
+    }
+  };
+
   const handleCategoryAdded = () => {
     setRefreshKey(prev => prev + 1);
   };
@@ -178,7 +220,7 @@ export default function BudgetPage() {
             {/* Save Button */}
             <button
               onClick={handleSave}
-              disabled={isSaving || !budgetData}
+              disabled={isSaving || isAutoAssigning || !budgetData}
               className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-400 text-white font-medium text-sm rounded-lg transition-colors shadow-sm disabled:cursor-not-allowed"
             >
               {isSaving ? (
@@ -212,6 +254,10 @@ export default function BudgetPage() {
                   amount={budgetData?.readyToAssign || 0}
                   income={budgetData?.income || 0}
                   totalBudgeted={budgetData?.totalBudgeted || 0}
+                  incomeMonth={budgetData?.incomeMonth}
+                  currentMonth={selectedMonth}
+                  onAutoAssign={handleAutoAssign}
+                  isAutoAssigning={isAutoAssigning}
                 />
 
                 {/* Budget Table */}
@@ -261,4 +307,3 @@ export default function BudgetPage() {
     </AuthGuard>
   );
 }
-

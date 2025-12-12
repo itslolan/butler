@@ -322,6 +322,91 @@ export async function getIncomeForMonth(userId: string, month: string): Promise<
 }
 
 /**
+ * Find the most recent month with income transactions
+ */
+export async function findLastMonthWithIncome(userId: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('transactions')
+    .select('date')
+    .eq('user_id', userId)
+    .eq('transaction_type', 'income')
+    .order('date', { ascending: false })
+    .limit(1);
+
+  if (error || !data || data.length === 0) {
+    return null;
+  }
+
+  // Extract YYYY-MM from the date
+  const date = new Date(data[0].date);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/**
+ * Get historical spending breakdown by category for the last N months
+ */
+export async function getHistoricalSpendingBreakdown(
+  userId: string,
+  months: number = 6
+): Promise<{
+  categoryAverages: Record<string, number>;
+  categoryTotals: Record<string, number>;
+  monthlyData: Array<{ month: string; categories: Record<string, number> }>;
+  totalMonths: number;
+}> {
+  const now = new Date();
+  const startDate = new Date(now.getFullYear(), now.getMonth() - months, 1);
+  const startDateStr = startDate.toISOString().split('T')[0];
+
+  const { data, error } = await supabase
+    .from('transactions')
+    .select('date, category, amount, transaction_type')
+    .eq('user_id', userId)
+    .gte('date', startDateStr)
+    .in('transaction_type', ['expense', 'other']);
+
+  if (error) {
+    throw new Error(`Failed to get historical spending: ${error.message}`);
+  }
+
+  // Aggregate by month and category
+  const monthlyData: Record<string, Record<string, number>> = {};
+  const categoryTotals: Record<string, number> = {};
+
+  for (const txn of data || []) {
+    const date = new Date(txn.date);
+    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+    const category = txn.category || 'Uncategorized';
+    const amount = Math.abs(Number(txn.amount));
+
+    if (!monthlyData[monthKey]) {
+      monthlyData[monthKey] = {};
+    }
+    monthlyData[monthKey][category] = (monthlyData[monthKey][category] || 0) + amount;
+    categoryTotals[category] = (categoryTotals[category] || 0) + amount;
+  }
+
+  // Calculate averages
+  const monthCount = Object.keys(monthlyData).length || 1;
+  const categoryAverages: Record<string, number> = {};
+  for (const [category, total] of Object.entries(categoryTotals)) {
+    categoryAverages[category] = total / monthCount;
+  }
+
+  // Convert to array format
+  const monthlyDataArray = Object.entries(monthlyData)
+    .map(([month, categories]) => ({ month, categories }))
+    .sort((a, b) => a.month.localeCompare(b.month));
+
+  return {
+    categoryAverages,
+    categoryTotals,
+    monthlyData: monthlyDataArray,
+    totalMonths: monthCount,
+  };
+}
+
+/**
  * Get complete budget data for a month (categories + budgets + spending + income)
  */
 export async function getBudgetData(userId: string, month: string): Promise<{
@@ -329,6 +414,7 @@ export async function getBudgetData(userId: string, month: string): Promise<{
   budgets: Budget[];
   spending: Record<string, number>;
   income: number;
+  incomeMonth: string; // The month the income is from (may differ from requested month)
   isInitialized: boolean;
 }> {
   // Check if categories exist
@@ -348,11 +434,24 @@ export async function getBudgetData(userId: string, month: string): Promise<{
     getIncomeForMonth(userId, month),
   ]);
 
+  // If no income in requested month, find the last month with income
+  let incomeMonth = month;
+  let finalIncome = income;
+
+  if (income === 0) {
+    const lastIncomeMonth = await findLastMonthWithIncome(userId);
+    if (lastIncomeMonth) {
+      incomeMonth = lastIncomeMonth;
+      finalIncome = await getIncomeForMonth(userId, lastIncomeMonth);
+    }
+  }
+
   return {
     categories,
     budgets,
     spending,
-    income,
+    income: finalIncome,
+    incomeMonth,
     isInitialized,
   };
 }
