@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { 
   getBudgetData, 
   saveBudgets, 
-  hasBudgets 
+  hasBudgets,
+  hasTransactions,
+  getMedianMonthlyIncome,
 } from '@/lib/budget-utils';
 
 export const runtime = 'nodejs';
@@ -47,7 +49,11 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const data = await getBudgetData(userId, month);
+    const [data, transactionsExist, incomeStats] = await Promise.all([
+      getBudgetData(userId, month),
+      hasTransactions(userId),
+      getMedianMonthlyIncome(userId, 12),
+    ]);
     
     // Transform data for frontend
     const categoryBudgets = data.categories.map(category => {
@@ -79,6 +85,8 @@ export async function GET(request: NextRequest) {
       totalBudgeted,
       readyToAssign,
       categories: categoryBudgets,
+      hasTransactions: transactionsExist,
+      incomeStats: incomeStats,
     });
 
   } catch (error: any) {
