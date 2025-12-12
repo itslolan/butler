@@ -8,6 +8,9 @@ interface ReadyToAssignProps {
   currentMonth?: string; // The month being budgeted
   onAutoAssign?: () => void;
   isAutoAssigning?: boolean;
+  onUndoAutoAssign?: () => void;
+  isUndoingAutoAssign?: boolean;
+  showUndoAutoAssign?: boolean;
 }
 
 export default function ReadyToAssign({ 
@@ -18,6 +21,9 @@ export default function ReadyToAssign({
   currentMonth,
   onAutoAssign,
   isAutoAssigning = false,
+  onUndoAutoAssign,
+  isUndoingAutoAssign = false,
+  showUndoAutoAssign = false,
 }: ReadyToAssignProps) {
   const isPositive = amount >= 0;
   const isOverbudgeted = amount < 0;
@@ -89,7 +95,7 @@ export default function ReadyToAssign({
           ) : (
             <button 
               onClick={onAutoAssign}
-              disabled={isAutoAssigning || !onAutoAssign}
+              disabled={isAutoAssigning || isUndoingAutoAssign || !onAutoAssign}
               className="flex items-center gap-2 bg-white/20 hover:bg-white/30 disabled:bg-white/10 px-4 py-2 rounded-full transition-colors disabled:cursor-not-allowed"
             >
               {isAutoAssigning ? (
@@ -103,6 +109,30 @@ export default function ReadyToAssign({
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                   </svg>
                   <span className="text-white text-sm font-medium">Auto Assign using AI</span>
+                </>
+              )}
+            </button>
+          )}
+
+          {/* Undo (shown after a successful AI assignment) */}
+          {showUndoAutoAssign && onUndoAutoAssign && (
+            <button
+              onClick={onUndoAutoAssign}
+              disabled={isAutoAssigning || isUndoingAutoAssign}
+              className="flex items-center gap-2 bg-white/15 hover:bg-white/25 disabled:bg-white/10 px-4 py-2 rounded-full transition-colors disabled:cursor-not-allowed"
+              title="Undo AI assignment"
+            >
+              {isUndoingAutoAssign ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <span className="text-white text-sm font-medium">Undoing...</span>
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v6h6M21 17a8 8 0 00-14.906-4M21 17v-6h-6" />
+                  </svg>
+                  <span className="text-white text-sm font-medium">Undo</span>
                 </>
               )}
             </button>

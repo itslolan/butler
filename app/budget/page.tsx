@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import AuthGuard from '@/components/AuthGuard';
 import UserMenu from '@/components/UserMenu';
@@ -43,7 +43,12 @@ export default function BudgetPage() {
 
   const [isSaving, setIsSaving] = useState(false);
   const [isAutoAssigning, setIsAutoAssigning] = useState(false);
+  const [isUndoingAutoAssign, setIsUndoingAutoAssign] = useState(false);
   const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [autoAssignUndoSnapshot, setAutoAssignUndoSnapshot] = useState<{
+    month: string;
+    budgets: Array<{ categoryId: string; amount: number }>;
+  } | null>(null);
 
   // Generate month options (last 12 months + next 1 month)
   const monthOptions = Array.from({ length: 13 }, (_, i) => {
@@ -126,6 +131,15 @@ export default function BudgetPage() {
     setSaveMessage(null);
 
     try {
+      // Snapshot current budgets so we can undo the AI assignment if desired.
+      const undoSnapshot = {
+        month: selectedMonth,
+        budgets: budgetData.categories.map(c => ({
+          categoryId: c.id,
+          amount: c.budgeted,
+        })),
+      };
+
       const res = await fetch('/api/budget/auto-assign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -141,6 +155,8 @@ export default function BudgetPage() {
       if (!res.ok) {
         throw new Error(data.error || 'Failed to auto-assign');
       }
+
+      setAutoAssignUndoSnapshot(undoSnapshot);
 
       // Send the chat message explaining the assignment
       if (data.chatMessage && chatInterfaceRef.current?.sendSystemMessage) {
@@ -159,6 +175,44 @@ export default function BudgetPage() {
     }
   };
 
+  const handleUndoAutoAssign = async () => {
+    if (!user || !autoAssignUndoSnapshot) return;
+
+    setIsUndoingAutoAssign(true);
+    setSaveMessage(null);
+
+    try {
+      const res = await fetch('/api/budget', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          month: autoAssignUndoSnapshot.month,
+          budgets: autoAssignUndoSnapshot.budgets,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to undo AI assignment');
+      }
+
+      setAutoAssignUndoSnapshot(null);
+      setRefreshKey(prev => prev + 1);
+
+      if (chatInterfaceRef.current?.sendSystemMessage) {
+        chatInterfaceRef.current.sendSystemMessage('↩️ **Undid AI budget assignment** — your previous budget amounts have been restored.');
+      }
+
+      setSaveMessage({ type: 'success', text: 'Undid AI assignment.' });
+      setTimeout(() => setSaveMessage(null), 4000);
+    } catch (error: any) {
+      setSaveMessage({ type: 'error', text: error.message });
+    } finally {
+      setIsUndoingAutoAssign(false);
+    }
+  };
+
   const handleCategoryAdded = () => {
     setRefreshKey(prev => prev + 1);
   };
@@ -166,6 +220,11 @@ export default function BudgetPage() {
   const handleCategoryDeleted = () => {
     setRefreshKey(prev => prev + 1);
   };
+
+  // Undo snapshot is only valid for the current month view.
+  useEffect(() => {
+    setAutoAssignUndoSnapshot(null);
+  }, [selectedMonth]);
 
   if (loading) {
     return null;
@@ -220,7 +279,7 @@ export default function BudgetPage() {
             {/* Save Button */}
             <button
               onClick={handleSave}
-              disabled={isSaving || isAutoAssigning || !budgetData}
+              disabled={isSaving || isAutoAssigning || isUndoingAutoAssign || !budgetData}
               className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-400 text-white font-medium text-sm rounded-lg transition-colors shadow-sm disabled:cursor-not-allowed"
             >
               {isSaving ? (
@@ -258,6 +317,9 @@ export default function BudgetPage() {
                   currentMonth={selectedMonth}
                   onAutoAssign={handleAutoAssign}
                   isAutoAssigning={isAutoAssigning}
+                  onUndoAutoAssign={handleUndoAutoAssign}
+                  isUndoingAutoAssign={isUndoingAutoAssign}
+                  showUndoAutoAssign={!!autoAssignUndoSnapshot}
                 />
 
                 {/* Budget Table */}
