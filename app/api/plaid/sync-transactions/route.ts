@@ -3,11 +3,22 @@ import { plaidClient, isPlaidConfigured, formatPlaidError, mapPlaidCategory, det
 import { createClient } from '@/lib/supabase-server';
 import { supabase, Transaction } from '@/lib/supabase';
 import { categorizeTransactions, monitorTransactionPatterns } from '@/lib/transaction-categorizer';
+import { searchTransactions } from '@/lib/db-tools';
+import { deduplicateTransactionsSimple } from '@/lib/deduplication-test';
 
 export const runtime = 'nodejs';
 
 // Batch size for LLM categorization (to avoid token limits)
 const CATEGORIZATION_BATCH_SIZE = 50;
+
+function chunkArray<T>(arr: T[], chunkSize: number): T[][] {
+  if (chunkSize <= 0) return [arr];
+  const chunks: T[][] = [];
+  for (let i = 0; i < arr.length; i += chunkSize) {
+    chunks.push(arr.slice(i, i + chunkSize));
+  }
+  return chunks;
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -79,6 +90,7 @@ export async function POST(request: NextRequest) {
         // Otherwise use transactions/get for initial sync
         let transactions: any[] = [];
         let newCursor: string | undefined;
+        const modifiedTransactions: any[] = [];
 
         if (item.cursor) {
           // Incremental sync using cursor
@@ -93,19 +105,7 @@ export async function POST(request: NextRequest) {
 
             transactions = transactions.concat(syncResponse.data.added);
             // Handle modified and removed transactions
-            for (const modified of syncResponse.data.modified) {
-              // Update existing transaction
-              await supabase
-                .from('transactions')
-                .update({
-                  merchant: modified.merchant_name || modified.name,
-                  amount: modified.amount,
-                  category: mapPlaidCategory(modified.category),
-                  date: modified.date,
-                })
-                .eq('plaid_transaction_id', modified.transaction_id);
-              totalModified++;
-            }
+            modifiedTransactions.push(...syncResponse.data.modified);
 
             for (const removed of syncResponse.data.removed) {
               // Delete removed transactions
@@ -162,24 +162,157 @@ export async function POST(request: NextRequest) {
           (plaidAccounts || []).map(acc => [acc.plaid_account_id, acc.account_name])
         );
 
-        // Filter out pending and already-existing transactions
-        const newTransactions: any[] = [];
-        for (const txn of transactions) {
-          if (txn.pending) continue;
+        // Re-categorize and update modified transactions (so they also get LLM categorization, like statement uploads)
+        if (modifiedTransactions.length > 0) {
+          const modifiedRaw = modifiedTransactions
+            .filter(txn => !txn.pending)
+            .map(txn => ({
+              date: txn.date,
+              merchant: txn.merchant_name || txn.name,
+              amount: txn.amount,
+              category: mapPlaidCategory(txn.category),
+              description: txn.name,
+              transactionType: determineTransactionType(txn.amount, txn.category, txn.merchant_name),
+              _plaidTxn: txn,
+            }));
 
-          const { data: existing } = await supabase
-            .from('transactions')
-            .select('id')
-            .eq('plaid_transaction_id', txn.transaction_id)
-            .single();
+          for (let i = 0; i < modifiedRaw.length; i += CATEGORIZATION_BATCH_SIZE) {
+            const batch = modifiedRaw.slice(i, i + CATEGORIZATION_BATCH_SIZE);
+            let categorizedBatch: any[] = [];
 
-          if (!existing) {
-            newTransactions.push(txn);
+            try {
+              const result = await categorizeTransactions(userId, batch);
+              categorizedBatch = result.transactions;
+            } catch (catError: any) {
+              console.error('[plaid/sync-transactions] Categorization error for modified batch:', catError.message);
+              categorizedBatch = batch.map(t => ({
+                ...t,
+                spendClassification: null,
+                confidence: 0.5,
+                clarificationNeeded: true,
+                clarificationQuestion: 'What type of transaction is this?',
+                suggestedActions: null,
+              }));
+            }
+
+            for (let j = 0; j < batch.length; j++) {
+              const original = batch[j]._plaidTxn;
+              const categorized = categorizedBatch[j];
+
+              const { error: updateError } = await supabase
+                .from('transactions')
+                .update({
+                  merchant: original.merchant_name || original.name,
+                  amount: original.amount,
+                  category: categorized?.category || mapPlaidCategory(original.category),
+                  date: original.date,
+                  description: original.name,
+                  transaction_type: categorized?.transactionType || determineTransactionType(
+                    original.amount,
+                    original.category,
+                    original.merchant_name
+                  ),
+                  spend_classification: categorized?.spendClassification || null,
+                  needs_clarification: categorized?.clarificationNeeded || false,
+                  clarification_question: categorized?.clarificationQuestion || null,
+                  suggested_actions: categorized?.suggestedActions || null,
+                })
+                .eq('plaid_transaction_id', original.transaction_id);
+
+              if (updateError) {
+                console.error('[plaid/sync-transactions] Error updating modified transaction:', updateError);
+              } else {
+                totalModified++;
+              }
+            }
           }
         }
 
+        // Filter out pending and already-existing Plaid transactions (by Plaid transaction id)
+        const candidateTransactions = transactions.filter(txn => !txn.pending);
+        const candidateIds = candidateTransactions.map(txn => txn.transaction_id).filter(Boolean);
+
+        const existingPlaidIdSet = new Set<string>();
+        for (const idsChunk of chunkArray(candidateIds, 500)) {
+          const { data: existingRows, error: existingError } = await supabase
+            .from('transactions')
+            .select('plaid_transaction_id')
+            .in('plaid_transaction_id', idsChunk);
+
+          if (existingError) {
+            console.error('[plaid/sync-transactions] Error checking existing transactions:', existingError);
+          }
+
+          for (const row of existingRows || []) {
+            if (row.plaid_transaction_id) existingPlaidIdSet.add(row.plaid_transaction_id);
+          }
+        }
+
+        const newTransactions = candidateTransactions.filter(
+          txn => !existingPlaidIdSet.has(txn.transaction_id)
+        );
+
+        // Deduplicate new Plaid transactions against existing DB transactions (same behavior as statement uploads)
+        // We do this BEFORE LLM categorization to avoid spending tokens on duplicates.
+        let dedupedNewTransactions: any[] = [];
+        let duplicatesRemoved = 0;
+
+        // Group by resolved account_name (best cross-source match key)
+        const byAccountName = new Map<string, any[]>();
+        const noAccountName: any[] = [];
+
+        for (const txn of newTransactions) {
+          const resolvedAccountName = accountNameMap.get(txn.account_id) || null;
+          if (!resolvedAccountName) {
+            noAccountName.push(txn);
+            continue;
+          }
+          if (!byAccountName.has(resolvedAccountName)) byAccountName.set(resolvedAccountName, []);
+          byAccountName.get(resolvedAccountName)!.push(txn);
+        }
+
+        // If we can't resolve account name, fall back to inserting (same as current behavior)
+        dedupedNewTransactions.push(...noAccountName);
+
+        for (const [accountName, txnsForAccount] of byAccountName.entries()) {
+          // Compute date window for fetching existing transactions
+          let minDate = txnsForAccount[0]?.date;
+          let maxDate = txnsForAccount[0]?.date;
+          for (const t of txnsForAccount) {
+            if (t.date < minDate) minDate = t.date;
+            if (t.date > maxDate) maxDate = t.date;
+          }
+
+          const existing = await searchTransactions(userId, {
+            accountName,
+            startDate: minDate,
+            endDate: maxDate,
+          });
+
+          const existingForDedup = existing.map(t => ({
+            date: t.date instanceof Date ? t.date.toISOString().split('T')[0] : (t.date as any),
+            merchant: t.merchant,
+            amount: Number(t.amount),
+            category: t.category,
+            description: t.description,
+          }));
+
+          const newForDedup = txnsForAccount.map(txn => ({
+            date: txn.date,
+            merchant: txn.merchant_name || txn.name,
+            amount: txn.amount,
+            category: mapPlaidCategory(txn.category),
+            description: txn.name,
+            _plaidTxn: txn,
+          }));
+
+          const dedupResult: any = deduplicateTransactionsSimple(newForDedup as any, existingForDedup as any);
+          duplicatesRemoved += dedupResult.duplicatesFound || 0;
+          dedupedNewTransactions.push(...(dedupResult.uniqueTransactions || []).map((t: any) => t._plaidTxn));
+        }
+
         // Prepare transactions for LLM categorization
-        const rawTransactions = newTransactions.map(txn => ({
+        const rawTransactions = dedupedNewTransactions.map(txn => ({
           date: txn.date,
           merchant: txn.merchant_name || txn.name,
           amount: txn.amount,
@@ -217,9 +350,10 @@ export async function POST(request: NextRequest) {
         let itemAdded = 0;
         let itemSkipped = 0;
         let itemClarificationNeeded = 0;
+        const existingByPlaidIdSkipped = candidateTransactions.length - newTransactions.length;
 
-        for (let i = 0; i < newTransactions.length; i++) {
-          const plaidTxn = newTransactions[i];
+        for (let i = 0; i < dedupedNewTransactions.length; i++) {
+          const plaidTxn = dedupedNewTransactions[i];
           const categorized = categorizedTransactions[i];
 
           const transaction: Transaction = {
@@ -285,16 +419,17 @@ export async function POST(request: NextRequest) {
           .eq('plaid_item_id', item.id);
 
         totalAdded += itemAdded;
-        totalSkipped += itemSkipped + (transactions.length - newTransactions.length);
+        totalSkipped += itemSkipped + existingByPlaidIdSkipped + duplicatesRemoved;
         totalClarificationNeeded += itemClarificationNeeded;
 
         results.push({
           institution: item.plaid_institution_name,
           status: 'success',
           transactions_added: itemAdded,
-          transactions_skipped: itemSkipped + (transactions.length - newTransactions.length),
+          transactions_skipped: itemSkipped + existingByPlaidIdSkipped + duplicatesRemoved,
           transactions_modified: totalModified,
           clarification_needed: itemClarificationNeeded,
+          duplicates_removed: duplicatesRemoved,
         });
 
       } catch (itemError: any) {
