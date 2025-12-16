@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
           userId,
           transaction.amount,
           transaction.date.toString(),
-          transaction.document_id
+          transaction.document_id ?? undefined
         );
         
         if (matchingTransfer) {

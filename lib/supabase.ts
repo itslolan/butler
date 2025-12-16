@@ -39,7 +39,7 @@ export interface Document {
 export interface Transaction {
   id?: string;
   user_id: string;
-  document_id: string;
+  document_id?: string | null;
   account_name?: string | null;
   date: Date | string;
   merchant: string;
@@ -54,6 +54,10 @@ export interface Transaction {
   currency?: string;
   metadata?: Record<string, any>;
   created_at?: Date | string;
+  // Plaid-specific fields
+  plaid_transaction_id?: string | null;
+  plaid_account_id?: string | null;
+  source?: 'file_upload' | 'plaid';
 }
 
 export interface AccountSnapshot {
@@ -98,6 +102,41 @@ export interface Budget {
   category_id: string;
   month: string; // Format: 'YYYY-MM'
   budgeted_amount: number;
+  created_at?: Date | string;
+  updated_at?: Date | string;
+}
+
+// Plaid Integration Types
+export interface PlaidItem {
+  id?: string;
+  user_id: string;
+  plaid_item_id: string;
+  plaid_access_token: string;
+  plaid_institution_id?: string | null;
+  plaid_institution_name?: string | null;
+  consent_expiration_time?: Date | string | null;
+  update_type?: string | null;
+  status?: 'active' | 'inactive' | 'error';
+  error_code?: string | null;
+  error_message?: string | null;
+  created_at?: Date | string;
+  updated_at?: Date | string;
+}
+
+export interface PlaidAccount {
+  id?: string;
+  user_id: string;
+  plaid_item_id: string;
+  plaid_account_id: string;
+  account_name?: string | null;
+  account_official_name?: string | null;
+  account_type?: string | null;
+  account_subtype?: string | null;
+  mask?: string | null;
+  current_balance?: number | null;
+  available_balance?: number | null;
+  iso_currency_code?: string | null;
+  last_synced_at?: Date | string | null;
   created_at?: Date | string;
   updated_at?: Date | string;
 }

@@ -16,9 +16,11 @@
     "@types/multer": "^1.4.12",
     "multer": "^1.4.5-lts.1",
     "next": "14.2.5",
+    "plaid": "^40.0.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^10.1.0",
+    "react-plaid-link": "^4.1.1",
     "recharts": "^3.5.1",
     "remark-gfm": "^4.0.1"
   },
