@@ -13,8 +13,7 @@ import { useAuth } from '@/components/AuthProvider';
 import LandingPage from '@/components/LandingPage';
 import TodoButton from '@/components/TodoButton';
 import TodoList from '@/components/TodoList';
-import BudgetCTAPanel from '@/components/BudgetCTAPanel';
-import ConnectedAccounts from '@/components/ConnectedAccounts';
+import OnboardingPanels from '@/components/OnboardingPanels';
 
 export default function Home() {
   const { user, loading } = useAuth();
@@ -357,13 +356,13 @@ export default function Home() {
                 refreshTrigger={chartRefreshKey}
               />
               
-              {/* Budget CTA Panel - Shows when user hasn't set up budgets yet */}
-              <BudgetCTAPanel userId={user?.id || 'default-user'} />
-              
-              {/* Connected Banks Section */}
-              <div className="bg-white dark:bg-gray-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4">
-                <ConnectedAccounts onSyncComplete={() => setChartRefreshKey(prev => prev + 1)} />
-              </div>
+              {/* Budget & Connected Banks Panels - Side by side on desktop */}
+              <OnboardingPanels 
+                userId={user?.id || 'default-user'} 
+                onSyncComplete={() => setChartRefreshKey(prev => prev + 1)}
+                onFileUpload={handleFileUpload}
+                isProcessing={isProcessing}
+              />
               
               <VisualizationPanel key={chartRefreshKey} userId={user?.id || 'default-user'} />
             </div>
