@@ -424,6 +424,10 @@ Use these memories to help classify transactions. For example, if you know the u
 
         sendUpdate('detection', `📋 Detected ${docType}${issuerText}${accountText}${dateText}`, 'complete');
 
+        // Check if this is a screenshot vs formal statement
+        const sourceType = extractedData.sourceType || 'statement';
+        const isScreenshot = sourceType === 'screenshot';
+
         // Account matching for statements (not screenshots)
         let accountMatchInfo: {
           needsConfirmation: boolean;
@@ -634,9 +638,7 @@ Use these memories to help classify transactions. For example, if you know the u
 
         sendUpdate('saving', '💾 Saving to database...', 'processing');
 
-        // Determine source type and if account selection is needed
-        const sourceType = extractedData.sourceType || 'statement';
-        const isScreenshot = sourceType === 'screenshot';
+        // Determine if account selection is needed (sourceType and isScreenshot already defined above)
         const accountName = extractedData.accountName || null;
         const accountLast4 = extractedData.accountNumberLast4 || null;
         
