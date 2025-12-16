@@ -9,6 +9,7 @@ import MobileChatModal from '@/components/MobileChatModal';
 import BudgetTable from '@/components/BudgetTable';
 import ReadyToAssign from '@/components/ReadyToAssign';
 import BudgetQuestionnaire from '@/components/BudgetQuestionnaire';
+import BudgetExplainer from '@/components/BudgetExplainer';
 import { useAuth } from '@/components/AuthProvider';
 
 export default function BudgetPage() {
@@ -467,6 +468,13 @@ export default function BudgetPage() {
                 )}
 
                 <div className={showQuestionnaire ? 'hidden' : 'block'}>
+                  {/* Budget Explainer Panel */}
+                  <BudgetExplainer 
+                    medianIncome={budgetMeta?.incomeStats?.medianMonthlyIncome}
+                    monthsAnalyzed={budgetMeta?.incomeStats?.monthsIncluded}
+                    currentIncome={budgetData?.income || 0}
+                  />
+
                   {/* Ready to Assign Panel */}
                   <ReadyToAssign 
                     amount={budgetData?.readyToAssign || 0}

@@ -11,6 +11,7 @@ import {
 export const runtime = 'nodejs';
 
 const GEMINI_MODEL = 'gemini-2.0-flash-exp';
+const MAX_RETRY_ATTEMPTS = 3;
 
 /**
  * POST /api/budget/auto-assign
@@ -80,40 +81,7 @@ export async function POST(request: NextRequest) {
     const categoryNames = categories.map(c => c.name);
     const historicalAverages = historicalData.categoryAverages;
 
-    // Build the prompt
-    const prompt = `You are a financial advisor helping create a zero-based budget. 
-
-**Available Income to Budget:** $${budgetIncome.toFixed(2)}
-
-**Budget Categories:** ${categoryNames.join(', ')}
-
-**Historical Spending (6-month averages by category):**
-${Object.entries(historicalAverages)
-  .sort(([, a], [, b]) => b - a)
-  .map(([cat, avg]) => `- ${cat}: $${avg.toFixed(2)}/month`)
-  .join('\n')}
-
-**Months of Data Analyzed:** ${historicalData.totalMonths}
-
-**Your Task:**
-1. Allocate the entire income ($${budgetIncome.toFixed(2)}) across the budget categories
-2. Base allocations on historical spending patterns but optimize for financial health
-3. The total of all allocations MUST equal exactly $${budgetIncome.toFixed(2)} (zero-based budgeting)
-4. For categories with no historical data, assign reasonable amounts or $0
-5. Consider that some historical overspending might need to be reduced
-
-**Response Format (JSON only, no markdown):**
-{
-  "allocations": {
-    "Category Name": 123.45,
-    ...
-  },
-  "explanation": "A 2-3 sentence explanation of the budgeting strategy used and any notable adjustments made from historical spending."
-}
-
-Return ONLY valid JSON. Do not wrap in code blocks.`;
-
-    // Call the AI
+    // Initialize AI client
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({
       model: GEMINI_MODEL,
@@ -123,16 +91,61 @@ Return ONLY valid JSON. Do not wrap in code blocks.`;
       },
     });
 
-    const result = await model.generateContent(prompt);
-    const responseText = result.response.text();
-    
-    let aiResponse: { allocations: Record<string, number>; explanation: string };
-    try {
-      aiResponse = JSON.parse(responseText);
-    } catch (parseError) {
-      console.error('Failed to parse AI response:', responseText);
+    // Retry loop for budget allocation
+    let aiResponse: { allocations: Record<string, number>; explanation: string } | null = null;
+    let lastTotalAssigned = 0;
+    let attempts = 0;
+    let exceededBudget = false;
+
+    while (attempts < MAX_RETRY_ATTEMPTS) {
+      attempts++;
+      
+      // Build the prompt (with correction hint on retries)
+      const prompt = buildPrompt(
+        budgetIncome,
+        categoryNames,
+        historicalAverages,
+        historicalData.totalMonths,
+        attempts > 1 ? lastTotalAssigned : null // Include previous total on retries
+      );
+
+      try {
+        const result = await model.generateContent(prompt);
+        const responseText = result.response.text();
+        
+        aiResponse = JSON.parse(responseText);
+        
+        // Calculate total assigned
+        lastTotalAssigned = Object.values(aiResponse!.allocations).reduce(
+          (sum, amount) => sum + (Number(amount) || 0), 
+          0
+        );
+
+        // Validate: total must not exceed available income (with small tolerance for rounding)
+        const tolerance = 0.01; // Allow 1 cent tolerance for floating point issues
+        if (lastTotalAssigned <= budgetIncome + tolerance) {
+          // Success! Total is within budget
+          exceededBudget = false;
+          break;
+        } else {
+          // Total exceeds budget, will retry if attempts remain
+          exceededBudget = true;
+          console.log(`Attempt ${attempts}: AI allocated $${lastTotalAssigned.toFixed(2)} but budget is $${budgetIncome.toFixed(2)}. ${attempts < MAX_RETRY_ATTEMPTS ? 'Retrying...' : 'Max retries reached.'}`);
+        }
+      } catch (parseError) {
+        console.error(`Attempt ${attempts}: Failed to parse AI response`);
+        if (attempts >= MAX_RETRY_ATTEMPTS) {
+          return NextResponse.json(
+            { error: 'AI returned invalid response after multiple attempts' },
+            { status: 500 }
+          );
+        }
+      }
+    }
+
+    if (!aiResponse) {
       return NextResponse.json(
-        { error: 'AI returned invalid response' },
+        { error: 'Failed to get valid AI response' },
         { status: 500 }
       );
     }
@@ -162,7 +175,8 @@ Return ONLY valid JSON. Do not wrap in code blocks.`;
       totalAssigned,
       assignedCategories,
       aiResponse.explanation,
-      historicalData.totalMonths
+      historicalData.totalMonths,
+      exceededBudget
     );
 
     return NextResponse.json({
@@ -172,6 +186,8 @@ Return ONLY valid JSON. Do not wrap in code blocks.`;
       chatMessage,
       totalAssigned,
       income: budgetIncome,
+      exceededBudget, // Flag to indicate if we couldn't stay within budget after retries
+      attempts,
     });
 
   } catch (error: any) {
@@ -183,12 +199,60 @@ Return ONLY valid JSON. Do not wrap in code blocks.`;
   }
 }
 
+function buildPrompt(
+  budgetIncome: number,
+  categoryNames: string[],
+  historicalAverages: Record<string, number>,
+  totalMonths: number,
+  previousTotal: number | null // For retry attempts
+): string {
+  const retryWarning = previousTotal !== null 
+    ? `\n\n**⚠️ CORRECTION NEEDED:** Your previous attempt allocated $${previousTotal.toFixed(2)}, which EXCEEDS the available income of $${budgetIncome.toFixed(2)}. You MUST reduce allocations to fit within the budget.\n`
+    : '';
+
+  return `You are a financial advisor helping create a zero-based budget.
+${retryWarning}
+**Available Income to Budget:** $${budgetIncome.toFixed(2)}
+
+**Budget Categories:** ${categoryNames.join(', ')}
+
+**Historical Spending (6-month averages by category):**
+${Object.entries(historicalAverages)
+  .sort(([, a], [, b]) => b - a)
+  .map(([cat, avg]) => `- ${cat}: $${avg.toFixed(2)}/month`)
+  .join('\n')}
+
+**Months of Data Analyzed:** ${totalMonths}
+
+**⚠️ CRITICAL CONSTRAINT:**
+The SUM of all allocations MUST NOT EXCEED $${budgetIncome.toFixed(2)}. This is a hard limit - you cannot allocate more money than is available. If historical spending exceeds the budget, you MUST reduce allocations proportionally to fit within the available income.
+
+**Your Task:**
+1. Allocate income across the budget categories, staying WITHIN $${budgetIncome.toFixed(2)}
+2. Base allocations on historical spending patterns but optimize for financial health
+3. The total of all allocations MUST be LESS THAN OR EQUAL TO $${budgetIncome.toFixed(2)}
+4. For categories with no historical data, assign reasonable amounts or $0
+5. If historical spending exceeds income, REDUCE allocations proportionally
+
+**Response Format (JSON only, no markdown):**
+{
+  "allocations": {
+    "Category Name": 123.45,
+    ...
+  },
+  "explanation": "A 2-3 sentence explanation of the budgeting strategy used and any notable adjustments made from historical spending."
+}
+
+Return ONLY valid JSON. Do not wrap in code blocks.`;
+}
+
 function buildChatMessage(
   income: number,
   totalAssigned: number,
   categories: Array<{ name: string; amount: number }>,
   explanation: string,
-  monthsAnalyzed: number
+  monthsAnalyzed: number,
+  exceededBudget: boolean
 ): string {
   const formatCurrency = (n: number) => `$${n.toFixed(2)}`;
 
@@ -196,9 +260,13 @@ function buildChatMessage(
   message += `I've analyzed your spending patterns over the last **${monthsAnalyzed} months** and created a zero-based budget for you.\n\n`;
   
   message += `**Income:** ${formatCurrency(income)}\n`;
-  message += `**Total Budgeted:** ${formatCurrency(totalAssigned)}\n\n`;
-
-  message += `**Budget Allocations:**\n`;
+  message += `**Total Budgeted:** ${formatCurrency(totalAssigned)}\n`;
+  
+  if (exceededBudget) {
+    message += `\n⚠️ *Note: The allocated amounts slightly exceed your available income. Consider reviewing and adjusting some categories to stay within budget.*\n`;
+  }
+  
+  message += `\n**Budget Allocations:**\n`;
   message += `| Category | Budgeted |\n`;
   message += `|----------|----------|\n`;
   
@@ -221,4 +289,3 @@ function buildChatMessage(
 
   return message;
 }
-
