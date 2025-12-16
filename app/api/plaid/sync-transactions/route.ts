@@ -2,8 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { plaidClient, isPlaidConfigured, formatPlaidError, mapPlaidCategory, determineTransactionType } from '@/lib/plaid-client';
 import { createClient } from '@/lib/supabase-server';
 import { supabase, Transaction } from '@/lib/supabase';
+import { categorizeTransactions, monitorTransactionPatterns } from '@/lib/transaction-categorizer';
 
 export const runtime = 'nodejs';
+
+// Batch size for LLM categorization (to avoid token limits)
+const CATEGORIZATION_BATCH_SIZE = 50;
 
 export async function POST(request: NextRequest) {
   try {
@@ -63,7 +67,10 @@ export async function POST(request: NextRequest) {
     let totalAdded = 0;
     let totalSkipped = 0;
     let totalModified = 0;
+    let totalClarificationNeeded = 0;
     const results: any[] = [];
+    const allInsertedTransactions: any[] = [];
+    const allIncomeTransactions: any[] = [];
 
     // Sync transactions for each item
     for (const item of plaidItems) {
@@ -92,7 +99,7 @@ export async function POST(request: NextRequest) {
                 .from('transactions')
                 .update({
                   merchant: modified.merchant_name || modified.name,
-                  amount: modified.amount, // Plaid: positive = debit, negative = credit
+                  amount: modified.amount,
                   category: mapPlaidCategory(modified.category),
                   date: modified.date,
                 })
@@ -155,56 +162,92 @@ export async function POST(request: NextRequest) {
           (plaidAccounts || []).map(acc => [acc.plaid_account_id, acc.account_name])
         );
 
-        // Process and insert transactions
-        let itemAdded = 0;
-        let itemSkipped = 0;
-
+        // Filter out pending and already-existing transactions
+        const newTransactions: any[] = [];
         for (const txn of transactions) {
-          // Skip pending transactions
-          if (txn.pending) {
-            itemSkipped++;
-            continue;
-          }
+          if (txn.pending) continue;
 
-          // Check if transaction already exists
           const { data: existing } = await supabase
             .from('transactions')
             .select('id')
             .eq('plaid_transaction_id', txn.transaction_id)
             .single();
 
-          if (existing) {
-            itemSkipped++;
-            continue;
+          if (!existing) {
+            newTransactions.push(txn);
           }
+        }
 
-          // Map Plaid transaction to our schema
-          const category = mapPlaidCategory(txn.category);
-          const transactionType = determineTransactionType(
-            txn.amount,
-            txn.category,
-            txn.merchant_name
-          );
+        // Prepare transactions for LLM categorization
+        const rawTransactions = newTransactions.map(txn => ({
+          date: txn.date,
+          merchant: txn.merchant_name || txn.name,
+          amount: txn.amount,
+          category: mapPlaidCategory(txn.category),
+          description: txn.name,
+          transactionType: determineTransactionType(txn.amount, txn.category, txn.merchant_name),
+        }));
+
+        // Categorize transactions in batches using LLM
+        let categorizedTransactions: any[] = [];
+        let incomeTransactions: any[] = [];
+
+        for (let i = 0; i < rawTransactions.length; i += CATEGORIZATION_BATCH_SIZE) {
+          const batch = rawTransactions.slice(i, i + CATEGORIZATION_BATCH_SIZE);
+          
+          try {
+            const result = await categorizeTransactions(userId, batch);
+            categorizedTransactions = categorizedTransactions.concat(result.transactions);
+            incomeTransactions = incomeTransactions.concat(result.incomeTransactions);
+          } catch (catError: any) {
+            console.error('Categorization error for batch:', catError.message);
+            // Fallback: use the raw transactions without LLM enhancement
+            categorizedTransactions = categorizedTransactions.concat(batch.map(t => ({
+              ...t,
+              spendClassification: null,
+              confidence: 0.5,
+              clarificationNeeded: true,
+              clarificationQuestion: 'What type of transaction is this?',
+              suggestedActions: null,
+            })));
+          }
+        }
+
+        // Insert categorized transactions
+        let itemAdded = 0;
+        let itemSkipped = 0;
+        let itemClarificationNeeded = 0;
+
+        for (let i = 0; i < newTransactions.length; i++) {
+          const plaidTxn = newTransactions[i];
+          const categorized = categorizedTransactions[i];
 
           const transaction: Transaction = {
             user_id: userId,
-            plaid_transaction_id: txn.transaction_id,
-            plaid_account_id: txn.account_id,
-            account_name: accountNameMap.get(txn.account_id) || null,
-            date: txn.date,
-            merchant: txn.merchant_name || txn.name,
-            // Plaid: positive amounts = money out (expense)
-            // negative amounts = money in (income)
-            amount: txn.amount,
-            category,
-            description: txn.name,
-            transaction_type: transactionType,
+            plaid_transaction_id: plaidTxn.transaction_id,
+            plaid_account_id: plaidTxn.account_id,
+            account_name: accountNameMap.get(plaidTxn.account_id) || null,
+            date: plaidTxn.date,
+            merchant: plaidTxn.merchant_name || plaidTxn.name,
+            amount: plaidTxn.amount,
+            category: categorized?.category || mapPlaidCategory(plaidTxn.category),
+            description: plaidTxn.name,
+            transaction_type: categorized?.transactionType || determineTransactionType(
+              plaidTxn.amount,
+              plaidTxn.category,
+              plaidTxn.merchant_name
+            ),
+            spend_classification: categorized?.spendClassification || null,
+            needs_clarification: categorized?.clarificationNeeded || false,
+            clarification_question: categorized?.clarificationQuestion || null,
+            suggested_actions: categorized?.suggestedActions || null,
             source: 'plaid',
-            currency: txn.iso_currency_code || 'USD',
+            currency: plaidTxn.iso_currency_code || 'USD',
             metadata: {
-              plaid_category: txn.category,
-              payment_channel: txn.payment_channel,
-              location: txn.location,
+              plaid_category: plaidTxn.category,
+              payment_channel: plaidTxn.payment_channel,
+              location: plaidTxn.location,
+              confidence: categorized?.confidence || 0.5,
             },
           };
 
@@ -217,8 +260,15 @@ export async function POST(request: NextRequest) {
             itemSkipped++;
           } else {
             itemAdded++;
+            allInsertedTransactions.push(categorized);
+            if (transaction.needs_clarification) {
+              itemClarificationNeeded++;
+            }
           }
         }
+
+        // Collect income transactions for pattern monitoring
+        allIncomeTransactions.push(...incomeTransactions);
 
         // Update cursor for incremental sync
         if (newCursor) {
@@ -235,14 +285,16 @@ export async function POST(request: NextRequest) {
           .eq('plaid_item_id', item.id);
 
         totalAdded += itemAdded;
-        totalSkipped += itemSkipped;
+        totalSkipped += itemSkipped + (transactions.length - newTransactions.length);
+        totalClarificationNeeded += itemClarificationNeeded;
 
         results.push({
           institution: item.plaid_institution_name,
           status: 'success',
           transactions_added: itemAdded,
-          transactions_skipped: itemSkipped,
+          transactions_skipped: itemSkipped + (transactions.length - newTransactions.length),
           transactions_modified: totalModified,
+          clarification_needed: itemClarificationNeeded,
         });
 
       } catch (itemError: any) {
@@ -268,12 +320,23 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Run pattern monitoring to detect and save memory patterns
+    if (allInsertedTransactions.length > 0) {
+      try {
+        await monitorTransactionPatterns(userId, allInsertedTransactions, allIncomeTransactions);
+      } catch (monitorError: any) {
+        console.error('[plaid/sync-transactions] Pattern monitoring error:', monitorError.message);
+        // Non-critical, don't fail the sync
+      }
+    }
+
     return NextResponse.json({
       success: true,
       summary: {
         total_added: totalAdded,
         total_skipped: totalSkipped,
         total_modified: totalModified,
+        total_clarification_needed: totalClarificationNeeded,
         date_range: { start: startDate, end: endDate },
       },
       results,
@@ -287,4 +350,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-
