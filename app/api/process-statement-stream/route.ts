@@ -1,24 +1,27 @@
 import { NextRequest } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { insertDocument, insertTransactions, appendMetadata, insertAccountSnapshots, getUnclarifiedTransactions, findMatchingTransfer, getAllMemories, searchTransactions, upsertMemory } from '@/lib/db-tools';
+import { insertDocument, insertTransactions, appendMetadata, insertAccountSnapshots, getUnclarifiedTransactions, findMatchingTransfer, getAllMemories, searchTransactions, upsertMemory, markDocumentPendingAccountSelection, findAccountsByLast4, getAccountsByUserId, getOrCreateAccount } from '@/lib/db-tools';
 import { uploadFile, Transaction } from '@/lib/supabase';
 import { calculateMonthlySnapshots } from '@/lib/snapshot-calculator';
 import { generateSuggestedActions } from '@/lib/action-generator';
+import { v4 as uuidv4 } from 'uuid';
 
 export const runtime = 'nodejs';
 
 const GEMINI_MODEL = 'gemini-3-pro-preview';
 
-const BASE_SYSTEM_PROMPT = `You are a financial document parser. Extract structured information from bank statements and credit card statements.
+const BASE_SYSTEM_PROMPT = `You are a financial document parser. Extract structured information from bank statements, credit card statements, and bank app/website screenshots.
 
 **CRITICAL**: Return ONLY valid JSON. Do NOT wrap your response in markdown code blocks. Do NOT include any text before or after the JSON object.
 
 Return a JSON object with this exact structure:
 {
+  "sourceType": "statement" | "screenshot",
   "documentType": "bank_statement" | "credit_card_statement" | "unknown",
   "issuer": string or null,
   "accountId": string or null,
   "accountName": string or null,
+  "accountNumberLast4": string or null,
   "currency": string (ISO 4217 code like "USD", "EUR", "GBP", "INR", etc.),
   "statementDate": "YYYY-MM-DD" or null,
   "previousBalance": number or null,
@@ -54,13 +57,24 @@ Return a JSON object with this exact structure:
   "metadataSummary": "A concise markdown-formatted summary of key information from this statement. Include: issuer, account number (last 4 digits only), statement period, balances, credit limit if applicable, notable spending patterns, and any important notices or alerts."
 }
 
+**Source Type Detection:**
+- **statement**: Official bank/credit card statements (PDFs or scanned documents) that contain formal account information, statement periods, official letterheads, and structured layouts
+- **screenshot**: Screenshots from bank apps or websites showing transaction history. These typically:
+  - Have mobile app UI elements (status bars, navigation buttons)
+  - Show partial transaction lists from scrolling
+  - May NOT contain account numbers or official account names
+  - Have informal/app-style layouts
+  - May show "Available Balance" instead of statement balances
+
 **Important Instructions:**
-1. **accountId**: Extract the full account number or last 4 digits (e.g., "1234" or "****1234")
-2. **accountName**: Extract the account nickname or card name if visible (e.g., "Chase Freedom", "Checking Account", "Visa Signature", "Platinum Card"). This helps identify the account across multiple statements.
-3. **issuer**: The bank or financial institution name (e.g., "Chase", "Bank of America", "American Express")
-4. **currency**: Identify the currency used in the statement from currency symbols ($, €, £, ¥, ₹, etc.) or text. Return the ISO 4217 code (USD for $, EUR for €, GBP for £, JPY for ¥, INR for ₹, etc.). If unclear, default to "USD".
-5. **firstTransactionDate**: The date of the EARLIEST transaction in the document
-6. **lastTransactionDate**: The date of the LATEST transaction in the document
+1. **sourceType**: ALWAYS detect and set this field first. If the image looks like a mobile app screenshot or web browser capture of a bank portal, set to "screenshot". If it's a formal statement document, set to "statement".
+2. **accountId**: Extract the full account number or last 4 digits (e.g., "1234" or "****1234"). For screenshots, this may not be available - set to null.
+3. **accountNumberLast4**: Extract ONLY the last 4 digits if visible (e.g., "1234"). This is critical for matching accounts across uploads.
+4. **accountName**: Extract the account nickname or card name if visible. For screenshots, this is often NOT available - set to null if not clearly visible.
+5. **issuer**: The bank or financial institution name. For screenshots, try to identify from app branding/logos.
+6. **currency**: Identify the currency used from symbols ($, €, £, ¥, ₹, etc.) or text. Return ISO 4217 code. Default to "USD".
+7. **firstTransactionDate**: The date of the EARLIEST transaction in the document
+8. **lastTransactionDate**: The date of the LATEST transaction in the document
 
 **Transaction Type Classification:**
 - **income**: Salary, wages, direct deposits from employers, business income, freelance payments, investment income, refunds, reimbursements
@@ -410,6 +424,74 @@ Use these memories to help classify transactions. For example, if you know the u
 
         sendUpdate('detection', `📋 Detected ${docType}${issuerText}${accountText}${dateText}`, 'complete');
 
+        // Account matching for statements (not screenshots)
+        let accountMatchInfo: {
+          needsConfirmation: boolean;
+          matchedAccount?: any;
+          officialName?: string;
+          last4?: string;
+          allAccounts?: any[];
+        } = { needsConfirmation: false };
+
+        if (!isScreenshot && (extractedData.accountName || extractedData.accountNumberLast4)) {
+          sendUpdate('account-check', '🔗 Checking for existing account matches...', 'processing');
+          
+          const officialName = extractedData.accountName || null;
+          const last4 = extractedData.accountNumberLast4 || 
+            (extractedData.accountId ? extractedData.accountId.slice(-4) : null);
+          
+          // Check if we have an account with matching last4
+          if (last4) {
+            const matchingAccounts = await findAccountsByLast4(userId, last4);
+            
+            if (matchingAccounts.length === 1) {
+              // Found exactly one match - ask for confirmation
+              accountMatchInfo = {
+                needsConfirmation: true,
+                matchedAccount: matchingAccounts[0],
+                officialName,
+                last4,
+              };
+              sendUpdate('account-match', `🔗 Found potential match: "${matchingAccounts[0].display_name}" (****${last4})`, 'complete');
+            } else if (matchingAccounts.length > 1) {
+              // Multiple matches - user needs to pick
+              accountMatchInfo = {
+                needsConfirmation: true,
+                allAccounts: matchingAccounts,
+                officialName,
+                last4,
+              };
+              sendUpdate('account-match', `🔗 Found ${matchingAccounts.length} accounts with ****${last4} - please confirm which one`, 'complete');
+            } else {
+              // No last4 match - get all accounts for user to choose or create new
+              const allAccounts = await getAccountsByUserId(userId);
+              if (allAccounts.length > 0) {
+                accountMatchInfo = {
+                  needsConfirmation: true,
+                  allAccounts,
+                  officialName,
+                  last4,
+                };
+                sendUpdate('account-match', `🔗 New account detected - please confirm or link to existing`, 'complete');
+              } else {
+                // No existing accounts - will create new automatically
+                sendUpdate('account-match', `✅ New account will be created: ${officialName || `****${last4}`}`, 'complete');
+              }
+            }
+          } else if (officialName) {
+            // No last4 but have official name - ask user which account it maps to
+            const allAccounts = await getAccountsByUserId(userId);
+            if (allAccounts.length > 0) {
+              accountMatchInfo = {
+                needsConfirmation: true,
+                allAccounts,
+                officialName,
+              };
+              sendUpdate('account-match', `🔗 Please confirm which account "${officialName}" belongs to`, 'complete');
+            }
+          }
+        }
+
         // Duplicate detection
         let transactionsToInsert = extractedData.transactions || [];
         let duplicatesInfo = { duplicatesFound: 0, duplicateExamples: [] as string[] };
@@ -552,9 +634,19 @@ Use these memories to help classify transactions. For example, if you know the u
 
         sendUpdate('saving', '💾 Saving to database...', 'processing');
 
-        // Save to Supabase
+        // Determine source type and if account selection is needed
+        const sourceType = extractedData.sourceType || 'statement';
+        const isScreenshot = sourceType === 'screenshot';
         const accountName = extractedData.accountName || null;
+        const accountLast4 = extractedData.accountNumberLast4 || null;
         
+        // For screenshots without account info, mark as pending account selection
+        const needsAccountSelection = isScreenshot && !accountName;
+        
+        // Get batch_id from request if provided (for multi-file uploads)
+        const batchId = formData.get('batchId') as string || null;
+
+        // Save to Supabase
         const documentEntry = {
           user_id: userId,
           file_name: file.name,
@@ -571,11 +663,15 @@ Use these memories to help classify transactions. For example, if you know the u
           credit_limit: extractedData.creditLimit || null,
           minimum_payment: extractedData.minimumPayment || null,
           due_date: extractedData.dueDate || null,
+          source_type: sourceType,
+          pending_account_selection: needsAccountSelection,
+          batch_id: batchId,
           metadata: {
             firstTransactionDate: extractedData.firstTransactionDate || null,
             lastTransactionDate: extractedData.lastTransactionDate || null,
             duplicatesRemoved: duplicatesInfo.duplicatesFound,
             duplicateExamples: duplicatesInfo.duplicateExamples,
+            accountNumberLast4: accountLast4,
           },
         };
 
@@ -654,6 +750,12 @@ Use these memories to help classify transactions. For example, if you know the u
         }
         
         sendUpdate('saving', '💾 Saved to database successfully', 'complete');
+        
+        // If screenshot needs account selection, notify user
+        if (needsAccountSelection) {
+          sendUpdate('account-required', `📷 Account selection required - please specify which account these transactions belong to`, 'complete');
+        }
+        
         sendUpdate('complete', '🎉 Processing complete!', 'complete');
 
         // Get unclarified transactions for this document
@@ -665,9 +767,33 @@ Use these memories to help classify transactions. For example, if you know the u
           fileName: file.name,
           extractedAt: new Date().toISOString(),
           documentType: extractedData.documentType,
+          sourceType: sourceType,
           transactionCount: transactionsToInsert.length,
           duplicatesRemoved: duplicatesInfo.duplicatesFound,
           totalTransactionsInDocument: (extractedData.transactions || []).length,
+          // Screenshot-specific fields
+          pendingAccountSelection: needsAccountSelection,
+          batchId: batchId,
+          accountNumberLast4: accountLast4,
+          // Account matching for statements
+          accountMatchInfo: accountMatchInfo.needsConfirmation ? {
+            needsConfirmation: true,
+            matchedAccount: accountMatchInfo.matchedAccount ? {
+              id: accountMatchInfo.matchedAccount.id,
+              displayName: accountMatchInfo.matchedAccount.display_name,
+              last4: accountMatchInfo.matchedAccount.account_number_last4,
+            } : undefined,
+            officialName: accountMatchInfo.officialName,
+            last4: accountMatchInfo.last4,
+            existingAccounts: accountMatchInfo.allAccounts?.map(a => ({
+              id: a.id,
+              displayName: a.display_name,
+              last4: a.account_number_last4,
+            })),
+          } : null,
+          // Date range for gap detection
+          firstTransactionDate: extractedData.firstTransactionDate || null,
+          lastTransactionDate: extractedData.lastTransactionDate || null,
           unclarifiedTransactions: unclarifiedTransactions.map(t => ({
             id: t.id,
             date: t.date,

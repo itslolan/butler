@@ -3,7 +3,7 @@ import { plaidClient, isPlaidConfigured, formatPlaidError, mapPlaidCategory, det
 import { createClient } from '@/lib/supabase-server';
 import { supabase, Transaction } from '@/lib/supabase';
 import { categorizeTransactions, monitorTransactionPatterns } from '@/lib/transaction-categorizer';
-import { searchTransactions } from '@/lib/db-tools';
+import { searchTransactions, findAccountByPlaidId, findAccountsByLast4, getOrCreateAccount } from '@/lib/db-tools';
 import { deduplicateTransactionsSimple } from '@/lib/deduplication-test';
 
 export const runtime = 'nodejs';
@@ -152,15 +152,74 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        // Get account mappings
+        // Get account mappings from plaid_accounts
         const { data: plaidAccounts } = await supabase
           .from('plaid_accounts')
-          .select('plaid_account_id, account_name')
+          .select('plaid_account_id, account_name, account_official_name, account_type, mask')
           .eq('plaid_item_id', item.id);
 
         const accountNameMap = new Map(
           (plaidAccounts || []).map(acc => [acc.plaid_account_id, acc.account_name])
         );
+
+        // Ensure unified accounts exist for each Plaid account
+        const accountIdMap = new Map<string, string>(); // plaid_account_id -> unified account id
+        const accountsNeedingConfirmation: Array<{
+          plaidAccountId: string;
+          officialName: string;
+          last4: string;
+          matchedAccounts: any[];
+        }> = [];
+
+        for (const plaidAcc of plaidAccounts || []) {
+          // Check if unified account already linked
+          const existingUnified = await findAccountByPlaidId(userId, plaidAcc.plaid_account_id);
+          
+          if (existingUnified) {
+            accountIdMap.set(plaidAcc.plaid_account_id, existingUnified.id!);
+            continue;
+          }
+
+          // Try to find by last4
+          const last4 = plaidAcc.mask;
+          if (last4) {
+            const matchingAccounts = await findAccountsByLast4(userId, last4);
+            
+            if (matchingAccounts.length === 1 && !matchingAccounts[0].plaid_account_id) {
+              // Single match without Plaid link - this might need confirmation
+              // For now, we'll flag it for later user confirmation
+              accountsNeedingConfirmation.push({
+                plaidAccountId: plaidAcc.plaid_account_id,
+                officialName: plaidAcc.account_official_name || plaidAcc.account_name,
+                last4,
+                matchedAccounts: matchingAccounts,
+              });
+            } else if (matchingAccounts.length === 0) {
+              // No match - create new unified account
+              const { account } = await getOrCreateAccount(userId, {
+                display_name: plaidAcc.account_name || plaidAcc.account_official_name || `Account ****${last4}`,
+                official_name: plaidAcc.account_official_name,
+                account_number_last4: last4,
+                account_type: plaidAcc.account_type as any,
+                issuer: item.plaid_institution_name || undefined,
+                source: 'plaid',
+                plaid_account_id: plaidAcc.plaid_account_id,
+              });
+              accountIdMap.set(plaidAcc.plaid_account_id, account.id!);
+            }
+          } else {
+            // No last4 - create new account
+            const { account } = await getOrCreateAccount(userId, {
+              display_name: plaidAcc.account_name || plaidAcc.account_official_name || 'Unknown Account',
+              official_name: plaidAcc.account_official_name,
+              account_type: plaidAcc.account_type as any,
+              issuer: item.plaid_institution_name || undefined,
+              source: 'plaid',
+              plaid_account_id: plaidAcc.plaid_account_id,
+            });
+            accountIdMap.set(plaidAcc.plaid_account_id, account.id!);
+          }
+        }
 
         // Re-categorize and update modified transactions (so they also get LLM categorization, like statement uploads)
         if (modifiedTransactions.length > 0) {
@@ -355,11 +414,15 @@ export async function POST(request: NextRequest) {
         for (let i = 0; i < dedupedNewTransactions.length; i++) {
           const plaidTxn = dedupedNewTransactions[i];
           const categorized = categorizedTransactions[i];
+          
+          // Get unified account_id if available
+          const unifiedAccountId = accountIdMap.get(plaidTxn.account_id) || null;
 
           const transaction: Transaction = {
             user_id: userId,
             plaid_transaction_id: plaidTxn.transaction_id,
             plaid_account_id: plaidTxn.account_id,
+            account_id: unifiedAccountId,
             account_name: accountNameMap.get(plaidTxn.account_id) || null,
             date: plaidTxn.date,
             merchant: plaidTxn.merchant_name || plaidTxn.name,

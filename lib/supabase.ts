@@ -34,12 +34,17 @@ export interface Document {
   metadata?: Record<string, any>;
   created_at?: Date | string;
   updated_at?: Date | string;
+  // Screenshot support fields
+  source_type?: 'statement' | 'screenshot';
+  pending_account_selection?: boolean;
+  batch_id?: string | null;
 }
 
 export interface Transaction {
   id?: string;
   user_id: string;
   document_id?: string | null;
+  account_id?: string | null;  // FK to unified accounts table
   account_name?: string | null;
   date: Date | string;
   merchant: string;
@@ -139,6 +144,45 @@ export interface PlaidAccount {
   last_synced_at?: Date | string | null;
   created_at?: Date | string;
   updated_at?: Date | string;
+}
+
+// Unified Account type - single source of truth for all user accounts
+export interface Account {
+  id?: string;
+  user_id: string;
+  display_name: string;                    // What user sees (alias preferred, else official)
+  official_name?: string | null;           // From Plaid/statement (null for manual entry)
+  alias?: string | null;                   // User-friendly shorthand (e.g., "My Chase")
+  account_number_last4?: string | null;    // Last 4 digits (key for matching!)
+  account_type?: 'checking' | 'savings' | 'credit_card' | 'investment' | 'loan' | 'other' | null;
+  issuer?: string | null;                  // Bank/institution name
+  source: 'plaid' | 'statement' | 'manual';
+  plaid_account_id?: string | null;        // Link to plaid_accounts if from Plaid
+  is_active?: boolean;
+  created_at?: Date | string;
+  updated_at?: Date | string;
+}
+
+// Account creation input (for creating accounts with sparse info)
+export interface CreateAccountInput {
+  display_name: string;
+  alias?: string;
+  account_number_last4?: string;
+  account_type?: Account['account_type'];
+  issuer?: string;
+  source: Account['source'];
+  official_name?: string;
+  plaid_account_id?: string;
+}
+
+// Pending account selection info (for documents needing account assignment)
+export interface PendingAccountDocument {
+  document_id: string;
+  file_name: string;
+  transaction_count: number;
+  first_transaction_date?: string;
+  last_transaction_date?: string;
+  batch_id?: string;
 }
 
 /**

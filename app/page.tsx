@@ -48,7 +48,17 @@ export default function Home() {
     
     let processedCount = 0;
     let totalTransactions = 0;
+    let duplicatesSkipped = 0;
     let errors = 0;
+    
+    // Track date ranges and pending account selections
+    let earliestDate: string | null = null;
+    let latestDate: string | null = null;
+    const pendingAccountDocs: string[] = [];
+    const accountMatchDocs: any[] = [];
+    
+    // Generate batch_id for multi-file uploads (for grouping screenshots)
+    const batchId = files.length > 1 ? crypto.randomUUID() : null;
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
@@ -69,6 +79,9 @@ export default function Home() {
         const formData = new FormData();
         formData.append('file', file);
         formData.append('userId', user?.id || 'default-user');
+        if (batchId) {
+          formData.append('batchId', batchId);
+        }
 
         const response = await fetch('/api/process-statement-stream', {
           method: 'POST',
@@ -137,30 +150,62 @@ export default function Home() {
         if (finalResult) {
           processedCount++;
           totalTransactions += finalResult.transactionCount || 0;
+          duplicatesSkipped += finalResult.duplicatesRemoved || 0;
+          
+          // Track date ranges across all files
+          if (finalResult.firstTransactionDate) {
+            if (!earliestDate || finalResult.firstTransactionDate < earliestDate) {
+              earliestDate = finalResult.firstTransactionDate;
+            }
+          }
+          if (finalResult.lastTransactionDate) {
+            if (!latestDate || finalResult.lastTransactionDate > latestDate) {
+              latestDate = finalResult.lastTransactionDate;
+            }
+          }
+          
+          // Track pending account selections (screenshots)
+          if (finalResult.pendingAccountSelection) {
+            pendingAccountDocs.push(finalResult.id);
+          }
+          
+          // Track account match confirmations (statements)
+          if (finalResult.accountMatchInfo?.needsConfirmation) {
+            accountMatchDocs.push({
+              documentId: finalResult.id,
+              transactionCount: finalResult.transactionCount,
+              ...finalResult.accountMatchInfo,
+            });
+          }
           
           // Trigger chart refresh immediately after each file
           setChartRefreshKey(prev => prev + 1);
           
-          // Handle clarifications and summary for THIS file
-          if (finalResult.unclarifiedTransactions && finalResult.unclarifiedTransactions.length > 0) {
-            const clarificationMsg = buildClarificationMessage(finalResult);
-            if (chatInterfaceRef.current?.sendSystemMessage) {
-              // Small delay to ensure order
-              setTimeout(() => {
-                chatInterfaceRef.current.sendSystemMessage(clarificationMsg);
-              }, 500);
-            }
-          } else {
-            // Send summary
-            if (chatInterfaceRef.current?.sendSystemMessage) {
-              setTimeout(() => {
-                let message = `✅ **${file.name}**: Processed successfully.\n`;
-                message += `• Saved ${finalResult.transactionCount} transactions`;
-                if (finalResult.duplicatesRemoved > 0) {
-                  message += `\n• Skipped ${finalResult.duplicatesRemoved} duplicates`;
-                }
-                chatInterfaceRef.current.sendSystemMessage(message);
-              }, 500);
+          // Handle clarifications and summary for THIS file (only if not batching)
+          if (files.length === 1) {
+            if (finalResult.unclarifiedTransactions && finalResult.unclarifiedTransactions.length > 0) {
+              const clarificationMsg = buildClarificationMessage(finalResult);
+              if (chatInterfaceRef.current?.sendSystemMessage) {
+                setTimeout(() => {
+                  chatInterfaceRef.current.sendSystemMessage(clarificationMsg);
+                }, 500);
+              }
+            } else if (!finalResult.pendingAccountSelection && !finalResult.accountMatchInfo?.needsConfirmation) {
+              // Send summary only if no account selection needed
+              if (chatInterfaceRef.current?.sendSystemMessage) {
+                setTimeout(() => {
+                  let message = `✅ **${file.name}**: Processed successfully.\n`;
+                  message += `• Saved ${finalResult.transactionCount} transactions`;
+                  if (finalResult.duplicatesRemoved > 0) {
+                    message += `\n• Skipped ${finalResult.duplicatesRemoved} duplicates`;
+                  }
+                  if (finalResult.firstTransactionDate && finalResult.lastTransactionDate) {
+                    const formatDate = (d: string) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                    message += `\n• Date range: ${formatDate(finalResult.firstTransactionDate)} - ${formatDate(finalResult.lastTransactionDate)}`;
+                  }
+                  chatInterfaceRef.current.sendSystemMessage(message);
+                }, 500);
+              }
             }
           }
         }
@@ -175,6 +220,9 @@ export default function Home() {
 
     setIsProcessing(false);
     
+    // Helper to format date
+    const formatDate = (d: string) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    
     // Final batch summary
     if (files.length > 1) {
       const summary = errors === 0
@@ -183,17 +231,58 @@ export default function Home() {
       
       setLastUploadResult(summary);
       
+      // Send detailed batch summary to chat
+      if (chatInterfaceRef.current?.sendSystemMessage && processedCount > 0) {
+        setTimeout(() => {
+          let message = `✅ **Upload Complete**: ${processedCount} file${processedCount !== 1 ? 's' : ''} processed\n\n`;
+          message += `📊 **Summary:**\n`;
+          message += `• Transactions added: **${totalTransactions}**\n`;
+          if (duplicatesSkipped > 0) {
+            message += `• Duplicates skipped: ${duplicatesSkipped}\n`;
+          }
+          if (earliestDate && latestDate) {
+            message += `• Date range: ${formatDate(earliestDate)} - ${formatDate(latestDate)}\n`;
+          }
+          
+          chatInterfaceRef.current.sendSystemMessage(message);
+        }, 500);
+      }
+      
       // Clear steps after a delay
       setTimeout(() => setProcessingSteps([]), 5000);
     } else {
-      // Single file logic matches existing behavior more or less
+      // Single file logic
       if (errors === 0) {
-         // Success message was already set per-file, but let's set the toast one
-         // We can't easily get the finalResult here for single file without storing it, 
-         // but checking success count is enough
          setLastUploadResult(`✅ Upload Complete`);
          setTimeout(() => setProcessingSteps([]), 5000);
       }
+    }
+    
+    // Handle pending account selections (screenshots without account info)
+    if (pendingAccountDocs.length > 0 && chatInterfaceRef.current?.showAccountSelection) {
+      setTimeout(() => {
+        chatInterfaceRef.current.showAccountSelection({
+          documentIds: pendingAccountDocs,
+          transactionCount: totalTransactions,
+          dateRange: earliestDate && latestDate ? { start: earliestDate, end: latestDate } : undefined,
+        });
+      }, 1000);
+    }
+    
+    // Handle account match confirmations (statements with new official names)
+    if (accountMatchDocs.length > 0 && chatInterfaceRef.current?.showAccountMatchConfirmation) {
+      // Show first one (they can be handled one at a time)
+      const firstMatch = accountMatchDocs[0];
+      setTimeout(() => {
+        chatInterfaceRef.current.showAccountMatchConfirmation({
+          documentId: firstMatch.documentId,
+          transactionCount: firstMatch.transactionCount,
+          matchedAccount: firstMatch.matchedAccount,
+          officialName: firstMatch.officialName,
+          last4: firstMatch.last4,
+          existingAccounts: firstMatch.existingAccounts,
+        });
+      }, 1200);
     }
 
   }, [user]);

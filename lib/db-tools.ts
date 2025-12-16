@@ -1,4 +1,4 @@
-import { supabase, Document, Transaction, UserMetadata, AccountSnapshot, UserMemory } from './supabase';
+import { supabase, Document, Transaction, UserMetadata, AccountSnapshot, UserMemory, Account, CreateAccountInput, PendingAccountDocument } from './supabase';
 
 export interface DocumentFilter {
   documentType?: string;
@@ -1276,4 +1276,374 @@ export async function upsertMemory(userId: string, newMemory: string): Promise<v
     await appendMemory(userId, formattedMemory);
     console.log(`[Memory] Added new memory: ${formattedMemory}`);
   }
+}
+
+// ============================================
+// Account Management Functions
+// ============================================
+
+/**
+ * Create a new account
+ */
+export async function createAccount(
+  userId: string,
+  input: CreateAccountInput
+): Promise<Account> {
+  const accountData = {
+    user_id: userId,
+    display_name: input.display_name,
+    official_name: input.official_name || null,
+    alias: input.alias || input.display_name, // Default alias to display_name
+    account_number_last4: input.account_number_last4 || null,
+    account_type: input.account_type || null,
+    issuer: input.issuer || null,
+    source: input.source,
+    plaid_account_id: input.plaid_account_id || null,
+    is_active: true,
+  };
+
+  const { data, error } = await supabase
+    .from('accounts')
+    .insert(accountData)
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to create account: ${error.message}`);
+  }
+
+  return data;
+}
+
+/**
+ * Get account by ID
+ */
+export async function getAccountById(accountId: string): Promise<Account | null> {
+  const { data, error } = await supabase
+    .from('accounts')
+    .select('*')
+    .eq('id', accountId)
+    .single();
+
+  if (error && error.code !== 'PGRST116') {
+    throw new Error(`Failed to get account: ${error.message}`);
+  }
+
+  return data || null;
+}
+
+/**
+ * Get all accounts for a user
+ */
+export async function getAccountsByUserId(userId: string): Promise<Account[]> {
+  const { data, error } = await supabase
+    .from('accounts')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('is_active', true)
+    .order('display_name', { ascending: true });
+
+  if (error) {
+    throw new Error(`Failed to get accounts: ${error.message}`);
+  }
+
+  return data || [];
+}
+
+/**
+ * Find accounts by last 4 digits
+ */
+export async function findAccountsByLast4(
+  userId: string,
+  last4: string
+): Promise<Account[]> {
+  const { data, error } = await supabase
+    .from('accounts')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('account_number_last4', last4)
+    .eq('is_active', true);
+
+  if (error) {
+    throw new Error(`Failed to find accounts by last4: ${error.message}`);
+  }
+
+  return data || [];
+}
+
+/**
+ * Find account by Plaid account ID
+ */
+export async function findAccountByPlaidId(
+  userId: string,
+  plaidAccountId: string
+): Promise<Account | null> {
+  const { data, error } = await supabase
+    .from('accounts')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('plaid_account_id', plaidAccountId)
+    .single();
+
+  if (error && error.code !== 'PGRST116') {
+    throw new Error(`Failed to find account by Plaid ID: ${error.message}`);
+  }
+
+  return data || null;
+}
+
+/**
+ * Update account with official name (used when statement/Plaid provides official name)
+ */
+export async function updateAccountWithOfficialName(
+  accountId: string,
+  officialName: string,
+  issuer?: string
+): Promise<Account> {
+  const updateData: Partial<Account> = {
+    official_name: officialName,
+  };
+  
+  if (issuer) {
+    updateData.issuer = issuer;
+  }
+
+  const { data, error } = await supabase
+    .from('accounts')
+    .update(updateData)
+    .eq('id', accountId)
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to update account: ${error.message}`);
+  }
+
+  return data;
+}
+
+/**
+ * Update account's last 4 digits
+ */
+export async function updateAccountLast4(
+  accountId: string,
+  last4: string
+): Promise<Account> {
+  const { data, error } = await supabase
+    .from('accounts')
+    .update({ account_number_last4: last4 })
+    .eq('id', accountId)
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to update account last4: ${error.message}`);
+  }
+
+  return data;
+}
+
+/**
+ * Link Plaid account to unified account
+ */
+export async function linkPlaidToAccount(
+  accountId: string,
+  plaidAccountId: string
+): Promise<Account> {
+  const { data, error } = await supabase
+    .from('accounts')
+    .update({ 
+      plaid_account_id: plaidAccountId,
+      source: 'plaid' 
+    })
+    .eq('id', accountId)
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to link Plaid account: ${error.message}`);
+  }
+
+  return data;
+}
+
+/**
+ * Find potential account matches for a new official name
+ * Returns accounts that might match based on last4 or similar names
+ */
+export async function findPotentialAccountMatches(
+  userId: string,
+  officialName: string,
+  last4?: string
+): Promise<{ exact_last4_matches: Account[]; all_accounts: Account[] }> {
+  // Get all user accounts
+  const allAccounts = await getAccountsByUserId(userId);
+  
+  // If we have last4, find exact matches
+  let exactLast4Matches: Account[] = [];
+  if (last4) {
+    exactLast4Matches = allAccounts.filter(
+      acc => acc.account_number_last4 === last4
+    );
+  }
+  
+  return {
+    exact_last4_matches: exactLast4Matches,
+    all_accounts: allAccounts,
+  };
+}
+
+// ============================================
+// Document Account Assignment Functions
+// ============================================
+
+/**
+ * Get documents pending account selection
+ */
+export async function getDocumentsPendingAccountSelection(
+  userId: string
+): Promise<PendingAccountDocument[]> {
+  const { data: documents, error } = await supabase
+    .from('documents')
+    .select('id, file_name, batch_id, metadata')
+    .eq('user_id', userId)
+    .eq('pending_account_selection', true)
+    .order('uploaded_at', { ascending: false });
+
+  if (error) {
+    throw new Error(`Failed to get pending documents: ${error.message}`);
+  }
+
+  if (!documents || documents.length === 0) {
+    return [];
+  }
+
+  // Get transaction counts and date ranges for each document
+  const result: PendingAccountDocument[] = [];
+  
+  for (const doc of documents) {
+    const { data: txnData, error: txnError } = await supabase
+      .from('transactions')
+      .select('date')
+      .eq('document_id', doc.id)
+      .order('date', { ascending: true });
+
+    if (txnError) {
+      console.error(`Error getting transactions for doc ${doc.id}:`, txnError);
+      continue;
+    }
+
+    const transactions = txnData || [];
+    const dates = transactions.map(t => t.date).filter(Boolean).sort();
+
+    result.push({
+      document_id: doc.id,
+      file_name: doc.file_name,
+      transaction_count: transactions.length,
+      first_transaction_date: dates[0] || undefined,
+      last_transaction_date: dates[dates.length - 1] || undefined,
+      batch_id: doc.batch_id || undefined,
+    });
+  }
+
+  return result;
+}
+
+/**
+ * Assign account to documents and their transactions
+ */
+export async function assignAccountToDocuments(
+  documentIds: string[],
+  accountId: string,
+  accountDisplayName: string
+): Promise<{ documents_updated: number; transactions_updated: number }> {
+  if (documentIds.length === 0) {
+    return { documents_updated: 0, transactions_updated: 0 };
+  }
+
+  // Update documents
+  const { error: docError } = await supabase
+    .from('documents')
+    .update({
+      account_name: accountDisplayName,
+      pending_account_selection: false,
+    })
+    .in('id', documentIds);
+
+  if (docError) {
+    throw new Error(`Failed to update documents: ${docError.message}`);
+  }
+
+  // Update transactions with account_id and account_name
+  const { data: txnData, error: txnError } = await supabase
+    .from('transactions')
+    .update({
+      account_id: accountId,
+      account_name: accountDisplayName,
+    })
+    .in('document_id', documentIds)
+    .select('id');
+
+  if (txnError) {
+    throw new Error(`Failed to update transactions: ${txnError.message}`);
+  }
+
+  return {
+    documents_updated: documentIds.length,
+    transactions_updated: txnData?.length || 0,
+  };
+}
+
+/**
+ * Mark document as pending account selection
+ */
+export async function markDocumentPendingAccountSelection(
+  documentId: string,
+  batchId?: string
+): Promise<void> {
+  const updateData: any = {
+    pending_account_selection: true,
+    source_type: 'screenshot',
+  };
+  
+  if (batchId) {
+    updateData.batch_id = batchId;
+  }
+
+  const { error } = await supabase
+    .from('documents')
+    .update(updateData)
+    .eq('id', documentId);
+
+  if (error) {
+    throw new Error(`Failed to mark document pending: ${error.message}`);
+  }
+}
+
+/**
+ * Get or create account - creates if doesn't exist, returns existing if found
+ */
+export async function getOrCreateAccount(
+  userId: string,
+  input: CreateAccountInput
+): Promise<{ account: Account; created: boolean }> {
+  // First try to find by display_name
+  const { data: existing, error: findError } = await supabase
+    .from('accounts')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('display_name', input.display_name)
+    .single();
+
+  if (findError && findError.code !== 'PGRST116') {
+    throw new Error(`Failed to find account: ${findError.message}`);
+  }
+
+  if (existing) {
+    return { account: existing, created: false };
+  }
+
+  // Create new account
+  const account = await createAccount(userId, input);
+  return { account, created: true };
 }

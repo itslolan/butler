@@ -4,7 +4,9 @@ import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 're
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import ChartRenderer from './ChartRenderer';
+import AccountSelector from './AccountSelector';
 import { ChartConfig } from '@/lib/chart-types';
+import { Account } from '@/lib/supabase';
 
 interface ToolCall {
   name: string;
@@ -15,6 +17,18 @@ interface ToolCall {
   resultCount?: number | null;
 }
 
+interface AccountSelectionData {
+  type: 'screenshot' | 'statement_match';
+  documentIds: string[];
+  transactionCount: number;
+  dateRange?: { start?: string; end?: string };
+  accounts: Account[];
+  // For statement match
+  matchedAccount?: { id: string; displayName: string; last4?: string };
+  officialName?: string;
+  last4?: string;
+}
+
 interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string;
@@ -22,6 +36,7 @@ interface Message {
   suggestedActions?: string[];
   toolCalls?: ToolCall[];
   isStreaming?: boolean;
+  accountSelection?: AccountSelectionData;
 }
 
 interface ChatInterfaceProps {
@@ -68,6 +83,9 @@ const ChatInterface = forwardRef(({
     scrollToBottom();
   }, [messages]);
 
+  // State for account selection loading
+  const [isAssigningAccount, setIsAssigningAccount] = useState(false);
+
   // Expose methods to parent component
   useImperativeHandle(ref, () => ({
     sendSystemMessage: (content: string) => {
@@ -101,8 +119,139 @@ Please reply with the correct category or explain what this transaction is.`;
         : genericActions;
       
       setMessages(prev => [...prev, { role: 'system' as const, content, suggestedActions }]);
+    },
+    // Show account selection for screenshots
+    showAccountSelection: async (data: {
+      documentIds: string[];
+      transactionCount: number;
+      dateRange?: { start?: string; end?: string };
+    }) => {
+      // Fetch accounts
+      try {
+        const response = await fetch('/api/accounts');
+        const result = await response.json();
+        
+        const content = `📷 **Account Selection Required**
+
+I've processed your screenshot(s) and found **${data.transactionCount} transaction${data.transactionCount !== 1 ? 's' : ''}**.
+
+Please select which account these transactions belong to, or create a new account.`;
+
+        setMessages(prev => [...prev, { 
+          role: 'system' as const, 
+          content,
+          accountSelection: {
+            type: 'screenshot',
+            documentIds: data.documentIds,
+            transactionCount: data.transactionCount,
+            dateRange: data.dateRange,
+            accounts: result.accounts || [],
+          }
+        }]);
+      } catch (error) {
+        console.error('Error fetching accounts:', error);
+        setMessages(prev => [...prev, { 
+          role: 'system' as const, 
+          content: '❌ Error loading accounts. Please try again.' 
+        }]);
+      }
+    },
+    // Show account match confirmation for statements/Plaid
+    showAccountMatchConfirmation: (data: {
+      documentId: string;
+      transactionCount: number;
+      matchedAccount?: { id: string; displayName: string; last4?: string };
+      officialName?: string;
+      last4?: string;
+      existingAccounts?: Array<{ id: string; displayName: string; last4?: string }>;
+    }) => {
+      let content: string;
+      
+      if (data.matchedAccount) {
+        content = `🔗 **Account Match Detected**
+
+Your document shows account: **${data.officialName || `****${data.last4}`}**
+
+I found an existing account with matching last 4 digits:
+• **${data.matchedAccount.displayName}** (****${data.matchedAccount.last4 || '????'})
+
+**Is this the same account?**`;
+      } else {
+        content = `🔗 **New Account Detected**
+
+Your document shows account: **${data.officialName || `****${data.last4}`}**
+
+Please confirm which existing account this belongs to, or create a new one.`;
+      }
+
+      setMessages(prev => [...prev, { 
+        role: 'system' as const, 
+        content,
+        accountSelection: {
+          type: 'statement_match',
+          documentIds: [data.documentId],
+          transactionCount: data.transactionCount,
+          accounts: (data.existingAccounts || []).map(a => ({
+            id: a.id,
+            user_id: userId,
+            display_name: a.displayName,
+            account_number_last4: a.last4 || null,
+            source: 'manual' as const,
+          })),
+          matchedAccount: data.matchedAccount,
+          officialName: data.officialName,
+          last4: data.last4,
+        }
+      }]);
     }
   }));
+
+  // Handle account assignment
+  const handleAccountAssignment = async (
+    documentIds: string[],
+    accountId?: string,
+    newAccount?: { display_name: string; last4?: string }
+  ) => {
+    setIsAssigningAccount(true);
+    try {
+      const response = await fetch('/api/assign-account', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          document_ids: documentIds,
+          account_id: accountId,
+          new_account: newAccount,
+        }),
+      });
+
+      const result = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to assign account');
+      }
+
+      // Send success message
+      setMessages(prev => [...prev, { 
+        role: 'system' as const, 
+        content: `✅ **Account Assigned**
+
+Successfully mapped **${result.transactions_updated} transaction${result.transactions_updated !== 1 ? 's' : ''}** to **${result.account.display_name}**${result.account_created ? ' (new account created)' : ''}.`
+      }]);
+
+      // Trigger refresh
+      if (onTodoResolved) {
+        onTodoResolved();
+      }
+    } catch (error: any) {
+      console.error('Error assigning account:', error);
+      setMessages(prev => [...prev, { 
+        role: 'system' as const, 
+        content: `❌ Error: ${error.message}` 
+      }]);
+    } finally {
+      setIsAssigningAccount(false);
+    }
+  };
 
   const sendMessage = async (content: string) => {
     if (!content.trim() || isLoading) return;
@@ -392,6 +541,31 @@ Please reply with the correct category or explain what this transaction is.`;
                     </button>
                   ))}
                 </div>
+              </div>
+            )}
+            
+            {/* Account Selection - show after system message with accountSelection data */}
+            {message.role === 'system' && message.accountSelection && (
+              <div className="mt-3 w-full max-w-[85%]">
+                <AccountSelector
+                  accounts={message.accountSelection.accounts}
+                  transactionCount={message.accountSelection.transactionCount}
+                  dateRange={message.accountSelection.dateRange}
+                  isLoading={isAssigningAccount}
+                  onSelectExisting={(account) => {
+                    handleAccountAssignment(
+                      message.accountSelection!.documentIds,
+                      account.id
+                    );
+                  }}
+                  onCreateNew={(displayName, last4) => {
+                    handleAccountAssignment(
+                      message.accountSelection!.documentIds,
+                      undefined,
+                      { display_name: displayName, last4 }
+                    );
+                  }}
+                />
               </div>
             )}
             
