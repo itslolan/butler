@@ -73,7 +73,7 @@ export default function BudgetQuestionnaire({ onComplete, onUpload, initialIncom
 
         <div className="bg-white/10 p-4 rounded-xl backdrop-blur-sm">
           <p className="text-xs text-white/80 text-center">
-            Remember, these figures don't need to be accurate. Once you start uploading your bank statements, Adphex will auto adjust all your amounts.
+            Remember, these figures don&apos;t need to be accurate. Once you start uploading your bank statements, Adphex will auto adjust all your amounts.
           </p>
         </div>
 
