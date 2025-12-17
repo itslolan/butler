@@ -26,7 +26,7 @@ interface ChartRendererProps {
   config: ChartConfig;
   height?: number | `${number}%`;
   className?: string;
-  showLegend?: boolean; // For mobile treemap legend
+  showLegend?: boolean; // Render legend outside chart (chat/mobile)
 }
 
 export default function ChartRenderer({ config, height = 300, className, showLegend = false }: ChartRendererProps) {
@@ -91,6 +91,60 @@ export default function ChartRenderer({ config, height = 300, className, showLeg
       </div>
     );
   };
+
+  const renderPieLegendFromData = () => {
+    return (
+      <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+        {chartData.map((entry, index) => (
+          <div key={`legend-${entry.name}-${index}`} className="flex items-center gap-2 text-gray-700 dark:text-gray-200">
+            <span
+              className="w-3 h-3 rounded-full"
+              style={{ backgroundColor: chartColors[index % chartColors.length] }}
+            />
+            <span className="truncate">{entry.name}</span>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  // Pie legends rendered by Recharts are overlay-positioned, which can look cramped in chat.
+  // When showLegend is enabled, render the legend as normal DOM below the chart so the card grows naturally.
+  if (type === 'pie' && showLegend) {
+    const chartHeight = typeof height === 'number' ? height : 280;
+
+    return (
+      <div className={`w-full ${className || ''}`}>
+        <div className="w-full" style={{ height: chartHeight }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
+              <Pie
+                data={chartData}
+                dataKey="value"
+                nameKey="name"
+                cx="50%"
+                cy="50%"
+                outerRadius="85%"
+                innerRadius={0}
+                paddingAngle={2}
+              >
+                {chartData.map((_, index) => (
+                  <Cell
+                    key={`cell-${index}`}
+                    fill={chartColors[index % chartColors.length]}
+                    stroke="#fff"
+                    strokeWidth={2}
+                  />
+                ))}
+              </Pie>
+              <Tooltip content={<CustomTooltip />} />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+        {renderPieLegendFromData()}
+      </div>
+    );
+  }
 
   return (
     <div className={`w-full h-full ${className || ''}`}>
@@ -166,7 +220,7 @@ export default function ChartRenderer({ config, height = 300, className, showLeg
               cx="50%"
               cy="50%"
               outerRadius={80}
-              innerRadius={55}
+              innerRadius={0}
               paddingAngle={2}
             >
               {chartData.map((entry, index) => (
