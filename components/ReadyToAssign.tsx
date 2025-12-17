@@ -34,7 +34,8 @@ export default function ReadyToAssign({
   const isPositive = amount >= 0;
   const isOverbudgeted = amount < 0;
   const isFullyAssigned = amount === 0 && totalBudgeted > 0;
-  const isUsingDifferentMonth = incomeMonth && currentMonth && incomeMonth !== currentMonth;
+  const isUsingMedianIncome = incomeMonth === 'median';
+  const isUsingDifferentMonth = incomeMonth && currentMonth && incomeMonth !== currentMonth && incomeMonth !== 'median';
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -81,8 +82,13 @@ export default function ReadyToAssign({
             />
           </div>
           <p className="text-white/70 text-sm mt-2">
-            {formatCurrency(income)} income − {formatCurrency(totalBudgeted)} budgeted
+            {formatCurrency(income)} {isUsingMedianIncome ? 'median income' : 'income'} − {formatCurrency(totalBudgeted)} budgeted
           </p>
+          {isUsingMedianIncome && (
+            <p className="text-white/60 text-xs mt-1 italic">
+              Using your median monthly income for budgeting
+            </p>
+          )}
           {isUsingDifferentMonth && (
             <p className="text-white/60 text-xs mt-1 italic">
               Using income from {formatMonth(incomeMonth)} (no income in current month)

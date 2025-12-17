@@ -76,8 +76,8 @@ export default function BudgetPage() {
   // Track user-manually-set budget amounts (to preserve during AI auto-assign)
   const [userSetBudgets, setUserSetBudgets] = useState<Record<string, number>>({});
   
-  // Track the last known DB income so we know whether to use override
-  const [lastDbIncome, setLastDbIncome] = useState<number>(0);
+  // Track if user has any income history (for determining if manual override is allowed)
+  const [hasIncomeHistory, setHasIncomeHistory] = useState<boolean>(false);
 
   // Generate month options (last 12 months + next 1 month)
   const monthOptions = Array.from({ length: 13 }, (_, i) => {
@@ -105,17 +105,21 @@ export default function BudgetPage() {
       });
     }
 
-    // DB income takes precedence; only use user-entered override when DB has no income
+    // Prefer median income if available, otherwise use DB income, then user override
+    const medianIncome = anyData.incomeStats?.medianMonthlyIncome || 0;
     const dbIncome = anyData.income || 0;
-    setLastDbIncome(dbIncome); // Track for use in questionnaire/manual edits
     
-    const effectiveIncome = dbIncome > 0 ? dbIncome : (incomeOverride ?? 0);
+    // Track if user has any income history (median or specific month income)
+    const hasHistory = medianIncome > 0 || dbIncome > 0;
+    setHasIncomeHistory(hasHistory);
+    
+    const effectiveIncome = medianIncome > 0 ? medianIncome : (dbIncome > 0 ? dbIncome : (incomeOverride ?? 0));
     const effectiveReadyToAssign = effectiveIncome - anyData.totalBudgeted;
 
     setBudgetData({
       income: effectiveIncome,
       // Use DB income month if DB has income, otherwise current month for user-entered income
-      incomeMonth: dbIncome > 0 ? anyData.incomeMonth : selectedMonth,
+      incomeMonth: medianIncome > 0 ? 'median' : (dbIncome > 0 ? anyData.incomeMonth : selectedMonth),
       totalBudgeted: anyData.totalBudgeted,
       readyToAssign: effectiveReadyToAssign,
       categories: anyData.categories,
@@ -131,9 +135,9 @@ export default function BudgetPage() {
   const handleQuestionnaireComplete = (data: { income: number; rent?: number }) => {
     if (!budgetData) return;
 
-    // Only use user-entered income if DB has no income data
-    // DB income always takes precedence when available
-    if (lastDbIncome === 0) {
+    // Only use user-entered income if there's no income history
+    // Income history (median or DB income) always takes precedence
+    if (!hasIncomeHistory) {
       setIncomeOverride(data.income);
     }
     
@@ -142,13 +146,13 @@ export default function BudgetPage() {
       setRentOverride(data.rent);
     }
     
-    // Use DB income if available, otherwise use user-entered income
-    const effectiveIncome = lastDbIncome > 0 ? lastDbIncome : data.income;
+    // If user has income history, keep the current income (median or DB), otherwise use user-entered
+    const effectiveIncome = hasIncomeHistory ? budgetData.income : data.income;
     
     setBudgetData({
       ...budgetData,
       income: effectiveIncome,
-      incomeMonth: selectedMonth,
+      incomeMonth: hasIncomeHistory ? budgetData.incomeMonth : selectedMonth,
       readyToAssign: effectiveIncome - budgetData.totalBudgeted,
     });
     setQuestionnaireCompleted(true);
@@ -194,9 +198,9 @@ export default function BudgetPage() {
     if (!budgetData) return;
     const newIncome = budgetData.totalBudgeted + newReadyToAssign;
     
-    // Only allow manual income override when DB has no income
-    // If DB has income, user can't manually change it here
-    if (lastDbIncome === 0) {
+    // Only allow manual income override when there's no income history
+    // If user has income history (median or DB), they can't manually change it here
+    if (!hasIncomeHistory) {
       setIncomeOverride(newIncome);
     }
     
@@ -206,7 +210,7 @@ export default function BudgetPage() {
       incomeMonth: selectedMonth,
       readyToAssign: newReadyToAssign,
     });
-  }, [budgetData, selectedMonth, lastDbIncome]);
+  }, [budgetData, selectedMonth, hasIncomeHistory]);
 
   const handleSave = async () => {
     if (!budgetData || !user) return;

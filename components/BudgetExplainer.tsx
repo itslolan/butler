@@ -39,7 +39,7 @@ export default function BudgetExplainer({
             {hasHistoricalData ? (
               <>
                 Based on your last <strong>{monthsAnalyzed} months</strong> of transactions, 
-                your median monthly income is <strong>{formatCurrency(medianIncome)}</strong>.{' '}
+                your median monthly income is <strong>{formatCurrency(medianIncome)}</strong>. I&apos;ll use this for budgeting.{' '}
               </>
             ) : (
               <>
@@ -49,7 +49,7 @@ export default function BudgetExplainer({
             In zero-based budgeting, every dollar gets a job — assign amounts to categories 
             until &quot;Ready to Assign&quot; reaches $0. 
             <span className="text-blue-600 dark:text-blue-400 font-medium">
-              {' '}Click &quot;Assign using AI&quot; to let me distribute it automatically.
+              {' '}Click &quot;Auto Assign using AI&quot; to let me distribute it automatically.
             </span>
           </p>
         </div>
