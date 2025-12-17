@@ -1,17 +1,38 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
-  throw new Error('Please add NEXT_PUBLIC_SUPABASE_URL to .env.local');
+/**
+ * IMPORTANT:
+ * Do not throw at module import time.
+ *
+ * Next.js may load/trace route modules during build ("Collecting page data"),
+ * and a top-level throw will fail the deployment even if the environment
+ * variables are present at runtime or the route is never invoked.
+ */
+let _supabase: SupabaseClient | null = null;
+
+function getSupabaseClient(): SupabaseClient {
+  if (_supabase) return _supabase;
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl) {
+    throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL environment variable');
+  }
+  if (!supabaseKey) {
+    throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY environment variable');
+  }
+
+  _supabase = createClient(supabaseUrl, supabaseKey);
+  return _supabase;
 }
 
-if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
-  throw new Error('Please add SUPABASE_SERVICE_ROLE_KEY to .env.local');
-}
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-export const supabase = createClient(supabaseUrl, supabaseKey);
+// Lazily-initialized client: only errors when actually used.
+export const supabase: SupabaseClient = new Proxy({} as SupabaseClient, {
+  get(_target, prop) {
+    return (getSupabaseClient() as any)[prop];
+  },
+});
 
 // Database types
 export interface Document {
