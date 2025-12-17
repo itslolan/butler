@@ -576,7 +576,7 @@ Successfully mapped **${result.transactions_updated} transaction${result.transac
                   <h4 className="font-semibold text-slate-900 dark:text-white mb-4 text-sm">
                     {message.chartConfig.title}
                   </h4>
-                  <ChartRenderer config={message.chartConfig} height={280} />
+                  <ChartRenderer config={message.chartConfig} height={280} showLegend />
                 </div>
               </div>
             )}
