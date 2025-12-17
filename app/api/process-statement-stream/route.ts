@@ -5,6 +5,7 @@ import { uploadFile, Transaction } from '@/lib/supabase';
 import { calculateMonthlySnapshots } from '@/lib/snapshot-calculator';
 import { generateSuggestedActions } from '@/lib/action-generator';
 import { v4 as uuidv4 } from 'uuid';
+import { refreshFixedExpensesCache } from '@/lib/fixed-expenses';
 
 export const runtime = 'nodejs';
 
@@ -762,6 +763,13 @@ Use these memories to help classify transactions. For example, if you know the u
 
         // Get unclarified transactions for this document
         const unclarifiedTransactions = await getUnclarifiedTransactions(userId, documentId);
+
+        // Refresh fixed expenses cache in the background (non-blocking)
+        if (transactionsToInsert.length > 0) {
+          refreshFixedExpensesCache(userId).catch(err => {
+            console.error('[process-statement-stream] Error refreshing fixed expenses cache:', err);
+          });
+        }
 
         // Send final result
         const result = {
