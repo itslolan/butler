@@ -2,6 +2,7 @@
 
 import { useState, useEffect, ReactNode, useCallback } from 'react';
 import ChartRenderer from './ChartRenderer';
+import FixedExpensesPanel from './FixedExpensesPanel';
 import { ChartConfig } from '@/lib/chart-types';
 import { formatCompactCurrency } from '@/lib/chart-utils';
 
@@ -251,6 +252,14 @@ export default function VisualizationPanel({ userId = 'default-user', refreshTri
           />
         </div>
       )}
+
+      {/* Fixed Expenses Panel */}
+      <FixedExpensesPanel 
+        userId={userId} 
+        refreshTrigger={refreshTrigger}
+        maxItemsToShow={5}
+        currency={metrics?.currency || 'USD'}
+      />
 
       {/* Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

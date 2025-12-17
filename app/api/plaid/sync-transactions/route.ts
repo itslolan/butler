@@ -5,6 +5,7 @@ import { supabase, Transaction } from '@/lib/supabase';
 import { categorizeTransactions, monitorTransactionPatterns } from '@/lib/transaction-categorizer';
 import { searchTransactions, findAccountByPlaidId, findAccountsByLast4, getOrCreateAccount } from '@/lib/db-tools';
 import { deduplicateTransactionsSimple } from '@/lib/deduplication-test';
+import { refreshFixedExpensesCache } from '@/lib/fixed-expenses';
 
 export const runtime = 'nodejs';
 
@@ -526,6 +527,13 @@ export async function POST(request: NextRequest) {
         console.error('[plaid/sync-transactions] Pattern monitoring error:', monitorError.message);
         // Non-critical, don't fail the sync
       }
+    }
+
+    // Refresh fixed expenses cache in the background (non-blocking)
+    if (totalAdded > 0 || totalModified > 0) {
+      refreshFixedExpensesCache(userId).catch(err => {
+        console.error('[plaid/sync-transactions] Error refreshing fixed expenses cache:', err);
+      });
     }
 
     return NextResponse.json({
