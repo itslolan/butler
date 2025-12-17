@@ -6,6 +6,7 @@ interface BudgetQuestionnaireProps {
   onComplete: (data: { income: number; rent?: number }) => void;
   onUpload?: () => void;
   initialIncome?: number;
+  incomeStats?: { medianMonthlyIncome: number; monthsIncluded: number };
 }
 
 // Typing effect hook
@@ -42,13 +43,22 @@ function useTypingEffect(text: string, speed: number = 30) {
   return { displayedText, isComplete };
 }
 
-export default function BudgetQuestionnaire({ onComplete, onUpload, initialIncome = 0 }: BudgetQuestionnaireProps) {
+export default function BudgetQuestionnaire({ onComplete, onUpload, initialIncome = 0, incomeStats }: BudgetQuestionnaireProps) {
   const [income, setIncome] = useState(initialIncome > 0 ? initialIncome.toString() : '');
   const [rent, setRent] = useState('');
   const incomeInputRef = useRef<HTMLInputElement>(null);
   
+  const hasMedianIncome = incomeStats && incomeStats.medianMonthlyIncome > 0 && incomeStats.monthsIncluded > 0;
+  
   const titleText = "I need just a few details to get started...";
-  const bodyText = "Don't worry about being precise right now. These are just estimates to help me draft your initial budget. I'll automatically refine everything as you connect your accounts or upload statements.";
+  const baseBodyText = "Don't worry about being precise right now. These are just estimates to help me draft your initial budget. I'll automatically refine everything as you connect your accounts or upload statements.";
+  
+  // Add median income context if available
+  const medianContext = hasMedianIncome 
+    ? ` I've pre-filled your median monthly income over the last ${incomeStats.monthsIncluded} months based on your transaction history.` 
+    : '';
+  
+  const bodyText = baseBodyText + medianContext;
 
   const { displayedText: title, isComplete: titleComplete } = useTypingEffect(titleText, 25);
   const { displayedText: body, isComplete: bodyComplete } = useTypingEffect(titleComplete ? bodyText : '', 10);

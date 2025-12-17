@@ -534,6 +534,7 @@ export default function BudgetPage() {
                     onComplete={handleQuestionnaireComplete}
                     onUpload={() => router.push('/')}
                     initialIncome={budgetData?.income || 0}
+                    incomeStats={budgetMeta?.incomeStats}
                   />
                 )}
 

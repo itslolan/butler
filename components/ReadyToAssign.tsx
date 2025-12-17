@@ -75,7 +75,7 @@ export default function ReadyToAssign({
             <input
               type="number"
               step="0.01"
-              value={Number.isFinite(amount) ? amount : 0}
+              value={Number.isFinite(amount) ? Number(amount.toFixed(2)) : 0}
               onChange={(e) => onAmountChange?.(parseFloat(e.target.value) || 0)}
               className="w-48 text-4xl font-bold text-white tracking-tight bg-transparent border-b border-white/30 focus:border-white/70 focus:outline-none"
               aria-label="Ready to assign"
