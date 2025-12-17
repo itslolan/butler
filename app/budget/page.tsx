@@ -60,6 +60,7 @@ export default function BudgetPage() {
 
   const [showQuestionnaire, setShowQuestionnaire] = useState(false);
   const [isInitialLoadComplete, setIsInitialLoadComplete] = useState(false);
+  const [questionnaireCompleted, setQuestionnaireCompleted] = useState(false);
   
   // User-entered income override (from questionnaire or manual edit)
   // Only used when DB has no income data
@@ -110,12 +111,12 @@ export default function BudgetPage() {
       categories: anyData.categories,
     });
 
-    if (data && data.totalBudgeted === 0) {
+    if (data && data.totalBudgeted === 0 && !questionnaireCompleted) {
       setShowQuestionnaire(true);
     }
     
     setIsInitialLoadComplete(true);
-  }, [incomeOverride, selectedMonth]);
+  }, [incomeOverride, selectedMonth, questionnaireCompleted]);
 
   const handleQuestionnaireComplete = (data: { income: number; rent?: number }) => {
     if (!budgetData) return;
@@ -135,6 +136,7 @@ export default function BudgetPage() {
       incomeMonth: selectedMonth,
       readyToAssign: effectiveIncome - budgetData.totalBudgeted,
     });
+    setQuestionnaireCompleted(true);
     setShowQuestionnaire(false);
   };
 
@@ -362,6 +364,7 @@ export default function BudgetPage() {
     setIncomeOverride(null); // Clear income override when changing months
     setIsInitialLoadComplete(false); // Reset load state when changing months
     setShowQuestionnaire(false); // Reset questionnaire state for new month
+    setQuestionnaireCompleted(false); // Allow questionnaire to show again for new month
   }, [selectedMonth]);
 
   if (loading) {
