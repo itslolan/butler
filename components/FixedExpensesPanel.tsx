@@ -1,14 +1,16 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 interface FixedExpense {
   merchant_name: string;
-  median_amount: number;
+  median_amount: number; // Monthly amount
   occurrence_count: number;
   months_tracked: number;
   avg_day_of_month: number;
   last_occurrence_date: string;
+  is_maybe?: boolean; // True if this needs user confirmation
+  merchant_key?: string; // Normalized merchant key
 }
 
 interface FixedExpensesData {
@@ -34,6 +36,15 @@ function formatCurrency(amount: number, currency: string = 'USD'): string {
   }).format(amount);
 }
 
+const CACHE_KEY = 'fixed-expenses-cache';
+const CACHE_DURATION_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+interface CachedData {
+  data: FixedExpensesData;
+  timestamp: number;
+  userId: string;
+}
+
 export default function FixedExpensesPanel({
   userId = 'default-user',
   refreshTrigger = 0,
@@ -44,12 +55,84 @@ export default function FixedExpensesPanel({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isFromCache, setIsFromCache] = useState(false);
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const [confirmingIndex, setConfirmingIndex] = useState<number | null>(null);
+  
+  // Track previous refreshTrigger to detect changes
+  const previousRefreshTrigger = useRef(refreshTrigger);
 
-  const fetchData = useCallback(async () => {
+  // Load from cache
+  const loadFromCache = useCallback((): FixedExpensesData | null => {
+    try {
+      const cached = localStorage.getItem(CACHE_KEY);
+      if (!cached) return null;
+
+      const parsedCache: CachedData = JSON.parse(cached);
+      
+      // Check if cache is for the same user
+      if (parsedCache.userId !== userId) {
+        localStorage.removeItem(CACHE_KEY);
+        return null;
+      }
+
+      // Check if cache is still valid
+      const now = Date.now();
+      if (now - parsedCache.timestamp > CACHE_DURATION_MS) {
+        localStorage.removeItem(CACHE_KEY);
+        return null;
+      }
+
+      return parsedCache.data;
+    } catch (err) {
+      console.error('Error loading from cache:', err);
+      localStorage.removeItem(CACHE_KEY);
+      return null;
+    }
+  }, [userId]);
+
+  // Save to cache
+  const saveToCache = useCallback((data: FixedExpensesData) => {
+    try {
+      const cacheData: CachedData = {
+        data,
+        timestamp: Date.now(),
+        userId,
+      };
+      localStorage.setItem(CACHE_KEY, JSON.stringify(cacheData));
+    } catch (err) {
+      console.error('Error saving to cache:', err);
+    }
+  }, [userId]);
+
+  // Clear cache
+  const clearCache = useCallback(() => {
+    try {
+      localStorage.removeItem(CACHE_KEY);
+    } catch (err) {
+      console.error('Error clearing cache:', err);
+    }
+  }, []);
+
+  // Fetch from API
+  const fetchData = useCallback(async (skipCache = false) => {
     setLoading(true);
     setError(null);
 
     try {
+      // Try to load from cache first (unless skipping)
+      if (!skipCache) {
+        const cachedData = loadFromCache();
+        if (cachedData) {
+          setData(cachedData);
+          setIsFromCache(true);
+          setLoading(false);
+          return;
+        }
+      }
+
+      // Fetch from API
       const response = await fetch('/api/fixed-expenses');
       
       if (!response.ok) {
@@ -59,17 +142,119 @@ export default function FixedExpensesPanel({
 
       const result = await response.json();
       setData(result);
+      setIsFromCache(false);
+      saveToCache(result);
     } catch (err: any) {
       console.error('Error fetching fixed expenses:', err);
       setError(err.message || 'Failed to load fixed expenses');
     } finally {
       setLoading(false);
     }
+  }, [loadFromCache, saveToCache]);
+
+  // Handle manual refresh
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    clearCache();
+    await fetchData(true); // Skip cache
+    setIsRefreshing(false);
+  }, [clearCache, fetchData]);
+
+  // Handle confirming a "maybe" expense as fixed
+  const handleConfirmFixedExpense = useCallback(async (expense: FixedExpense, index: number) => {
+    if (!expense.merchant_key) {
+      console.error('Cannot confirm expense without merchant_key');
+      return;
+    }
+
+    setConfirmingIndex(index);
+
+    try {
+      const response = await fetch('/api/confirm-fixed-expense', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          merchant_key: expense.merchant_key,
+          merchant_name: expense.merchant_name,
+          action: 'confirm',
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to confirm fixed expense');
+      }
+
+      // Don't clear cache or refresh - let the memory take effect on next natural recalculation
+      // (user refresh, bank statement upload, or Plaid sync)
+      console.log(`✓ Confirmed "${expense.merchant_name}" as fixed expense (will apply on next calculation)`);
+      
+      // Show a brief success indicator (optional - you could add a toast notification here)
+      
+    } catch (err: any) {
+      console.error('Error confirming fixed expense:', err);
+      setError(err.message || 'Failed to confirm fixed expense');
+    } finally {
+      setConfirmingIndex(null);
+    }
+  }, []);
+
+  // Handle rejecting an expense as NOT fixed
+  const handleRejectFixedExpense = useCallback(async (expense: FixedExpense, index: number) => {
+    if (!expense.merchant_key) {
+      console.error('Cannot reject expense without merchant_key');
+      return;
+    }
+
+    setConfirmingIndex(index);
+
+    try {
+      const response = await fetch('/api/confirm-fixed-expense', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          merchant_key: expense.merchant_key,
+          merchant_name: expense.merchant_name,
+          action: 'reject',
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to reject fixed expense');
+      }
+
+      // Don't clear cache or refresh - let the memory take effect on next natural recalculation
+      // (user refresh, bank statement upload, or Plaid sync)
+      console.log(`✕ Rejected "${expense.merchant_name}" as fixed expense (will apply on next calculation)`);
+      
+      // Show a brief success indicator (optional - you could add a toast notification here)
+      
+    } catch (err: any) {
+      console.error('Error rejecting fixed expense:', err);
+      setError(err.message || 'Failed to reject fixed expense');
+    } finally {
+      setConfirmingIndex(null);
+    }
   }, []);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData, refreshTrigger]);
+    // Check if refreshTrigger has actually changed (indicating bank upload or Plaid sync)
+    const hasRefreshTriggerChanged = previousRefreshTrigger.current !== refreshTrigger;
+    
+    if (hasRefreshTriggerChanged && refreshTrigger > 0) {
+      // Clear cache and fetch fresh data when new transactions are added
+      console.log('[Fixed Expenses Panel] Refresh trigger changed - clearing cache and recalculating');
+      clearCache();
+      fetchData(true); // Skip cache
+      previousRefreshTrigger.current = refreshTrigger;
+    } else {
+      // Normal load - use cache if available
+      fetchData(false);
+    }
+  }, [refreshTrigger, fetchData, clearCache]);
 
   // Loading skeleton - Compact
   if (loading) {
@@ -96,7 +281,7 @@ export default function FixedExpensesPanel({
       <div className="bg-white dark:bg-gray-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-5">
         <p className="text-red-600 dark:text-red-400 text-sm">{error}</p>
         <button 
-          onClick={fetchData} 
+          onClick={() => fetchData(false)} 
           className="mt-2 text-sm text-blue-600 dark:text-blue-400 hover:underline"
         >
           Retry
@@ -117,7 +302,7 @@ export default function FixedExpensesPanel({
         </div>
         <div className="px-4 py-4 text-center">
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Requires at least 3 months of data
+            AI-powered detection • Requires 3+ months of data
           </p>
         </div>
       </div>
@@ -143,14 +328,41 @@ export default function FixedExpensesPanel({
             <span className="text-[10px] text-slate-400 dark:text-slate-500">
               ({data.expenses.length} recurring)
             </span>
+            {isFromCache && (
+              <span className="text-[9px] px-1.5 py-0.5 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded">
+                cached
+              </span>
+            )}
           </div>
-          <div className="text-right">
-            <span className="text-sm font-bold text-slate-900 dark:text-white">
-              {formatCurrency(data.total, currency)}
-            </span>
-            <span className="text-[10px] text-slate-400 dark:text-slate-500 ml-0.5">
-              /mo
-            </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleRefresh}
+              disabled={isRefreshing || loading}
+              className="p-1 text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Refresh fixed expenses"
+            >
+              <svg 
+                className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`}
+                fill="none" 
+                stroke="currentColor" 
+                viewBox="0 0 24 24"
+              >
+                <path 
+                  strokeLinecap="round" 
+                  strokeLinejoin="round" 
+                  strokeWidth={2} 
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" 
+                />
+              </svg>
+            </button>
+            <div className="text-right">
+              <span className="text-sm font-bold text-slate-900 dark:text-white">
+                {formatCurrency(data.total, currency)}
+              </span>
+              <span className="text-[10px] text-slate-400 dark:text-slate-500 ml-0.5">
+                /mo
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -161,19 +373,54 @@ export default function FixedExpensesPanel({
           {displayedExpenses.map((expense, index) => (
             <div 
               key={`${expense.merchant_name}-${index}`}
-              className="flex items-center justify-between py-1.5 border-b border-slate-50 dark:border-slate-800/50 last:border-b-0"
+              className={`relative flex items-center justify-between py-1.5 border-b border-slate-50 dark:border-slate-800/50 last:border-b-0 ${
+                expense.is_maybe 
+                  ? 'bg-amber-50/50 dark:bg-amber-900/10 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors' 
+                  : ''
+              }`}
+              onMouseEnter={() => setHoveredIndex(index)}
+              onMouseLeave={() => setHoveredIndex(null)}
             >
               <div className="flex-1 min-w-0 pr-3 flex items-center gap-2">
                 <p className="text-xs font-medium text-slate-900 dark:text-white truncate">
                   {expense.merchant_name}
                 </p>
+                {expense.is_maybe && (
+                  <span className="text-[9px] px-1.5 py-0.5 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded shrink-0">
+                    maybe
+                  </span>
+                )}
                 <span className="text-[10px] text-slate-400 dark:text-slate-500 shrink-0">
                   Day {expense.avg_day_of_month}
                 </span>
               </div>
-              <p className="text-xs font-semibold text-slate-900 dark:text-white shrink-0">
-                {formatCurrency(expense.median_amount, currency)}
-              </p>
+              <div className="flex items-center gap-2">
+                <p className="text-xs font-semibold text-slate-900 dark:text-white shrink-0">
+                  {formatCurrency(expense.median_amount, currency)}
+                </p>
+                {hoveredIndex === index && (
+                  <div className="flex items-center gap-1">
+                    {expense.is_maybe && (
+                      <button
+                        onClick={() => handleConfirmFixedExpense(expense, index)}
+                        disabled={confirmingIndex === index}
+                        className="text-[10px] px-2 py-1 bg-green-600 hover:bg-green-700 text-white rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+                        title="Confirm as fixed expense"
+                      >
+                        {confirmingIndex === index ? '...' : '✓'}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleRejectFixedExpense(expense, index)}
+                      disabled={confirmingIndex === index}
+                      className="text-[10px] px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+                      title="Reject as fixed expense"
+                    >
+                      {confirmingIndex === index ? '...' : '✕'}
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           ))}
         </div>

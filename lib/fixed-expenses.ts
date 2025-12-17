@@ -1,17 +1,20 @@
 import { supabase } from '@/lib/supabase';
-
-// Fixed expense detection parameters
-const MIN_MONTHS_REQUIRED = 3;
-const AMOUNT_VARIANCE_THRESHOLD = 0.15; // 15% variance allowed
-const DAY_OF_MONTH_VARIANCE = 5; // +/- 5 days considered "same time of month"
+import { createMerchantSummaries, MerchantSummary } from './merchant-summarizer';
+import { classifyAllMerchantsWithLLM, LLMClassification } from './llm-fixed-expense-classifier';
+import { getAllMemories } from './db-tools';
 
 export interface FixedExpense {
   merchant_name: string;
-  median_amount: number;
+  median_amount: number; // Monthly amount
   occurrence_count: number;
   months_tracked: number;
   avg_day_of_month: number;
   last_occurrence_date: string;
+  is_maybe?: boolean; // True if this is a "maybe" classification that needs user confirmation
+  merchant_key?: string; // Normalized merchant key for memory storage
+  // Internal fields for tracking (not shown in UI)
+  _classification_source?: 'rule' | 'llm' | 'llm_maybe' | 'rule_fallback';
+  _combined_score?: number;
 }
 
 export interface FixedExpensesResponse {
@@ -19,6 +22,15 @@ export interface FixedExpensesResponse {
   expenses: FixedExpense[];
   calculated_at: string;
   from_cache: boolean;
+}
+
+// Internal type for tracking classification stats
+interface ClassificationStats {
+  total_merchants: number;
+  llm_accepted: number;
+  llm_rejected: number;
+  llm_maybe_accepted: number;
+  processing_time_ms: number;
 }
 
 /**
@@ -34,170 +46,203 @@ function median(values: number[]): number {
 }
 
 /**
- * Normalize merchant names for grouping
- * Strips common variations like store numbers, locations, etc.
+ * Create a FixedExpense object from a merchant summary and LLM classification
  */
-function normalizeMerchantName(merchant: string): string {
-  return merchant
-    .toLowerCase()
-    .replace(/\s+/g, ' ')
-    .replace(/\s*#\d+/g, '') // Remove store numbers like #1234
-    .replace(/\s*\d{4,}/g, '') // Remove long numbers (phone numbers, etc.)
-    .replace(/\s+-\s+.*/g, '') // Remove location suffixes
-    .replace(/\s+/g, ' ')
-    .trim();
+function createFixedExpense(
+  summary: MerchantSummary,
+  classification: LLMClassification
+): FixedExpense {
+  // Calculate median amount
+  const amounts = summary.sample_transactions.map(t => t.amount);
+  
+  // Estimate monthly amount
+  // If median interval is ~30 days, use median amount
+  // If bi-weekly (~14 days), double it
+  // If quarterly (~90 days), divide by 3
+  let monthlyAmount = median(amounts);
+  if (summary.stats.median_interval_days >= 12 && summary.stats.median_interval_days <= 16) {
+    // Bi-weekly
+    monthlyAmount = monthlyAmount * 2;
+  } else if (summary.stats.median_interval_days >= 85 && summary.stats.median_interval_days <= 95) {
+    // Quarterly
+    monthlyAmount = monthlyAmount / 3;
+  }
+  
+  // Extract average day of month from day_concentration string
+  const dayMatch = summary.stats.day_concentration.match(/day (\d+)/);
+  const avgDay = dayMatch ? parseInt(dayMatch[1]) : 1;
+  
+  return {
+    merchant_name: summary.original_name,
+    median_amount: Math.round(monthlyAmount * 100) / 100,
+    occurrence_count: summary.stats.count,
+    months_tracked: summary.unique_months,
+    avg_day_of_month: avgDay,
+    last_occurrence_date: summary.last_date,
+    is_maybe: classification.label === 'maybe',
+    merchant_key: summary.merchant_key,
+    _classification_source: classification.label as 'rule' | 'llm' | 'llm_maybe' | 'rule_fallback',
+    _combined_score: Math.round(classification.llm_reasoning_score * 100) / 100,
+  };
 }
 
 /**
- * Check if amounts are consistent enough to be a fixed expense
- */
-function isAmountConsistent(amounts: number[]): boolean {
-  if (amounts.length < MIN_MONTHS_REQUIRED) return false;
-  
-  const medianAmount = median(amounts);
-  if (medianAmount === 0) return false;
-  
-  // Check if all amounts are within the variance threshold
-  const allWithinThreshold = amounts.every(amount => {
-    const variance = Math.abs(amount - medianAmount) / medianAmount;
-    return variance <= AMOUNT_VARIANCE_THRESHOLD;
-  });
-  
-  return allWithinThreshold;
-}
-
-/**
- * Check if transactions occur at roughly the same time each month
- */
-function isDayConsistent(daysOfMonth: number[]): boolean {
-  if (daysOfMonth.length < MIN_MONTHS_REQUIRED) return false;
-  
-  const avgDay = daysOfMonth.reduce((a, b) => a + b, 0) / daysOfMonth.length;
-  
-  // Check if all days are within the variance threshold
-  const allWithinThreshold = daysOfMonth.every(day => {
-    return Math.abs(day - avgDay) <= DAY_OF_MONTH_VARIANCE;
-  });
-  
-  return allWithinThreshold;
-}
-
-/**
- * Get months difference between two YYYY-MM strings
- */
-function getMonthsDifference(start: string, end: string): number {
-  const [startYear, startMonth] = start.split('-').map(Number);
-  const [endYear, endMonth] = end.split('-').map(Number);
-  return (endYear - startYear) * 12 + (endMonth - startMonth);
-}
-
-/**
- * Calculate fixed expenses from transaction data
+ * Calculate fixed expenses using LLM-powered classification
+ * 
+ * This function:
+ * 1. Fetches all expense transactions for the user
+ * 2. Creates merchant summaries with compact stats
+ * 3. Sends ALL summaries to LLM in a single batch call
+ * 4. Filters results based on LLM confidence and score
  */
 export async function calculateFixedExpenses(userId: string): Promise<FixedExpense[]> {
-  // Get all expense transactions
-  const { data: transactions, error } = await supabase
-    .from('transactions')
-    .select('merchant, amount, date')
-    .eq('user_id', userId)
-    .in('transaction_type', ['expense', 'other'])
-    .order('date', { ascending: true });
+  const startTime = Date.now();
+  const stats: ClassificationStats = {
+    total_merchants: 0,
+    llm_accepted: 0,
+    llm_rejected: 0,
+    llm_maybe_accepted: 0,
+    processing_time_ms: 0,
+  };
 
-  if (error) {
-    throw new Error(`Failed to fetch transactions: ${error.message}`);
-  }
+  try {
+    console.log('[Fixed Expenses] Starting calculation for user:', userId);
 
-  if (!transactions || transactions.length === 0) {
-    return [];
-  }
+    // 1. Fetch all expense transactions
+    const { data: transactions, error } = await supabase
+      .from('transactions')
+      .select('merchant, amount, date, description, transaction_type')
+      .eq('user_id', userId)
+      .in('transaction_type', ['expense', 'other'])
+      .order('date', { ascending: true });
 
-  // Group transactions by normalized merchant name
-  const merchantGroups = new Map<string, Array<{
-    originalName: string;
-    amount: number;
-    date: string;
-    dayOfMonth: number;
-    yearMonth: string;
-  }>>();
-
-  for (const txn of transactions) {
-    const normalizedName = normalizeMerchantName(txn.merchant);
-    const date = new Date(txn.date);
-    const dayOfMonth = date.getDate();
-    const yearMonth = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-    
-    if (!merchantGroups.has(normalizedName)) {
-      merchantGroups.set(normalizedName, []);
+    if (error) {
+      throw new Error(`Failed to fetch transactions: ${error.message}`);
     }
-    
-    merchantGroups.get(normalizedName)!.push({
-      originalName: txn.merchant,
-      amount: Math.abs(Number(txn.amount)),
-      date: txn.date,
-      dayOfMonth,
-      yearMonth,
-    });
-  }
 
-  const fixedExpenses: FixedExpense[] = [];
+    if (!transactions || transactions.length === 0) {
+      console.log('[Fixed Expenses] No transactions found');
+      return [];
+    }
 
-  // Analyze each merchant group
-  for (const [, transactions] of merchantGroups) {
-    // Group by month to avoid counting multiple transactions in same month
-    const monthlyTransactions = new Map<string, typeof transactions[0]>();
+    console.log(`[Fixed Expenses] Processing ${transactions.length} transactions`);
     
-    for (const txn of transactions) {
-      // Keep the transaction with the highest amount for each month
-      const existing = monthlyTransactions.get(txn.yearMonth);
-      if (!existing || txn.amount > existing.amount) {
-        monthlyTransactions.set(txn.yearMonth, txn);
+    // Debug: Log rent-related transactions
+    const rentRelated = transactions.filter(t => 
+      t.merchant.toLowerCase().includes('rent') || 
+      t.merchant.toLowerCase().includes('lease') || 
+      t.merchant.toLowerCase().includes('realty')
+    );
+    if (rentRelated.length > 0) {
+      console.log('[Fixed Expenses] Found rent-related transactions:', 
+        rentRelated.map(t => ({ 
+          date: t.date, 
+          merchant: t.merchant, 
+          type: t.transaction_type,
+          amount: t.amount 
+        }))
+      );
+    }
+
+    // 2. Create merchant summaries
+    const summaries = createMerchantSummaries(transactions);
+    stats.total_merchants = summaries.length;
+    
+    console.log(`[Fixed Expenses] Created ${summaries.length} merchant summaries`);
+
+    if (summaries.length === 0) {
+      return [];
+    }
+
+    // 3. Fetch user memories about confirmed and rejected fixed expenses
+    const memoriesText = await getAllMemories(userId);
+    
+    // Log all memories for debugging
+    console.log('[Fixed Expenses] All memories from database:');
+    console.log('---START MEMORIES---');
+    console.log(memoriesText || '(empty)');
+    console.log('---END MEMORIES---');
+    
+    const fixedExpenseMemories = memoriesText
+      .split('\n')
+      .filter(line => 
+        (line.toLowerCase().includes('confirmed fixed expense') || 
+         line.toLowerCase().includes('rejected fixed expense')) && 
+        line.trim().length > 0
+      );
+    
+    if (fixedExpenseMemories.length > 0) {
+      const confirmed = fixedExpenseMemories.filter(m => m.toLowerCase().includes('confirmed')).length;
+      const rejected = fixedExpenseMemories.filter(m => m.toLowerCase().includes('rejected')).length;
+      console.log(`[Fixed Expenses] Found ${confirmed} confirmed and ${rejected} rejected fixed expense memories`);
+      console.log('[Fixed Expenses] Filtered fixed expense memories:');
+      fixedExpenseMemories.forEach((mem, i) => {
+        console.log(`  ${i + 1}. ${mem}`);
+      });
+    } else {
+      console.log('[Fixed Expenses] No fixed expense memories found in database');
+    }
+
+    // 4. Send ALL merchants to LLM in a single batch call with memories
+    const classifications = await classifyAllMerchantsWithLLM(summaries, fixedExpenseMemories);
+
+    // 5. Process classifications and create fixed expenses
+    const results: FixedExpense[] = [];
+    
+    for (let i = 0; i < summaries.length; i++) {
+      const summary = summaries[i];
+      const classification = classifications[i];
+      
+      // Decision logic based on LLM output only
+      if (classification.label === 'fixed' && classification.confidence >= 0.7 && classification.llm_reasoning_score >= 0.7) {
+        stats.llm_accepted++;
+        results.push(createFixedExpense(summary, classification));
+        console.log(
+          `[Fixed Expenses] [ACCEPTED] ${summary.merchant_key}: ` +
+          `conf=${classification.confidence.toFixed(2)}, ` +
+          `score=${classification.llm_reasoning_score.toFixed(2)}`
+        );
+      } else if (classification.label === 'maybe') {
+        // Show ALL "maybe" items for user confirmation, regardless of confidence
+        stats.llm_maybe_accepted++;
+        results.push(createFixedExpense(summary, classification));
+        console.log(
+          `[Fixed Expenses] [MAYBE - NEEDS CONFIRMATION] ${summary.merchant_key}: ` +
+          `conf=${classification.confidence.toFixed(2)}, ` +
+          `score=${classification.llm_reasoning_score.toFixed(2)}`
+        );
+      } else {
+        stats.llm_rejected++;
+        console.log(
+          `[Fixed Expenses] [REJECTED] ${summary.merchant_key}: ` +
+          `label=${classification.label}, conf=${classification.confidence.toFixed(2)}, ` +
+          `score=${classification.llm_reasoning_score.toFixed(2)}`
+        );
       }
     }
 
-    const monthlyTxnArray = Array.from(monthlyTransactions.values());
-    
-    // Need at least MIN_MONTHS_REQUIRED months of data
-    if (monthlyTxnArray.length < MIN_MONTHS_REQUIRED) {
-      continue;
-    }
+    // 5. Sort by median amount descending
+    results.sort((a, b) => b.median_amount - a.median_amount);
 
-    // Check if months are consecutive or nearly consecutive
-    const sortedMonths = Array.from(monthlyTransactions.keys()).sort();
-    const monthsDiff = getMonthsDifference(sortedMonths[0], sortedMonths[sortedMonths.length - 1]);
-    
-    // If the range is too sparse (more than 2x the number of transactions), skip
-    if (monthsDiff > monthlyTxnArray.length * 2) {
-      continue;
-    }
+    stats.processing_time_ms = Date.now() - startTime;
 
-    const amounts = monthlyTxnArray.map(t => t.amount);
-    const daysOfMonth = monthlyTxnArray.map(t => t.dayOfMonth);
+    // Log summary
+    console.log('[Fixed Expenses] Calculation complete:', {
+      total_found: results.length,
+      stats,
+    });
 
-    // Check if this qualifies as a fixed expense
-    if (isAmountConsistent(amounts) && isDayConsistent(daysOfMonth)) {
-      const medianAmount = median(amounts);
-      const avgDay = Math.round(daysOfMonth.reduce((a, b) => a + b, 0) / daysOfMonth.length);
-      const lastTxn = monthlyTxnArray[monthlyTxnArray.length - 1];
-
-      fixedExpenses.push({
-        merchant_name: lastTxn.originalName, // Use the most recent original name
-        median_amount: Math.round(medianAmount * 100) / 100,
-        occurrence_count: monthlyTxnArray.length,
-        months_tracked: monthsDiff + 1,
-        avg_day_of_month: avgDay,
-        last_occurrence_date: lastTxn.date,
-      });
-    }
+    return results;
+  } catch (error: any) {
+    stats.processing_time_ms = Date.now() - startTime;
+    console.error('[Fixed Expenses] Error:', error.message, { stats });
+    throw error;
   }
-
-  // Sort by median amount descending
-  fixedExpenses.sort((a, b) => b.median_amount - a.median_amount);
-
-  return fixedExpenses;
 }
 
 /**
  * Get cached fixed expenses
+ * Note: Caching is currently disabled per user preference
  */
 export async function getCachedFixedExpenses(userId: string): Promise<FixedExpensesResponse | null> {
   const { data, error } = await supabase
@@ -234,6 +279,7 @@ export async function getCachedFixedExpenses(userId: string): Promise<FixedExpen
 
 /**
  * Save fixed expenses to cache
+ * Note: Caching is currently disabled per user preference
  */
 export async function cacheFixedExpenses(userId: string, expenses: FixedExpense[]): Promise<void> {
   // Delete existing cache for this user
@@ -269,6 +315,7 @@ export async function cacheFixedExpenses(userId: string, expenses: FixedExpense[
 
 /**
  * Invalidate and recalculate fixed expenses cache
+ * Note: Caching is currently disabled per user preference
  */
 export async function refreshFixedExpensesCache(userId: string): Promise<void> {
   try {
