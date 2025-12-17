@@ -5,6 +5,7 @@ import {
   hasBudgets,
   hasTransactions,
   getMedianMonthlyIncome,
+  categoryHasTransactions,
 } from '@/lib/budget-utils';
 
 export const runtime = 'nodejs';
@@ -55,8 +56,15 @@ export async function GET(request: NextRequest) {
       getMedianMonthlyIncome(userId, 12),
     ]);
     
+    // Check which categories have transactions
+    const categoryTransactionChecks = await Promise.all(
+      data.categories.map(category => 
+        categoryHasTransactions(userId, category.name)
+      )
+    );
+    
     // Transform data for frontend
-    const categoryBudgets = data.categories.map(category => {
+    const categoryBudgets = data.categories.map((category, index) => {
       const budget = data.budgets.find(b => b.category_id === category.id);
       const spent = data.spending[category.name] || 0;
       const budgeted = budget?.budgeted_amount || 0;
@@ -65,6 +73,7 @@ export async function GET(request: NextRequest) {
         id: category.id,
         name: category.name,
         isCustom: category.is_custom,
+        hasTransactions: categoryTransactionChecks[index],
         budgeted,
         spent,
         available: budgeted - spent,

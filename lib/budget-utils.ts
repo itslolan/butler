@@ -298,6 +298,23 @@ export async function addCustomCategory(userId: string, name: string): Promise<B
 }
 
 /**
+ * Check if a category has transactions
+ */
+export async function categoryHasTransactions(userId: string, categoryName: string): Promise<boolean> {
+  const { count, error } = await supabase
+    .from('transactions')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .eq('category', categoryName);
+
+  if (error) {
+    throw new Error(`Failed to check transactions: ${error.message}`);
+  }
+
+  return (count || 0) > 0;
+}
+
+/**
  * Delete a category (only if no transactions use it)
  */
 export async function deleteCategory(userId: string, categoryId: string): Promise<void> {

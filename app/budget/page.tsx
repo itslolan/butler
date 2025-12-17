@@ -51,12 +51,13 @@ export default function BudgetPage() {
 
   const [isSaving, setIsSaving] = useState(false);
   const [isAutoAssigning, setIsAutoAssigning] = useState(false);
-  const [isUndoingAutoAssign, setIsUndoingAutoAssign] = useState(false);
   const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [autoAssignUndoSnapshot, setAutoAssignUndoSnapshot] = useState<{
-    month: string;
-    budgets: Array<{ categoryId: string; amount: number }>;
-  } | null>(null);
+  
+  // Track if AI has assigned budgets (to show "Re-assign" instead of "Auto Assign")
+  const [hasAiAssigned, setHasAiAssigned] = useState(false);
+  
+  // Track if there are unsaved changes
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   const [showQuestionnaire, setShowQuestionnaire] = useState(false);
   const [isInitialLoadComplete, setIsInitialLoadComplete] = useState(false);
@@ -68,6 +69,12 @@ export default function BudgetPage() {
   
   // User-entered rent from questionnaire (to pass to auto-assign)
   const [rentOverride, setRentOverride] = useState<number | null>(null);
+  
+  // Budgeted amounts override (from AI auto-assign, before saving)
+  const [budgetedOverrides, setBudgetedOverrides] = useState<Record<string, number> | null>(null);
+  
+  // Track user-manually-set budget amounts (to preserve during AI auto-assign)
+  const [userSetBudgets, setUserSetBudgets] = useState<Record<string, number>>({});
   
   // Track the last known DB income so we know whether to use override
   const [lastDbIncome, setLastDbIncome] = useState<number>(0);
@@ -170,6 +177,17 @@ export default function BudgetPage() {
       totalBudgeted: newTotalBudgeted,
       readyToAssign: budgetData.income - newTotalBudgeted,
     });
+    
+    // Track this as a user-set budget (by category name for API)
+    const category = budgetData.categories.find(c => c.id === categoryId);
+    if (category) {
+      setUserSetBudgets(prev => ({
+        ...prev,
+        [category.name]: newAmount,
+      }));
+    }
+    
+    setHasUnsavedChanges(true);
   }, [budgetData]);
 
   const handleReadyToAssignChange = useCallback((newReadyToAssign: number) => {
@@ -217,6 +235,11 @@ export default function BudgetPage() {
         throw new Error(data.error || 'Failed to save');
       }
 
+      // Clear overrides and user-set budgets after successful save
+      setBudgetedOverrides(null);
+      setUserSetBudgets({});
+      setHasUnsavedChanges(false);
+
       setSaveMessage({ type: 'success', text: 'Budget saved successfully!' });
       setTimeout(() => setSaveMessage(null), 3000);
     } catch (error: any) {
@@ -233,14 +256,13 @@ export default function BudgetPage() {
     setSaveMessage(null);
 
     try {
-      // Snapshot current budgets so we can undo the AI assignment if desired.
-      const undoSnapshot = {
-        month: selectedMonth,
-        budgets: budgetData.categories.map(c => ({
-          categoryId: c.id,
-          amount: c.budgeted,
-        })),
-      };
+      // Prepare existing allocations for re-assignment
+      const existingAllocations = hasAiAssigned 
+        ? budgetData.categories.reduce((acc, cat) => {
+            acc[cat.name] = cat.budgeted;
+            return acc;
+          }, {} as Record<string, number>)
+        : undefined;
 
       const res = await fetch('/api/budget/auto-assign', {
         method: 'POST',
@@ -249,7 +271,10 @@ export default function BudgetPage() {
           userId: user.id,
           month: selectedMonth,
           income: budgetData.income,
-          rent: rentOverride, // Pass user-entered rent if available
+          rent: rentOverride,
+          existingAllocations,
+          isReassign: hasAiAssigned,
+          userSetBudgets, // Pass user-set budgets to preserve them
         }),
       });
 
@@ -259,60 +284,51 @@ export default function BudgetPage() {
         throw new Error(data.error || 'Failed to auto-assign');
       }
 
-      setAutoAssignUndoSnapshot(undoSnapshot);
+      // Apply allocations to local state (NOT saved to DB yet)
+      if (data.categoryAllocations) {
+        // Build overrides map for BudgetTable
+        const overrides: Record<string, number> = {};
+        data.categoryAllocations.forEach((a: { categoryId: string; amount: number }) => {
+          overrides[a.categoryId] = a.amount;
+        });
+        setBudgetedOverrides(overrides);
+
+        const updatedCategories = budgetData.categories.map(cat => {
+          const allocation = data.categoryAllocations.find(
+            (a: { categoryId: string; amount: number }) => a.categoryId === cat.id
+          );
+          const newBudgeted = allocation ? allocation.amount : cat.budgeted;
+          return {
+            ...cat,
+            budgeted: newBudgeted,
+            available: newBudgeted - cat.spent,
+          };
+        });
+
+        const newTotalBudgeted = updatedCategories.reduce((sum, c) => sum + c.budgeted, 0);
+
+        setBudgetData({
+          ...budgetData,
+          categories: updatedCategories,
+          totalBudgeted: newTotalBudgeted,
+          readyToAssign: budgetData.income - newTotalBudgeted,
+        });
+      }
+
+      setHasAiAssigned(true);
+      setHasUnsavedChanges(true);
 
       // Send the chat message explaining the assignment
       if (data.chatMessage && chatInterfaceRef.current?.sendSystemMessage) {
         chatInterfaceRef.current.sendSystemMessage(data.chatMessage);
       }
-
-      // Refresh the budget data to show new allocations
-      setRefreshKey(prev => prev + 1);
       
-      setSaveMessage({ type: 'success', text: 'AI budget assignment complete!' });
+      setSaveMessage({ type: 'success', text: 'AI budget assigned! Click "Save Budget" to keep changes.' });
       setTimeout(() => setSaveMessage(null), 5000);
     } catch (error: any) {
       setSaveMessage({ type: 'error', text: error.message });
     } finally {
       setIsAutoAssigning(false);
-    }
-  };
-
-  const handleUndoAutoAssign = async () => {
-    if (!user || !autoAssignUndoSnapshot) return;
-
-    setIsUndoingAutoAssign(true);
-    setSaveMessage(null);
-
-    try {
-      const res = await fetch('/api/budget', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          month: autoAssignUndoSnapshot.month,
-          budgets: autoAssignUndoSnapshot.budgets,
-        }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Failed to undo AI assignment');
-      }
-
-      setAutoAssignUndoSnapshot(null);
-      setRefreshKey(prev => prev + 1);
-
-      if (chatInterfaceRef.current?.sendSystemMessage) {
-        chatInterfaceRef.current.sendSystemMessage('↩️ **Undid AI budget assignment** — your previous budget amounts have been restored.');
-      }
-
-      setSaveMessage({ type: 'success', text: 'Undid AI assignment.' });
-      setTimeout(() => setSaveMessage(null), 4000);
-    } catch (error: any) {
-      setSaveMessage({ type: 'error', text: error.message });
-    } finally {
-      setIsUndoingAutoAssign(false);
     }
   };
 
@@ -367,14 +383,17 @@ export default function BudgetPage() {
     setRefreshKey(prev => prev + 1);
   };
 
-  // Undo snapshot and income override are only valid for the current month view.
+  // Reset states when month changes
   useEffect(() => {
-    setAutoAssignUndoSnapshot(null);
-    setIncomeOverride(null); // Clear income override when changing months
-    setRentOverride(null); // Clear rent override when changing months
-    setIsInitialLoadComplete(false); // Reset load state when changing months
-    setShowQuestionnaire(false); // Reset questionnaire state for new month
-    setQuestionnaireCompleted(false); // Allow questionnaire to show again for new month
+    setIncomeOverride(null);
+    setRentOverride(null);
+    setBudgetedOverrides(null);
+    setUserSetBudgets({});
+    setHasAiAssigned(false);
+    setHasUnsavedChanges(false);
+    setIsInitialLoadComplete(false);
+    setShowQuestionnaire(false);
+    setQuestionnaireCompleted(false);
   }, [selectedMonth]);
 
   if (loading) {
@@ -428,27 +447,6 @@ export default function BudgetPage() {
               </span>
             )}
             
-            {/* Save Button */}
-            <button
-              onClick={handleSave}
-              disabled={isSaving || isAutoAssigning || isUndoingAutoAssign || !budgetData}
-              className="hidden lg:inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-400 text-white font-medium text-sm rounded-lg transition-colors shadow-sm disabled:cursor-not-allowed"
-            >
-              {isSaving ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                <>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  Save Budget
-                </>
-              )}
-            </button>
-            
             <UserMenu />
           </div>
         </header>
@@ -459,7 +457,7 @@ export default function BudgetPage() {
             
             {/* Left Column: Budget Management (65%) */}
             <div className="col-span-12 lg:col-span-8 flex flex-col h-full lg:border-r border-slate-200 dark:border-slate-800 overflow-y-auto bg-slate-50/50 dark:bg-black/5 p-4 lg:p-6 pb-20 lg:pb-6">
-              <div className="max-w-4xl w-full mx-auto space-y-6">
+              <div className="max-w-4xl w-full mx-auto space-y-4">
                 {/* Mobile controls (moved from top bar) */}
                 <div className="lg:hidden bg-white dark:bg-gray-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-4">
                   <div className="flex items-center justify-between gap-3">
@@ -477,7 +475,7 @@ export default function BudgetPage() {
 
                     <button
                       onClick={handleSave}
-                      disabled={isSaving || isAutoAssigning || isUndoingAutoAssign || !budgetData}
+                      disabled={isSaving || isAutoAssigning || !budgetData || !hasUnsavedChanges}
                       className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-400 text-white font-medium text-sm rounded-xl transition-colors shadow-sm disabled:cursor-not-allowed shrink-0"
                     >
                       {isSaving ? (
@@ -549,10 +547,11 @@ export default function BudgetPage() {
                     onAmountChange={handleReadyToAssignChange}
                     onAutoAssign={handleAutoAssign}
                     isAutoAssigning={isAutoAssigning}
-                    onUndoAutoAssign={handleUndoAutoAssign}
-                    isUndoingAutoAssign={isUndoingAutoAssign}
-                    showUndoAutoAssign={!!autoAssignUndoSnapshot}
+                    hasAiAssigned={hasAiAssigned}
                     onReset={handleResetBudget}
+                    onSave={handleSave}
+                    isSaving={isSaving}
+                    hasUnsavedChanges={hasUnsavedChanges}
                   />
 
                   {/* Budget Table */}
@@ -564,6 +563,7 @@ export default function BudgetPage() {
                     onBudgetChange={handleBudgetChange}
                     onCategoryAdded={handleCategoryAdded}
                     onCategoryDeleted={handleCategoryDeleted}
+                    budgetedOverrides={budgetedOverrides}
                   />
                 </div>
               </div>

@@ -6,6 +6,7 @@ interface Category {
   id: string;
   name: string;
   isCustom: boolean;
+  hasTransactions: boolean;
   budgeted: number;
   spent: number;
   available: number;
@@ -89,8 +90,8 @@ export default function BudgetTable({
 
   useEffect(() => {
     if (!budgetedOverrides) return;
-    setCategories(prev =>
-      prev.map(cat => {
+    setCategories(prev => {
+      const updated = prev.map(cat => {
         const overridden = budgetedOverrides[cat.id];
         if (overridden === undefined) return cat;
         return {
@@ -98,8 +99,15 @@ export default function BudgetTable({
           budgeted: overridden,
           available: overridden - cat.spent,
         };
-      })
-    );
+      });
+      // Re-sort after applying overrides: Budgeted desc, then Name asc
+      return updated.sort((a, b) => {
+        if (b.budgeted !== a.budgeted) {
+          return b.budgeted - a.budgeted;
+        }
+        return a.name.localeCompare(b.name);
+      });
+    });
   }, [budgetedOverrides]);
 
   const handleBudgetInput = (categoryId: string, value: string) => {
@@ -290,7 +298,7 @@ export default function BudgetTable({
 
               {/* Actions */}
               <div className="col-span-1 flex justify-end">
-                {category.isCustom && (
+                {(category.isCustom || !category.hasTransactions) && (
                   <button
                     onClick={() => handleDeleteCategory(category.id)}
                     disabled={deletingCategory === category.id}

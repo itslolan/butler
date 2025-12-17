@@ -4,15 +4,16 @@ interface ReadyToAssignProps {
   amount: number;
   income: number;
   totalBudgeted: number;
-  incomeMonth?: string; // The month the income is from (may differ from current month)
-  currentMonth?: string; // The month being budgeted
+  incomeMonth?: string;
+  currentMonth?: string;
   onAmountChange?: (newAmount: number) => void;
   onAutoAssign?: () => void;
   isAutoAssigning?: boolean;
-  onUndoAutoAssign?: () => void;
-  isUndoingAutoAssign?: boolean;
-  showUndoAutoAssign?: boolean;
+  hasAiAssigned?: boolean; // True if AI has assigned budgets at least once
   onReset?: () => void;
+  onSave?: () => void;
+  isSaving?: boolean;
+  hasUnsavedChanges?: boolean;
 }
 
 export default function ReadyToAssign({ 
@@ -24,10 +25,11 @@ export default function ReadyToAssign({
   onAmountChange,
   onAutoAssign,
   isAutoAssigning = false,
-  onUndoAutoAssign,
-  isUndoingAutoAssign = false,
-  showUndoAutoAssign = false,
+  hasAiAssigned = false,
   onReset,
+  onSave,
+  isSaving = false,
+  hasUnsavedChanges = false,
 }: ReadyToAssignProps) {
   const isPositive = amount >= 0;
   const isOverbudgeted = amount < 0;
@@ -89,25 +91,11 @@ export default function ReadyToAssign({
         </div>
 
         <div className="flex flex-col items-end gap-2">
-          {/* Status indicator */}
-          {isFullyAssigned ? (
-            <div className="flex items-center gap-2 bg-white/20 px-3 py-1.5 rounded-full">
-              <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-              </svg>
-              <span className="text-white text-sm font-medium">Zero-Based</span>
-            </div>
-          ) : isOverbudgeted ? (
-            <div className="flex items-center gap-2 bg-white/20 px-3 py-1.5 rounded-full">
-              <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-              </svg>
-              <span className="text-white text-sm font-medium">Over Budget</span>
-            </div>
-          ) : (
+          {/* Auto/Re-assign AI Button - shows when not fully assigned and not overbudgeted */}
+          {!isFullyAssigned && !isOverbudgeted && (
             <button 
               onClick={onAutoAssign}
-              disabled={isAutoAssigning || isUndoingAutoAssign || !onAutoAssign}
+              disabled={isAutoAssigning || !onAutoAssign}
               className="flex items-center gap-2 bg-white/20 hover:bg-white/30 disabled:bg-white/10 px-4 py-2 rounded-full transition-colors disabled:cursor-not-allowed"
             >
               {isAutoAssigning ? (
@@ -120,35 +108,44 @@ export default function ReadyToAssign({
                   <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                   </svg>
-                  <span className="text-white text-sm font-medium">Auto Assign using AI</span>
+                  <span className="text-white text-sm font-medium">
+                    {hasAiAssigned ? 'Re-assign using AI' : 'Auto Assign using AI'}
+                  </span>
                 </>
               )}
             </button>
           )}
 
-          {/* Undo (shown after a successful AI assignment) */}
-          {showUndoAutoAssign && onUndoAutoAssign && (
-            <button
-              onClick={onUndoAutoAssign}
-              disabled={isAutoAssigning || isUndoingAutoAssign}
-              className="flex items-center gap-2 bg-white/15 hover:bg-white/25 disabled:bg-white/10 px-4 py-2 rounded-full transition-colors disabled:cursor-not-allowed"
-              title="Undo AI assignment"
-            >
-              {isUndoingAutoAssign ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  <span className="text-white text-sm font-medium">Undoing...</span>
-                </>
-              ) : (
-                <>
-                  <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-                  </svg>
-                  <span className="text-white text-sm font-medium">Undo</span>
-                </>
-              )}
-            </button>
+          {/* Over Budget Warning */}
+          {isOverbudgeted && (
+            <div className="flex items-center gap-2 bg-white/20 px-3 py-1.5 rounded-full">
+              <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+              <span className="text-white text-sm font-medium">Over Budget</span>
+            </div>
           )}
+
+          {/* Save Button - always visible, enabled when there are unsaved changes */}
+          <button
+            onClick={onSave}
+            disabled={isSaving || isAutoAssigning || !onSave || !hasUnsavedChanges}
+            className="flex items-center gap-2 bg-white/20 hover:bg-white/30 disabled:bg-white/10 px-4 py-2 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isSaving ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <span className="text-white text-sm font-medium">Saving...</span>
+              </>
+            ) : (
+              <>
+                <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                <span className="text-white text-sm font-medium">Save Budget</span>
+              </>
+            )}
+          </button>
 
           {/* Reset Button */}
           {onReset && (
