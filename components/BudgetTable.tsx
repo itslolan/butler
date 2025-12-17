@@ -28,6 +28,7 @@ interface BudgetTableProps {
   onCategoryAdded: () => void;
   onCategoryDeleted: () => void;
   budgetedOverrides?: Record<string, number> | null;
+  isReadOnly?: boolean; // True for past months
 }
 
 export default function BudgetTable({
@@ -38,6 +39,7 @@ export default function BudgetTable({
   onCategoryAdded,
   onCategoryDeleted,
   budgetedOverrides = null,
+  isReadOnly = false,
 }: BudgetTableProps) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -271,7 +273,12 @@ export default function BudgetTable({
                     value={category.budgeted || ''}
                     onChange={(e) => handleBudgetInput(category.id, e.target.value)}
                     placeholder="0.00"
-                    className="w-full pl-6 pr-2 py-1.5 text-sm text-right bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                    disabled={isReadOnly}
+                    className={`w-full pl-6 pr-2 py-1.5 text-sm text-right border rounded-lg focus:outline-none ${
+                      isReadOnly 
+                        ? 'bg-slate-100 dark:bg-slate-900 border-slate-100 dark:border-slate-800 text-slate-500 dark:text-slate-400 cursor-not-allowed' 
+                        : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500'
+                    }`}
                   />
                 </div>
               </div>
@@ -298,7 +305,7 @@ export default function BudgetTable({
 
               {/* Actions */}
               <div className="col-span-1 flex justify-end">
-                {(category.isCustom || !category.hasTransactions) && (
+                {!isReadOnly && (category.isCustom || !category.hasTransactions) && (
                   <button
                     onClick={() => handleDeleteCategory(category.id)}
                     disabled={deletingCategory === category.id}
@@ -320,18 +327,20 @@ export default function BudgetTable({
         ))}
       </div>
 
-      {/* Add Category Button */}
-      <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800">
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="inline-flex items-center gap-2 text-sm font-medium text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-          </svg>
-          Add Category
-        </button>
-      </div>
+      {/* Add Category Button - hidden in read-only mode */}
+      {!isReadOnly && (
+        <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800">
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="inline-flex items-center gap-2 text-sm font-medium text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+            </svg>
+            Add Category
+          </button>
+        </div>
+      )}
 
       {/* Add Category Modal */}
       {showAddModal && (

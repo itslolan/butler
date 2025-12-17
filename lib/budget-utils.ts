@@ -431,6 +431,54 @@ export async function saveBudgets(
 }
 
 /**
+ * Get the most recent month that has budget records for a user
+ * Useful for budget carryover to future months
+ */
+export async function getMostRecentBudgetMonth(userId: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('budgets')
+    .select('month')
+    .eq('user_id', userId)
+    .order('month', { ascending: false })
+    .limit(1);
+
+  if (error) {
+    throw new Error(`Failed to get most recent budget month: ${error.message}`);
+  }
+
+  if (!data || data.length === 0) {
+    return null;
+  }
+
+  return data[0].month;
+}
+
+/**
+ * Copy budgets from one month to another
+ * Used for automatic budget carryover to future months
+ */
+export async function copyBudgetsToMonth(
+  userId: string,
+  fromMonth: string,
+  toMonth: string
+): Promise<void> {
+  // Get source month budgets
+  const sourceBudgets = await getBudgetsForMonth(userId, fromMonth);
+  
+  if (sourceBudgets.length === 0) {
+    return; // Nothing to copy
+  }
+
+  // Create target month budget records
+  const targetBudgets = sourceBudgets.map(b => ({
+    category_id: b.category_id,
+    budgeted_amount: b.budgeted_amount,
+  }));
+
+  await saveBudgets(userId, toMonth, targetBudgets);
+}
+
+/**
  * Get spending by category for a month
  */
 export async function getSpendingByCategory(

@@ -368,6 +368,16 @@ export default function ConnectedAccounts({ onSyncComplete, onFileUpload, isProc
                 <span className="block text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 font-medium leading-tight px-1">
                   Supports PDF &<br/>Screenshots
                 </span>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowHelpModal(true);
+                  }}
+                  className="text-[10px] text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 underline mt-1 font-medium"
+                >
+                  How to take screenshots?
+                </button>
               </div>
             </>
           )}

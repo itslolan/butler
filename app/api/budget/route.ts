@@ -6,6 +6,8 @@ import {
   hasTransactions,
   getMedianMonthlyIncome,
   getCategoriesWithTransactions,
+  getMostRecentBudgetMonth,
+  getBudgetsForMonth,
 } from '@/lib/budget-utils';
 
 export const runtime = 'nodejs';
@@ -57,11 +59,36 @@ export async function GET(request: NextRequest) {
       getCategoriesWithTransactions(userId),
     ]);
     
+    // Check if this is a past month with no budgets - use baseline data
+    const currentMonth = new Date().toISOString().slice(0, 7);
+    const isPastMonth = month < currentMonth;
+    const hasBudgetsForMonth = data.budgets.length > 0;
+    let isBaselineData = false;
+    let baselineMonth: string | null = null;
+    let baselineBudgets: Record<string, number> = {};
+    
+    if (isPastMonth && !hasBudgetsForMonth) {
+      // Try to get the most recent month's budgets as baseline
+      const recentBudgetMonth = await getMostRecentBudgetMonth(userId);
+      if (recentBudgetMonth) {
+        const recentBudgets = await getBudgetsForMonth(userId, recentBudgetMonth);
+        isBaselineData = true;
+        baselineMonth = recentBudgetMonth;
+        baselineBudgets = recentBudgets.reduce((acc, b) => {
+          acc[b.category_id] = b.budgeted_amount;
+          return acc;
+        }, {} as Record<string, number>);
+      }
+    }
+    
     // Transform data for frontend
     const categoryBudgets = data.categories.map((category) => {
       const budget = data.budgets.find(b => b.category_id === category.id);
       const spent = data.spending[category.name] || 0;
-      const budgeted = budget?.budgeted_amount || 0;
+      
+      // Use actual budget if exists, otherwise use baseline budget for past months
+      const budgeted = budget?.budgeted_amount || 
+        (isBaselineData ? (baselineBudgets[category.id] || 0) : 0);
       
       return {
         id: category.id,
@@ -95,6 +122,8 @@ export async function GET(request: NextRequest) {
       categories: categoryBudgets,
       hasTransactions: transactionsExist,
       incomeStats: incomeStats,
+      isBaselineData,
+      baselineMonth,
     });
 
   } catch (error: any) {

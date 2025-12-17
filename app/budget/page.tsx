@@ -25,7 +25,13 @@ export default function BudgetPage() {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   };
 
-  const [selectedMonth, setSelectedMonth] = useState(getCurrentMonth());
+  // Month comparison utilities
+  const currentMonth = getCurrentMonth();
+  const isCurrentMonth = (month: string) => month === currentMonth;
+  const isPastMonth = (month: string) => month < currentMonth;
+  const isFutureMonth = (month: string) => month > currentMonth;
+
+  const [selectedMonth, setSelectedMonth] = useState(currentMonth);
 
   // Budget data state
   const [budgetData, setBudgetData] = useState<{
@@ -74,15 +80,26 @@ export default function BudgetPage() {
   
   // Track if user has any income history (for determining if manual override is allowed)
   const [hasIncomeHistory, setHasIncomeHistory] = useState<boolean>(false);
+  
+  // Read-only mode for past months
+  const isReadOnly = isPastMonth(selectedMonth);
 
   // Generate month options (last 12 months + next 1 month)
   const monthOptions = Array.from({ length: 13 }, (_, i) => {
     const d = new Date();
     d.setMonth(d.getMonth() - i + 1);
-    return {
-      value: d.toISOString().slice(0, 7),
-      label: d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-    };
+    const value = d.toISOString().slice(0, 7);
+    const baseLabel = d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    
+    // Add visual indicator for month type
+    let label = baseLabel;
+    if (value === currentMonth) {
+      label = `${baseLabel} (Current)`;
+    } else if (value < currentMonth) {
+      label = `${baseLabel} (Past)`;
+    }
+    
+    return { value, label };
   });
 
   const handleBudgetDataLoaded = useCallback((data: typeof budgetData) => {
@@ -117,7 +134,9 @@ export default function BudgetPage() {
       categories: anyData.categories,
     });
 
-    if (data && data.totalBudgeted === 0 && !questionnaireCompleted) {
+    // Only show questionnaire for current month with no budgets
+    // Never show for past months (read-only) or future months (will get carryover)
+    if (data && data.totalBudgeted === 0 && !questionnaireCompleted && isCurrentMonth(selectedMonth)) {
       setShowQuestionnaire(true);
     }
     
@@ -356,6 +375,9 @@ export default function BudgetPage() {
 
   const handleResetBudget = async () => {
     if (!budgetData || !user) return;
+    
+    // Only allow reset for current month
+    if (!isCurrentMonth(selectedMonth)) return;
 
     // Zero out all categories locally
     const updatedCategories = budgetData.categories.map(cat => ({
@@ -405,6 +427,35 @@ export default function BudgetPage() {
     setRefreshKey(prev => prev + 1);
   };
 
+  // Handle budget carryover for future months
+  const handleBudgetCarryover = async (targetMonth: string) => {
+    if (!user) return;
+    
+    try {
+      const res = await fetch('/api/budget/carryover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          targetMonth,
+        }),
+      });
+      
+      if (!res.ok) {
+        console.error('Failed to carry over budgets');
+        return;
+      }
+      
+      const data = await res.json();
+      if (data.copied) {
+        // Trigger a refresh to show the copied budgets
+        setRefreshKey(prev => prev + 1);
+      }
+    } catch (error) {
+      console.error('Error carrying over budgets:', error);
+    }
+  };
+
   // Reset states when month changes
   useEffect(() => {
     setRentOverride(null);
@@ -415,6 +466,11 @@ export default function BudgetPage() {
     setIsInitialLoadComplete(false);
     setShowQuestionnaire(false);
     setQuestionnaireCompleted(false);
+    
+    // Trigger budget carryover for future months
+    if (isFutureMonth(selectedMonth)) {
+      handleBudgetCarryover(selectedMonth);
+    }
   }, [selectedMonth]);
 
   if (loading) {
@@ -574,6 +630,7 @@ export default function BudgetPage() {
                     onSave={handleSave}
                     isSaving={isSaving}
                     hasUnsavedChanges={hasUnsavedChanges}
+                    isReadOnly={isReadOnly}
                   />
 
                   {/* Budget Table */}
@@ -586,6 +643,7 @@ export default function BudgetPage() {
                     onCategoryAdded={handleCategoryAdded}
                     onCategoryDeleted={handleCategoryDeleted}
                     budgetedOverrides={budgetedOverrides}
+                    isReadOnly={isReadOnly}
                   />
                 </div>
               </div>
