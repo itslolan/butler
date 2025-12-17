@@ -50,7 +50,7 @@ export default function ReadyToAssign({
 
   return (
     <div
-      className={`rounded-2xl p-6 shadow-sm transition-colors ${
+      className={`rounded-2xl p-6 mb-6 shadow-sm transition-colors ${
         isFullyAssigned
           ? 'bg-gradient-to-br from-emerald-500 to-teal-600'
           : isPositive
@@ -142,7 +142,7 @@ export default function ReadyToAssign({
               ) : (
                 <>
                   <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v6h6M21 17a8 8 0 00-14.906-4M21 17v-6h-6" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
                   </svg>
                   <span className="text-white text-sm font-medium">Undo</span>
                 </>

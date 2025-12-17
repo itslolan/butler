@@ -29,7 +29,7 @@ export default function BudgetExplainer({
   const hasHistoricalData = medianIncome && monthsAnalyzed && monthsAnalyzed > 0;
 
   return (
-    <div className="mb-4 p-4 bg-gradient-to-r from-slate-50 to-blue-50 dark:from-slate-800/50 dark:to-blue-900/20 rounded-xl border border-slate-200 dark:border-slate-700">
+    <div className="mb-2 p-4 bg-gradient-to-r from-slate-50 to-blue-50 dark:from-slate-800/50 dark:to-blue-900/20 rounded-xl border border-slate-200 dark:border-slate-700">
       <div className="flex items-start gap-3">
         <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center shrink-0">
           <span className="text-lg">💡</span>

@@ -16,12 +16,12 @@ const MAX_RETRY_ATTEMPTS = 3;
 /**
  * POST /api/budget/auto-assign
  * Use AI to automatically assign budget amounts based on historical spending
- * Body: { userId, month, income }
+ * Body: { userId, month, income, rent? }
  */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { userId, month, income } = body;
+    const { userId, month, income, rent } = body;
 
     if (!userId) {
       return NextResponse.json(
@@ -106,7 +106,8 @@ export async function POST(request: NextRequest) {
         categoryNames,
         historicalAverages,
         historicalData.totalMonths,
-        attempts > 1 ? lastTotalAssigned : null // Include previous total on retries
+        attempts > 1 ? lastTotalAssigned : null, // Include previous total on retries
+        rent // Pass user-provided rent
       );
 
       try {
@@ -204,14 +205,19 @@ function buildPrompt(
   categoryNames: string[],
   historicalAverages: Record<string, number>,
   totalMonths: number,
-  previousTotal: number | null // For retry attempts
+  previousTotal: number | null, // For retry attempts
+  userProvidedRent?: number | null // User-specified rent amount
 ): string {
   const retryWarning = previousTotal !== null 
     ? `\n\n**⚠️ CORRECTION NEEDED:** Your previous attempt allocated $${previousTotal.toFixed(2)}, which EXCEEDS the available income of $${budgetIncome.toFixed(2)}. You MUST reduce allocations to fit within the budget.\n`
     : '';
 
+  const rentInstruction = userProvidedRent && userProvidedRent > 0
+    ? `\n\n**🏠 USER-PROVIDED RENT/HOUSING:** The user has specified their rent/mortgage is **$${userProvidedRent.toFixed(2)}**. You MUST allocate exactly this amount to the "Rent / Housing" category (or the closest matching housing category). Do not change this amount.\n`
+    : '';
+
   return `You are a financial advisor helping create a zero-based budget.
-${retryWarning}
+${retryWarning}${rentInstruction}
 **Available Income to Budget:** $${budgetIncome.toFixed(2)}
 
 **Budget Categories:** ${categoryNames.join(', ')}
@@ -229,7 +235,7 @@ The SUM of all allocations MUST NOT EXCEED $${budgetIncome.toFixed(2)}. This is 
 
 **Your Task:**
 1. Allocate income across the budget categories, staying WITHIN $${budgetIncome.toFixed(2)}
-2. Base allocations on historical spending patterns but optimize for financial health
+2. ${userProvidedRent && userProvidedRent > 0 ? `Use EXACTLY $${userProvidedRent.toFixed(2)} for Rent / Housing as specified by the user` : 'Base allocations on historical spending patterns but optimize for financial health'}
 3. The total of all allocations MUST be LESS THAN OR EQUAL TO $${budgetIncome.toFixed(2)}
 4. For categories with no historical data, assign reasonable amounts or $0
 5. If historical spending exceeds income, REDUCE allocations proportionally

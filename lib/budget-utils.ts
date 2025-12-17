@@ -27,7 +27,6 @@ export const DEFAULT_FREELANCER_CATEGORIES = [
   'Personal Care',
   // Savings
   'Emergency Fund',
-  'Tax Savings',
   'Retirement',
   'Investments',
 ];

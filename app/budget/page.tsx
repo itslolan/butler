@@ -66,6 +66,9 @@ export default function BudgetPage() {
   // Only used when DB has no income data
   const [incomeOverride, setIncomeOverride] = useState<number | null>(null);
   
+  // User-entered rent from questionnaire (to pass to auto-assign)
+  const [rentOverride, setRentOverride] = useState<number | null>(null);
+  
   // Track the last known DB income so we know whether to use override
   const [lastDbIncome, setLastDbIncome] = useState<number>(0);
 
@@ -125,6 +128,11 @@ export default function BudgetPage() {
     // DB income always takes precedence when available
     if (lastDbIncome === 0) {
       setIncomeOverride(data.income);
+    }
+    
+    // Store rent if provided (for auto-assign)
+    if (data.rent && data.rent > 0) {
+      setRentOverride(data.rent);
     }
     
     // Use DB income if available, otherwise use user-entered income
@@ -241,6 +249,7 @@ export default function BudgetPage() {
           userId: user.id,
           month: selectedMonth,
           income: budgetData.income,
+          rent: rentOverride, // Pass user-entered rent if available
         }),
       });
 
@@ -362,6 +371,7 @@ export default function BudgetPage() {
   useEffect(() => {
     setAutoAssignUndoSnapshot(null);
     setIncomeOverride(null); // Clear income override when changing months
+    setRentOverride(null); // Clear rent override when changing months
     setIsInitialLoadComplete(false); // Reset load state when changing months
     setShowQuestionnaire(false); // Reset questionnaire state for new month
     setQuestionnaireCompleted(false); // Allow questionnaire to show again for new month
