@@ -227,13 +227,13 @@ export default function BudgetTable({
   return (
     <div className="bg-white dark:bg-gray-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
       {/* Header */}
-      <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50">
-        <div className="grid grid-cols-12 gap-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-          <div className="col-span-5">Category</div>
-          <div className="col-span-2 text-right">Budgeted</div>
-          <div className="col-span-2 text-right">Spent</div>
-          <div className="col-span-2 text-right">Available</div>
-          <div className="col-span-1"></div>
+      <div className="px-4 md:px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50">
+        <div className="grid grid-cols-10 md:grid-cols-12 gap-2 md:gap-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+          <div className="col-span-4 md:col-span-5">Category</div>
+          <div className="col-span-3 md:col-span-2 text-right">Budgeted</div>
+          <div className="hidden md:block md:col-span-2 text-right">Spent</div>
+          <div className="col-span-3 md:col-span-2 text-right">Available</div>
+          <div className="hidden md:block md:col-span-1"></div>
         </div>
       </div>
 
@@ -249,11 +249,11 @@ export default function BudgetTable({
         {categories.map(category => (
           <div
             key={category.id}
-            className="px-6 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group"
+            className="px-4 md:px-6 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group"
           >
-            <div className="grid grid-cols-12 gap-4 items-center">
+            <div className="grid grid-cols-10 md:grid-cols-12 gap-2 md:gap-4 items-center">
               {/* Category Name */}
-              <div className="col-span-5 flex items-center gap-2">
+              <div className="col-span-4 md:col-span-5 flex items-center gap-2">
                 <span className="text-sm font-medium text-slate-900 dark:text-white">
                   {category.name}
                 </span>
@@ -265,7 +265,7 @@ export default function BudgetTable({
               </div>
 
               {/* Budgeted Input */}
-              <div className="col-span-2">
+              <div className="col-span-3 md:col-span-2">
                 <div className="relative">
                   <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
                   <input
@@ -284,14 +284,14 @@ export default function BudgetTable({
               </div>
 
               {/* Spent (read-only) */}
-              <div className="col-span-2 text-right">
+              <div className="hidden md:block md:col-span-2 text-right">
                 <span className="text-sm text-slate-600 dark:text-slate-400">
                   {formatCurrency(category.spent)}
                 </span>
               </div>
 
               {/* Available */}
-              <div className="col-span-2 text-right">
+              <div className="col-span-3 md:col-span-2 text-right">
                 <span
                   className={`text-sm font-medium ${
                     category.available >= 0
@@ -304,7 +304,7 @@ export default function BudgetTable({
               </div>
 
               {/* Actions */}
-              <div className="col-span-1 flex justify-end">
+              <div className="hidden md:flex md:col-span-1 justify-end">
                 {!isReadOnly && (category.isCustom || !category.hasTransactions) && (
                   <button
                     onClick={() => handleDeleteCategory(category.id)}
