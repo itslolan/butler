@@ -189,10 +189,10 @@ export default function OnboardingPanels({
         onClick={() => router.push('/budget')}
         className="mt-auto inline-flex items-center justify-center gap-2 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-sm rounded-lg transition-colors shadow-sm hover:shadow-md w-full"
       >
-        Setup budgets
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
         </svg>
+        Setup your budget in seconds using AI
       </button>
     </div>
   );
