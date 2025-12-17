@@ -63,10 +63,6 @@ export default function BudgetPage() {
   const [isInitialLoadComplete, setIsInitialLoadComplete] = useState(false);
   const [questionnaireCompleted, setQuestionnaireCompleted] = useState(false);
   
-  // User-entered income override (from questionnaire or manual edit)
-  // Only used when DB has no income data
-  const [incomeOverride, setIncomeOverride] = useState<number | null>(null);
-  
   // User-entered rent from questionnaire (to pass to auto-assign)
   const [rentOverride, setRentOverride] = useState<number | null>(null);
   
@@ -105,21 +101,17 @@ export default function BudgetPage() {
       });
     }
 
-    // Prefer median income if available, otherwise use DB income, then user override
-    const medianIncome = anyData.incomeStats?.medianMonthlyIncome || 0;
-    const dbIncome = anyData.income || 0;
-    
-    // Track if user has any income history (median or specific month income)
-    const hasHistory = medianIncome > 0 || dbIncome > 0;
+    // The API now handles income priority (median > month-specific)
+    // We just use what the API sends us
+    const effectiveIncome = anyData.income || 0;
+    const hasHistory = effectiveIncome > 0;
     setHasIncomeHistory(hasHistory);
     
-    const effectiveIncome = medianIncome > 0 ? medianIncome : (dbIncome > 0 ? dbIncome : (incomeOverride ?? 0));
-    const effectiveReadyToAssign = effectiveIncome - anyData.totalBudgeted;
+    const effectiveReadyToAssign = anyData.readyToAssign;
 
     setBudgetData({
       income: effectiveIncome,
-      // Use DB income month if DB has income, otherwise current month for user-entered income
-      incomeMonth: medianIncome > 0 ? 'median' : (dbIncome > 0 ? anyData.incomeMonth : selectedMonth),
+      incomeMonth: anyData.incomeMonth || selectedMonth,
       totalBudgeted: anyData.totalBudgeted,
       readyToAssign: effectiveReadyToAssign,
       categories: anyData.categories,
@@ -130,20 +122,33 @@ export default function BudgetPage() {
     }
     
     setIsInitialLoadComplete(true);
-  }, [incomeOverride, selectedMonth, questionnaireCompleted]);
+  }, [questionnaireCompleted]);
 
-  const handleQuestionnaireComplete = (data: { income: number; rent?: number }) => {
-    if (!budgetData) return;
+  const handleQuestionnaireComplete = async (data: { income: number; rent?: number }) => {
+    if (!budgetData || !user) return;
 
-    // Only use user-entered income if there's no income history
-    // Income history (median or DB income) always takes precedence
-    if (!hasIncomeHistory) {
-      setIncomeOverride(data.income);
-    }
-    
     // Store rent if provided (for auto-assign)
     if (data.rent && data.rent > 0) {
       setRentOverride(data.rent);
+    }
+    
+    // Only save user-entered income if there's no income history
+    // Income history (median or DB income) always takes precedence
+    if (!hasIncomeHistory && data.income > 0) {
+      try {
+        // Save the user-provided income to the database
+        await fetch('/api/budget/income', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            month: selectedMonth,
+            amount: data.income,
+          }),
+        });
+      } catch (error) {
+        console.error('Failed to save user-provided income:', error);
+      }
     }
     
     // If user has income history, keep the current income (median or DB), otherwise use user-entered
@@ -194,14 +199,27 @@ export default function BudgetPage() {
     setHasUnsavedChanges(true);
   }, [budgetData]);
 
-  const handleReadyToAssignChange = useCallback((newReadyToAssign: number) => {
-    if (!budgetData) return;
+  const handleReadyToAssignChange = useCallback(async (newReadyToAssign: number) => {
+    if (!budgetData || !user) return;
     const newIncome = budgetData.totalBudgeted + newReadyToAssign;
     
-    // Only allow manual income override when there's no income history
+    // Only allow manual income changes when there's no income history
     // If user has income history (median or DB), they can't manually change it here
     if (!hasIncomeHistory) {
-      setIncomeOverride(newIncome);
+      try {
+        // Save the manually adjusted income to the database
+        await fetch('/api/budget/income', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            month: selectedMonth,
+            amount: newIncome,
+          }),
+        });
+      } catch (error) {
+        console.error('Failed to save income:', error);
+      }
     }
     
     setBudgetData({
@@ -210,7 +228,7 @@ export default function BudgetPage() {
       incomeMonth: selectedMonth,
       readyToAssign: newReadyToAssign,
     });
-  }, [budgetData, selectedMonth, hasIncomeHistory]);
+  }, [budgetData, selectedMonth, hasIncomeHistory, user]);
 
   const handleSave = async () => {
     if (!budgetData || !user) return;
@@ -389,7 +407,6 @@ export default function BudgetPage() {
 
   // Reset states when month changes
   useEffect(() => {
-    setIncomeOverride(null);
     setRentOverride(null);
     setBudgetedOverrides(null);
     setUserSetBudgets({});

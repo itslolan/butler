@@ -315,6 +315,32 @@ export async function categoryHasTransactions(userId: string, categoryName: stri
 }
 
 /**
+ * Get all categories that have transactions (batched check for performance)
+ * Returns a Set of category names that have transactions
+ */
+export async function getCategoriesWithTransactions(userId: string): Promise<Set<string>> {
+  const { data, error } = await supabase
+    .from('transactions')
+    .select('category')
+    .eq('user_id', userId)
+    .not('category', 'is', null)
+    .neq('category', '');
+
+  if (error) {
+    throw new Error(`Failed to get categories with transactions: ${error.message}`);
+  }
+
+  const categories = new Set<string>();
+  for (const txn of data || []) {
+    if (txn.category && typeof txn.category === 'string') {
+      categories.add(txn.category.trim());
+    }
+  }
+
+  return categories;
+}
+
+/**
  * Delete a category (only if no transactions use it)
  */
 export async function deleteCategory(userId: string, categoryId: string): Promise<void> {
@@ -458,6 +484,64 @@ export async function getIncomeForMonth(userId: string, month: string): Promise<
   }
 
   return (data || []).reduce((sum, txn) => sum + Math.abs(Number(txn.amount)), 0);
+}
+
+/**
+ * Save user-provided income as a transaction for a specific month
+ * This is used when users manually enter their income via the questionnaire
+ */
+export async function saveUserProvidedIncome(
+  userId: string,
+  month: string,
+  amount: number
+): Promise<void> {
+  // Use the first day of the month as the transaction date
+  const date = `${month}-01`;
+  
+  // Check if there's already a user-provided income transaction for this month
+  const { data: existing, error: checkError } = await supabase
+    .from('transactions')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('date', date)
+    .eq('transaction_type', 'income')
+    .eq('merchant', 'User Provided Income')
+    .single();
+
+  if (checkError && checkError.code !== 'PGRST116') {
+    // PGRST116 is "not found" error, which is fine
+    throw new Error(`Failed to check existing income: ${checkError.message}`);
+  }
+
+  if (existing) {
+    // Update existing user-provided income
+    const { error: updateError } = await supabase
+      .from('transactions')
+      .update({ amount })
+      .eq('id', existing.id);
+
+    if (updateError) {
+      throw new Error(`Failed to update income: ${updateError.message}`);
+    }
+  } else {
+    // Create new income transaction
+    const { error: insertError } = await supabase
+      .from('transactions')
+      .insert({
+        user_id: userId,
+        date,
+        merchant: 'User Provided Income',
+        amount,
+        transaction_type: 'income',
+        category: 'Income',
+        description: 'Manually entered income for budgeting',
+        source: 'file_upload', // Mark as manual entry
+      });
+
+    if (insertError) {
+      throw new Error(`Failed to save income: ${insertError.message}`);
+    }
+  }
 }
 
 /**

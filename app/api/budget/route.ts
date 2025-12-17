@@ -5,7 +5,7 @@ import {
   hasBudgets,
   hasTransactions,
   getMedianMonthlyIncome,
-  categoryHasTransactions,
+  getCategoriesWithTransactions,
 } from '@/lib/budget-utils';
 
 export const runtime = 'nodejs';
@@ -50,21 +50,15 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const [data, transactionsExist, incomeStats] = await Promise.all([
+    const [data, transactionsExist, incomeStats, categoriesWithTransactions] = await Promise.all([
       getBudgetData(userId, month),
       hasTransactions(userId),
       getMedianMonthlyIncome(userId, 12),
+      getCategoriesWithTransactions(userId),
     ]);
     
-    // Check which categories have transactions
-    const categoryTransactionChecks = await Promise.all(
-      data.categories.map(category => 
-        categoryHasTransactions(userId, category.name)
-      )
-    );
-    
     // Transform data for frontend
-    const categoryBudgets = data.categories.map((category, index) => {
+    const categoryBudgets = data.categories.map((category) => {
       const budget = data.budgets.find(b => b.category_id === category.id);
       const spent = data.spending[category.name] || 0;
       const budgeted = budget?.budgeted_amount || 0;
@@ -73,7 +67,7 @@ export async function GET(request: NextRequest) {
         id: category.id,
         name: category.name,
         isCustom: category.is_custom,
-        hasTransactions: categoryTransactionChecks[index],
+        hasTransactions: categoriesWithTransactions.has(category.name),
         budgeted,
         spent,
         available: budgeted - spent,
@@ -83,14 +77,19 @@ export async function GET(request: NextRequest) {
     // Sort by spent amount (highest first)
     categoryBudgets.sort((a, b) => b.spent - a.spent);
 
-    // Calculate ready to assign
+    // Determine effective income: prefer median, then month-specific, then 0
+    const medianIncome = incomeStats?.medianMonthlyIncome || 0;
+    const effectiveIncome = medianIncome > 0 ? medianIncome : data.income;
+    const effectiveIncomeMonth = medianIncome > 0 ? 'median' : data.incomeMonth;
+
+    // Calculate ready to assign using effective income
     const totalBudgeted = categoryBudgets.reduce((sum, c) => sum + c.budgeted, 0);
-    const readyToAssign = data.income - totalBudgeted;
+    const readyToAssign = effectiveIncome - totalBudgeted;
 
     return NextResponse.json({
       month,
-      income: data.income,
-      incomeMonth: data.incomeMonth, // May differ from requested month if no income in requested month
+      income: effectiveIncome,
+      incomeMonth: effectiveIncomeMonth, // 'median' if using median, otherwise actual month
       totalBudgeted,
       readyToAssign,
       categories: categoryBudgets,
