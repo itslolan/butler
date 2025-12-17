@@ -36,6 +36,10 @@ export default function SignupPage() {
     }
 
     try {
+      if (!supabase) {
+        throw new Error('Signup is temporarily unavailable (missing Supabase configuration).');
+      }
+
       const redirectUrl = `${window.location.origin}/auth/callback`;
       
       const { error } = await supabase.auth.signUp({
@@ -60,6 +64,10 @@ export default function SignupPage() {
     setError(null);
 
     try {
+      if (!supabase) {
+        throw new Error('Signup is temporarily unavailable (missing Supabase configuration).');
+      }
+
       const redirectUrl = `${window.location.origin}/auth/callback`;
 
       const { error } = await supabase.auth.signInWithOAuth({

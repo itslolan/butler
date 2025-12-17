@@ -83,15 +83,17 @@ export async function GET(request: NextRequest) {
     
     // Transform data for frontend
     const categoryBudgets = data.categories.map((category) => {
-      const budget = data.budgets.find(b => b.category_id === category.id);
+      const categoryId = category.id ?? '';
+      const budget = data.budgets.find(b => b.category_id === categoryId);
       const spent = data.spending[category.name] || 0;
       
       // Use actual budget if exists, otherwise use baseline budget for past months
-      const budgeted = budget?.budgeted_amount || 
-        (isBaselineData ? (baselineBudgets[category.id] || 0) : 0);
+      // (use nullish coalescing so a valid 0 budget doesn't fall back)
+      const budgeted = budget?.budgeted_amount ??
+        (isBaselineData ? (baselineBudgets[categoryId] ?? 0) : 0);
       
       return {
-        id: category.id,
+        id: categoryId,
         name: category.name,
         isCustom: category.is_custom,
         hasTransactions: categoriesWithTransactions.has(category.name),

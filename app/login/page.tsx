@@ -21,6 +21,10 @@ export default function LoginPage() {
     setMessage(null);
 
     try {
+      if (!supabase) {
+        throw new Error('Auth is temporarily unavailable (missing Supabase configuration).');
+      }
+
       // Always use window.location.origin for dynamic URL detection
       const redirectUrl = `${window.location.origin}/auth/callback`;
       
@@ -59,6 +63,10 @@ export default function LoginPage() {
     setError(null);
 
     try {
+      if (!supabase) {
+        throw new Error('Auth is temporarily unavailable (missing Supabase configuration).');
+      }
+
       // Always use window.location.origin for dynamic URL detection
       const redirectUrl = `${window.location.origin}/auth/callback`;
       
