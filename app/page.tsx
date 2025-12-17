@@ -7,7 +7,6 @@ import VisualizationPanel from '@/components/VisualizationPanel';
 import AuthGuard from '@/components/AuthGuard';
 import UserMenu from '@/components/UserMenu';
 import MobileChatModal from '@/components/MobileChatModal';
-import MobileUploadButton from '@/components/MobileUploadButton';
 import MobileProcessingToast from '@/components/MobileProcessingToast';
 import { useAuth } from '@/components/AuthProvider';
 import LandingPage from '@/components/LandingPage';
@@ -346,9 +345,6 @@ export default function Home() {
           {/* Left Column: Visualization & Data (65%) - Full width on mobile */}
           <div className="col-span-12 lg:col-span-8 flex flex-col h-full lg:border-r border-slate-200 dark:border-slate-800 overflow-y-auto bg-slate-50/50 dark:bg-black/5 p-4 lg:p-6 pb-20 lg:pb-6">
             <div className="max-w-5xl w-full mx-auto space-y-4 lg:space-y-6">
-              {/* Mobile Upload Button */}
-              <MobileUploadButton onFileUpload={handleFileUpload} isProcessing={isProcessing} />
-              
               {/* Todo List - Prominent placement above charts */}
               <TodoList 
                 userId={user?.id || 'default-user'} 
