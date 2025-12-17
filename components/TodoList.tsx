@@ -13,6 +13,7 @@ interface TodoListProps {
 export default function TodoList({ userId, onSelectTodo, refreshTrigger = 0 }: TodoListProps) {
   const [todos, setTodos] = useState<Transaction[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
 
   const fetchTodos = async () => {
     if (!userId) return;
@@ -28,6 +29,7 @@ export default function TodoList({ userId, onSelectTodo, refreshTrigger = 0 }: T
       console.error('Error fetching todos:', err);
     } finally {
       setIsLoading(false);
+      setHasLoadedOnce(true);
     }
   };
 
@@ -36,8 +38,9 @@ export default function TodoList({ userId, onSelectTodo, refreshTrigger = 0 }: T
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, refreshTrigger]);
 
-  // Don't render anything if there are no todos
-  if (todos.length === 0 && !isLoading) {
+  // Don't render anything until we've loaded once and confirmed there are todos
+  // Also hide if loaded and no todos
+  if (!hasLoadedOnce || todos.length === 0) {
     return null;
   }
 

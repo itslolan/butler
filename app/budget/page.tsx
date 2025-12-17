@@ -59,6 +59,14 @@ export default function BudgetPage() {
   } | null>(null);
 
   const [showQuestionnaire, setShowQuestionnaire] = useState(false);
+  const [isInitialLoadComplete, setIsInitialLoadComplete] = useState(false);
+  
+  // User-entered income override (from questionnaire or manual edit)
+  // Only used when DB has no income data
+  const [incomeOverride, setIncomeOverride] = useState<number | null>(null);
+  
+  // Track the last known DB income so we know whether to use override
+  const [lastDbIncome, setLastDbIncome] = useState<number>(0);
 
   // Generate month options (last 12 months + next 1 month)
   const monthOptions = Array.from({ length: 13 }, (_, i) => {
@@ -86,26 +94,46 @@ export default function BudgetPage() {
       });
     }
 
+    // DB income takes precedence; only use user-entered override when DB has no income
+    const dbIncome = anyData.income || 0;
+    setLastDbIncome(dbIncome); // Track for use in questionnaire/manual edits
+    
+    const effectiveIncome = dbIncome > 0 ? dbIncome : (incomeOverride ?? 0);
+    const effectiveReadyToAssign = effectiveIncome - anyData.totalBudgeted;
+
     setBudgetData({
-      income: anyData.income,
-      incomeMonth: anyData.incomeMonth,
+      income: effectiveIncome,
+      // Use DB income month if DB has income, otherwise current month for user-entered income
+      incomeMonth: dbIncome > 0 ? anyData.incomeMonth : selectedMonth,
       totalBudgeted: anyData.totalBudgeted,
-      readyToAssign: anyData.readyToAssign,
+      readyToAssign: effectiveReadyToAssign,
       categories: anyData.categories,
     });
 
     if (data && data.totalBudgeted === 0) {
       setShowQuestionnaire(true);
     }
-  }, []);
+    
+    setIsInitialLoadComplete(true);
+  }, [incomeOverride, selectedMonth]);
 
   const handleQuestionnaireComplete = (data: { income: number; rent?: number }) => {
     if (!budgetData) return;
 
+    // Only use user-entered income if DB has no income data
+    // DB income always takes precedence when available
+    if (lastDbIncome === 0) {
+      setIncomeOverride(data.income);
+    }
+    
+    // Use DB income if available, otherwise use user-entered income
+    const effectiveIncome = lastDbIncome > 0 ? lastDbIncome : data.income;
+    
     setBudgetData({
       ...budgetData,
-      income: data.income,
-      readyToAssign: data.income - budgetData.totalBudgeted,
+      income: effectiveIncome,
+      incomeMonth: selectedMonth,
+      readyToAssign: effectiveIncome - budgetData.totalBudgeted,
     });
     setShowQuestionnaire(false);
   };
@@ -137,13 +165,20 @@ export default function BudgetPage() {
   const handleReadyToAssignChange = useCallback((newReadyToAssign: number) => {
     if (!budgetData) return;
     const newIncome = budgetData.totalBudgeted + newReadyToAssign;
+    
+    // Only allow manual income override when DB has no income
+    // If DB has income, user can't manually change it here
+    if (lastDbIncome === 0) {
+      setIncomeOverride(newIncome);
+    }
+    
     setBudgetData({
       ...budgetData,
       income: newIncome,
       incomeMonth: selectedMonth,
       readyToAssign: newReadyToAssign,
     });
-  }, [budgetData, selectedMonth]);
+  }, [budgetData, selectedMonth, lastDbIncome]);
 
   const handleSave = async () => {
     if (!budgetData || !user) return;
@@ -321,9 +356,12 @@ export default function BudgetPage() {
     setRefreshKey(prev => prev + 1);
   };
 
-  // Undo snapshot is only valid for the current month view.
+  // Undo snapshot and income override are only valid for the current month view.
   useEffect(() => {
     setAutoAssignUndoSnapshot(null);
+    setIncomeOverride(null); // Clear income override when changing months
+    setIsInitialLoadComplete(false); // Reset load state when changing months
+    setShowQuestionnaire(false); // Reset questionnaire state for new month
   }, [selectedMonth]);
 
   if (loading) {
@@ -459,7 +497,7 @@ export default function BudgetPage() {
                 </div>
 
                 {/* Questionnaire */}
-                {showQuestionnaire && (
+                {isInitialLoadComplete && showQuestionnaire && (
                   <BudgetQuestionnaire 
                     onComplete={handleQuestionnaireComplete}
                     onUpload={() => router.push('/')}
@@ -467,7 +505,20 @@ export default function BudgetPage() {
                   />
                 )}
 
-                <div className={showQuestionnaire ? 'hidden' : 'block'}>
+                {/* Loading state before initial data is ready */}
+                {!isInitialLoadComplete && (
+                  <div className="flex items-center justify-center py-20">
+                    <div className="flex items-center gap-3 text-slate-500">
+                      <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      <span className="text-sm font-medium">Loading budget...</span>
+                    </div>
+                  </div>
+                )}
+
+                <div className={(!isInitialLoadComplete || showQuestionnaire) ? 'hidden' : 'block'}>
                   {/* Budget Explainer Panel */}
                   <BudgetExplainer 
                     medianIncome={budgetMeta?.incomeStats?.medianMonthlyIncome}
