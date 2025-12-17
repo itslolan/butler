@@ -178,6 +178,8 @@ export default function FixedExpensesPanel({
         body: JSON.stringify({
           merchant_key: expense.merchant_key,
           merchant_name: expense.merchant_name,
+          amount: expense.median_amount,
+          day: expense.avg_day_of_month,
           action: 'confirm',
         }),
       });
@@ -190,7 +192,18 @@ export default function FixedExpensesPanel({
       // (user refresh, bank statement upload, or Plaid sync)
       console.log(`✓ Confirmed "${expense.merchant_name}" as fixed expense (will apply on next calculation)`);
       
-      // Show a brief success indicator (optional - you could add a toast notification here)
+      // Update UI locally: remove "maybe" badge
+      setData(current => {
+        if (!current) return null;
+        return {
+          ...current,
+          expenses: current.expenses.map(e => 
+            e.merchant_key === expense.merchant_key 
+              ? { ...e, is_maybe: false } 
+              : e
+          )
+        };
+      });
       
     } catch (err: any) {
       console.error('Error confirming fixed expense:', err);
@@ -218,6 +231,8 @@ export default function FixedExpensesPanel({
         body: JSON.stringify({
           merchant_key: expense.merchant_key,
           merchant_name: expense.merchant_name,
+          amount: expense.median_amount,
+          day: expense.avg_day_of_month,
           action: 'reject',
         }),
       });
@@ -230,7 +245,19 @@ export default function FixedExpensesPanel({
       // (user refresh, bank statement upload, or Plaid sync)
       console.log(`✕ Rejected "${expense.merchant_name}" as fixed expense (will apply on next calculation)`);
       
-      // Show a brief success indicator (optional - you could add a toast notification here)
+      // Update UI locally: remove the rejected expense from the list
+      setData(current => {
+        if (!current) return null;
+        const newExpenses = current.expenses.filter(e => e.merchant_key !== expense.merchant_key);
+        // Also update total amount
+        const newTotal = newExpenses.reduce((sum, e) => sum + e.median_amount, 0);
+        
+        return {
+          ...current,
+          expenses: newExpenses,
+          total: newTotal
+        };
+      });
       
     } catch (err: any) {
       console.error('Error rejecting fixed expense:', err);
@@ -373,7 +400,7 @@ export default function FixedExpensesPanel({
           {displayedExpenses.map((expense, index) => (
             <div 
               key={`${expense.merchant_name}-${index}`}
-              className={`relative flex items-center justify-between py-1.5 border-b border-slate-50 dark:border-slate-800/50 last:border-b-0 ${
+              className={`relative flex items-center justify-between h-10 px-2 border-b border-slate-50 dark:border-slate-800/50 last:border-b-0 ${
                 expense.is_maybe 
                   ? 'bg-amber-50/50 dark:bg-amber-900/10 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors' 
                   : ''
@@ -394,31 +421,38 @@ export default function FixedExpensesPanel({
                   Day {expense.avg_day_of_month}
                 </span>
               </div>
-              <div className="flex items-center gap-2">
-                <p className="text-xs font-semibold text-slate-900 dark:text-white shrink-0">
-                  {formatCurrency(expense.median_amount, currency)}
-                </p>
-                {hoveredIndex === index && (
-                  <div className="flex items-center gap-1">
+              <div className="flex items-center justify-end min-w-[80px]">
+                {hoveredIndex === index ? (
+                  <div className="flex items-center gap-1 animate-in fade-in duration-200">
                     {expense.is_maybe && (
                       <button
-                        onClick={() => handleConfirmFixedExpense(expense, index)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleConfirmFixedExpense(expense, index);
+                        }}
                         disabled={confirmingIndex === index}
-                        className="text-[10px] px-2 py-1 bg-green-600 hover:bg-green-700 text-white rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+                        className="text-[10px] px-2 py-1 bg-green-600 hover:bg-green-700 text-white rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0 whitespace-nowrap"
                         title="Confirm as fixed expense"
                       >
-                        {confirmingIndex === index ? '...' : '✓'}
+                        {confirmingIndex === index ? '...' : 'Confirm'}
                       </button>
                     )}
                     <button
-                      onClick={() => handleRejectFixedExpense(expense, index)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRejectFixedExpense(expense, index);
+                      }}
                       disabled={confirmingIndex === index}
-                      className="text-[10px] px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+                      className="text-[10px] px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0 whitespace-nowrap"
                       title="Reject as fixed expense"
                     >
-                      {confirmingIndex === index ? '...' : '✕'}
+                      {confirmingIndex === index ? '...' : 'Reject'}
                     </button>
                   </div>
+                ) : (
+                  <p className="text-xs font-semibold text-slate-900 dark:text-white shrink-0 text-right">
+                    {formatCurrency(expense.median_amount, currency)}
+                  </p>
                 )}
               </div>
             </div>

@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
 
     const userId = user.id;
     const body = await request.json();
-    const { merchant_key, merchant_name, action } = body;
+    const { merchant_key, merchant_name, action, amount, day } = body;
 
     if (!merchant_key || !merchant_name) {
       return NextResponse.json(
@@ -42,11 +42,17 @@ export async function POST(request: NextRequest) {
     // Create a memory entry based on the action
     let memoryContent: string;
     
+    // Format details string if available
+    const detailsParts = [];
+    if (amount) detailsParts.push(`Amount: ~$${Math.round(Number(amount))}`);
+    if (day) detailsParts.push(`Typical Date: Day ${day}`);
+    const detailsStr = detailsParts.length > 0 ? ` [${detailsParts.join(', ')}]` : '';
+    
     if (action === 'confirm') {
-      memoryContent = `Confirmed fixed expense: "${merchant_name}" (normalized: ${merchant_key}). User confirmed this as a recurring fixed payment.`;
+      memoryContent = `Confirmed fixed expense: "${merchant_name}" (normalized: ${merchant_key})${detailsStr}. User confirmed this as a recurring fixed payment.`;
       console.log(`[Fixed Expense Feedback] User ${userId} confirmed "${merchant_name}" as fixed expense`);
     } else {
-      memoryContent = `Rejected fixed expense: "${merchant_name}" (normalized: ${merchant_key}). User indicated this is NOT a fixed recurring payment.`;
+      memoryContent = `Rejected fixed expense: "${merchant_name}" (normalized: ${merchant_key})${detailsStr}. User indicated this is NOT a fixed recurring payment.`;
       console.log(`[Fixed Expense Feedback] User ${userId} rejected "${merchant_name}" as fixed expense`);
     }
 
