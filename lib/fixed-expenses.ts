@@ -1,7 +1,7 @@
 import { supabase } from '@/lib/supabase';
 
 // Fixed expense detection parameters
-const MIN_MONTHS_REQUIRED = 2;
+const MIN_MONTHS_REQUIRED = 3;
 const AMOUNT_VARIANCE_THRESHOLD = 0.15; // 15% variance allowed
 const DAY_OF_MONTH_VARIANCE = 5; // +/- 5 days considered "same time of month"
 

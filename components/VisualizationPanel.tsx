@@ -253,14 +253,6 @@ export default function VisualizationPanel({ userId = 'default-user', refreshTri
         </div>
       )}
 
-      {/* Fixed Expenses Panel */}
-      <FixedExpensesPanel 
-        userId={userId} 
-        refreshTrigger={refreshTrigger}
-        maxItemsToShow={5}
-        currency={metrics?.currency || 'USD'}
-      />
-
       {/* Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Spending Trend - Full Width on mobile, Half on large */}
@@ -269,6 +261,16 @@ export default function VisualizationPanel({ userId = 'default-user', refreshTri
             <ChartRenderer config={charts.spendingTrend} height="100%" />
           </ChartCard>
         )}
+
+        {/* Fixed Expenses Panel - Full Width, below spending trend */}
+        <div className="lg:col-span-2">
+          <FixedExpensesPanel 
+            userId={userId} 
+            refreshTrigger={refreshTrigger}
+            maxItemsToShow={5}
+            currency={metrics?.currency || 'USD'}
+          />
+        </div>
 
         {/* Income vs Expenses - Half Width */}
         {charts.incomeVsExpenses && (

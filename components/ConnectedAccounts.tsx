@@ -34,6 +34,9 @@ interface ConnectedAccountsProps {
   isProcessing?: boolean;
 }
 
+// Check if Plaid feature is enabled via environment variable
+const isPlaidEnabled = process.env.NEXT_PUBLIC_PLAID_ENABLED === 'true';
+
 export default function ConnectedAccounts({ onSyncComplete, onFileUpload, isProcessing = false }: ConnectedAccountsProps) {
   const [institutions, setInstitutions] = useState<Institution[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,8 +57,13 @@ export default function ConnectedAccounts({ onSyncComplete, onFileUpload, isProc
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // Fetch connected accounts
+  // Fetch connected accounts (only when Plaid is enabled)
   const fetchAccounts = useCallback(async () => {
+    if (!isPlaidEnabled) {
+      setLoading(false);
+      return;
+    }
+    
     try {
       const response = await fetch('/api/plaid/get-accounts');
       const data = await response.json();
@@ -293,24 +301,25 @@ export default function ConnectedAccounts({ onSyncComplete, onFileUpload, isProc
         className="hidden"
       />
 
-      <div className="grid grid-cols-2 gap-2 flex-1 min-h-0">
-        {/* Connect Bank Button */}
-        <PlaidLinkButton
-          onSuccess={fetchAccounts}
-          onError={(err) => setError(err)}
-          className="w-full h-full relative group flex flex-col items-center justify-center gap-2 p-3 bg-gradient-to-br from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white rounded-2xl transition-all shadow-sm hover:shadow-md border border-blue-500/20 overflow-hidden"
-        >
-          <div className="absolute inset-0 bg-white/5 group-hover:bg-white/10 transition-colors" />
-          <div className="relative p-2 bg-white/20 rounded-xl backdrop-blur-sm group-hover:scale-110 transition-transform duration-300">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 14v3m4-3v3m4-3v3M3 21h18M3 10h18M3 7l9-4 9 4M4 10h16v11H4V10z" />
-            </svg>
-          </div>
-          <div className="relative text-center">
-            <span className="block text-xs font-bold tracking-wide">Connect Bank</span>
-            <span className="block text-[10px] text-blue-100 mt-0.5 font-medium">Automatic sync</span>
-          </div>
-        </PlaidLinkButton>
+      <div className={`grid ${isPlaidEnabled ? 'grid-cols-2' : 'grid-cols-1'} gap-2 flex-1 min-h-0`}>
+        {/* Connect Bank Button - Only shown when Plaid is enabled */}
+        {isPlaidEnabled && (
+          <PlaidLinkButton
+            onSuccess={fetchAccounts}
+            onError={(err) => setError(err)}
+            className="w-full h-full relative group flex flex-col items-center justify-center gap-2 p-3 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-300 rounded-2xl transition-all shadow-sm hover:shadow-md border-2 border-dashed border-slate-200 dark:border-slate-700 hover:border-blue-400 dark:hover:border-blue-500/50 overflow-hidden"
+          >
+            <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-xl group-hover:scale-110 transition-transform duration-300 group-hover:bg-blue-100 dark:group-hover:bg-blue-900/30">
+              <svg className="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 14v3m4-3v3m4-3v3M3 21h18M3 10h18M3 7l9-4 9 4M4 10h16v11H4V10z" />
+              </svg>
+            </div>
+            <div className="text-center">
+              <span className="block text-xs font-bold">Connect Bank</span>
+              <span className="block text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 font-medium">Automatic sync</span>
+            </div>
+          </PlaidLinkButton>
+        )}
 
         {/* Upload Button */}
         <button
