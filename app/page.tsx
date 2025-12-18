@@ -25,15 +25,42 @@ export default function Home() {
   const chatInterfaceRef = useRef<any>(null);
 
   const handleTodoSelect = (todo: any) => {
-    // If on mobile (simple check), open chat first
-    if (window.innerWidth < 1024) {
-      setIsMobileChatOpen(true);
-      // Allow time for modal to mount/render
-      setTimeout(() => {
-        chatInterfaceRef.current?.resolveTodo(todo);
-      }, 100);
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 1024;
+    
+    // Handle different todo types
+    if (todo.type === 'account_selection') {
+      // Account selection todo - show account selector in chat
+      if (isMobile) {
+        setIsMobileChatOpen(true);
+        setTimeout(() => {
+          chatInterfaceRef.current?.showAccountSelection?.({
+            documentIds: [todo.document_id],
+            transactionCount: todo.transaction_count,
+            dateRange: todo.first_transaction_date && todo.last_transaction_date 
+              ? { start: todo.first_transaction_date, end: todo.last_transaction_date }
+              : undefined,
+          });
+        }, 300);
+      } else {
+        chatInterfaceRef.current?.showAccountSelection?.({
+          documentIds: [todo.document_id],
+          transactionCount: todo.transaction_count,
+          dateRange: todo.first_transaction_date && todo.last_transaction_date 
+            ? { start: todo.first_transaction_date, end: todo.last_transaction_date }
+            : undefined,
+        });
+      }
     } else {
-      chatInterfaceRef.current?.resolveTodo(todo);
+      // Transaction clarification todo - use existing resolveTodo
+      if (isMobile) {
+        setIsMobileChatOpen(true);
+        // Allow time for modal to mount/render
+        setTimeout(() => {
+          chatInterfaceRef.current?.resolveTodo?.(todo);
+        }, 100);
+      } else {
+        chatInterfaceRef.current?.resolveTodo?.(todo);
+      }
     }
   };
 
