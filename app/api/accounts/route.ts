@@ -16,9 +16,13 @@ export async function GET(request: NextRequest) {
     const { data: { user }, error: authError } = await supabaseAuth.auth.getUser();
 
     if (authError || !user) {
+      console.error('[accounts] Authentication failed:', authError?.message);
       return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
+        { error: 'Unauthorized', accounts: [] },
+        { 
+          status: 401,
+          headers: { 'Content-Type': 'application/json' }
+        }
       );
     }
 
@@ -40,8 +44,11 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     console.error('[accounts] GET Error:', error.message);
     return NextResponse.json(
-      { error: error.message || 'Failed to fetch accounts' },
-      { status: 500 }
+      { error: error.message || 'Failed to fetch accounts', accounts: [] },
+      { 
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      }
     );
   }
 }

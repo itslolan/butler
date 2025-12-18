@@ -1340,7 +1340,8 @@ export async function getAccountsByUserId(userId: string): Promise<Account[]> {
     .from('accounts')
     .select('*')
     .eq('user_id', userId)
-    .eq('is_active', true)
+    // Include accounts where is_active is true OR null (for backward compatibility)
+    .or('is_active.is.true,is_active.is.null')
     .order('display_name', { ascending: true });
 
   if (error) {

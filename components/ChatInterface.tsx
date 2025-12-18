@@ -129,6 +129,23 @@ Please reply with the correct category or explain what this transaction is.`;
       // Fetch accounts
       try {
         const response = await fetch('/api/accounts');
+        
+        if (!response.ok) {
+          const contentType = response.headers.get('content-type');
+          let errorMessage = 'Failed to fetch accounts';
+          
+          if (contentType && contentType.includes('application/json')) {
+            try {
+              const errorData = await response.json();
+              errorMessage = errorData.error || errorMessage;
+            } catch (e) {
+              // Couldn't parse JSON error
+            }
+          }
+          
+          throw new Error(errorMessage);
+        }
+        
         const result = await response.json();
         
         const content = `📷 **Account Selection Required**

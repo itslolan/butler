@@ -191,8 +191,19 @@ export default function SubscriptionsPanel({
       const response = await fetch('/api/fixed-expenses');
       
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to fetch subscriptions');
+        const contentType = response.headers.get('content-type');
+        let errorMessage = 'Failed to fetch subscriptions';
+        
+        if (contentType && contentType.includes('application/json')) {
+          try {
+            const errorData = await response.json();
+            errorMessage = errorData.error || errorMessage;
+          } catch (e) {
+            // Couldn't parse JSON error, use default message
+          }
+        }
+        
+        throw new Error(errorMessage);
       }
 
       const result = await response.json();
@@ -213,8 +224,15 @@ export default function SubscriptionsPanel({
       return;
     }
 
+    // Don't fetch if userId is default-user (not authenticated)
+    if (userId === 'default-user') {
+      setLoading(false);
+      setError('Please log in to view subscriptions');
+      return;
+    }
+
     fetchData(refreshTrigger > 0);
-  }, [refreshTrigger, fetchData, demoData]);
+  }, [refreshTrigger, fetchData, demoData, userId]);
 
   // Filter to only show subscriptions
   const subscriptions = data?.expenses?.filter(exp => isSubscription(exp.merchant_name)) || [];

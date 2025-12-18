@@ -15,9 +15,13 @@ export async function GET(request: NextRequest) {
     const { data: { user }, error: authError } = await supabaseAuth.auth.getUser();
 
     if (authError || !user) {
+      console.error('[fixed-expenses] Authentication failed:', authError?.message);
       return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
+        { error: 'Unauthorized', expenses: [], total: 0 },
+        { 
+          status: 401,
+          headers: { 'Content-Type': 'application/json' }
+        }
       );
     }
 
@@ -37,8 +41,11 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     console.error('[fixed-expenses] Error:', error);
     return NextResponse.json(
-      { error: error.message || 'Failed to get fixed expenses' },
-      { status: 500 }
+      { error: error.message || 'Failed to get fixed expenses', expenses: [], total: 0 },
+      { 
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      }
     );
   }
 }

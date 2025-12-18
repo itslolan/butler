@@ -138,8 +138,19 @@ export default function FixedExpensesPanel({
       const response = await fetch('/api/fixed-expenses');
       
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to fetch fixed expenses');
+        const contentType = response.headers.get('content-type');
+        let errorMessage = 'Failed to fetch fixed expenses';
+        
+        if (contentType && contentType.includes('application/json')) {
+          try {
+            const errorData = await response.json();
+            errorMessage = errorData.error || errorMessage;
+          } catch (e) {
+            // Couldn't parse JSON error, use default message
+          }
+        }
+        
+        throw new Error(errorMessage);
       }
 
       const result = await response.json();
@@ -278,6 +289,13 @@ export default function FixedExpensesPanel({
       return;
     }
 
+    // Don't fetch if userId is default-user (not authenticated)
+    if (userId === 'default-user') {
+      setLoading(false);
+      setError('Please log in to view fixed expenses');
+      return;
+    }
+
     // Check if refreshTrigger has actually changed (indicating bank upload or Plaid sync)
     const hasRefreshTriggerChanged = previousRefreshTrigger.current !== refreshTrigger;
     
@@ -291,7 +309,7 @@ export default function FixedExpensesPanel({
       // Normal load - use cache if available
       fetchData(false);
     }
-  }, [refreshTrigger, fetchData, clearCache, demoData]);
+  }, [refreshTrigger, fetchData, clearCache, demoData, userId]);
 
   // Loading skeleton - Compact
   if (loading) {
