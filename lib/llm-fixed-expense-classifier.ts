@@ -257,7 +257,7 @@ async function classifyMerchantBatch(
         // If still failing, return default classifications
         console.error('[llm-fixed-expense-classifier] Second parse attempt failed, returning default classifications');
         return summaries.map(summary => ({
-          merchant_key: summary.normalized_merchant,
+          merchant_key: summary.merchant_key,
           label: 'maybe' as const,
           confidence: 0.5,
           llm_reasoning_score: 0.5,
@@ -271,7 +271,7 @@ async function classifyMerchantBatch(
     if (!Array.isArray(classifications)) {
       console.error('[llm-fixed-expense-classifier] LLM response is not an array, returning default classifications');
       return summaries.map(summary => ({
-        merchant_key: summary.normalized_merchant,
+        merchant_key: summary.merchant_key,
         label: 'maybe' as const,
         confidence: 0.5,
         llm_reasoning_score: 0.5,
@@ -306,7 +306,7 @@ async function classifyMerchantBatch(
       const summary = summaries[i];
       
       if (!classification.merchant_key) {
-        classification.merchant_key = summary.normalized_merchant;
+        classification.merchant_key = summary.merchant_key;
       }
       
       if (!classification.label || !['fixed', 'not_fixed', 'maybe'].includes(classification.label)) {
@@ -341,7 +341,7 @@ async function classifyMerchantBatch(
     // Return default classifications instead of throwing
     console.error('[llm-fixed-expense-classifier] Returning default classifications due to error');
     return summaries.map(summary => ({
-      merchant_key: summary.normalized_merchant,
+      merchant_key: summary.merchant_key,
       label: 'maybe' as const,
       confidence: 0.5,
       llm_reasoning_score: 0.5,
