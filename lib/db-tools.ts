@@ -329,7 +329,8 @@ export async function getUnclarifiedTransactions(
     .from('transactions')
     .select('*')
     .eq('user_id', userId)
-    .is('needs_clarification', true);
+    .is('needs_clarification', true)
+    .eq('is_dismissed', false);
 
   if (documentId) {
     query = query.eq('document_id', documentId);
@@ -342,7 +343,7 @@ export async function getUnclarifiedTransactions(
   }
 
   // Client-side filter to ensure we only return transactions that actually need clarification
-  return (data || []).filter(txn => txn.needs_clarification === true);
+  return (data || []).filter(txn => txn.needs_clarification === true && txn.is_dismissed !== true);
 }
 
 /**
@@ -1509,6 +1510,7 @@ export async function getDocumentsPendingAccountSelection(
     .select('id, file_name, batch_id, metadata')
     .eq('user_id', userId)
     .eq('pending_account_selection', true)
+    .eq('is_dismissed', false)
     .order('uploaded_at', { ascending: false });
 
   if (error) {

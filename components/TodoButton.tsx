@@ -75,6 +75,31 @@ export default function TodoButton({ userId, onSelectTodo, refreshTrigger = 0 }:
     setIsOpen(false);
   };
 
+  const handleDismiss = async (e: React.MouseEvent, todo: TodoItem) => {
+    e.stopPropagation(); // Prevent triggering handleSelect
+    
+    try {
+      const res = await fetch('/api/todos/dismiss', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          todoId: todo.id,
+          todoType: todo.type,
+        }),
+      });
+
+      if (res.ok) {
+        // Remove from local state immediately for instant feedback
+        setTodos(prevTodos => prevTodos.filter(t => t.id !== todo.id));
+      } else {
+        console.error('Failed to dismiss todo');
+      }
+    } catch (err) {
+      console.error('Error dismissing todo:', err);
+    }
+  };
+
   if (todos.length === 0) return null;
 
   return (
@@ -115,63 +140,77 @@ export default function TodoButton({ userId, onSelectTodo, refreshTrigger = 0 }:
           
           <div className="max-h-[400px] overflow-y-auto">
             {todos.map((todo) => (
-              <button
+              <div
                 key={todo.id}
-                onClick={() => handleSelect(todo)}
-                className="w-full text-left p-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800 last:border-0 transition-colors group"
+                className="relative w-full border-b border-slate-100 dark:border-slate-800 last:border-0 group"
               >
-                {todo.type === 'account_selection' ? (
-                  // Account selection todo
-                  <>
-                    <div className="flex justify-between items-start mb-1 gap-2">
-                      <span className="font-medium text-sm text-slate-900 dark:text-white line-clamp-1 group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors flex-1 min-w-0">
-                        📷 {todo.file_name}
-                      </span>
-                      <span className="text-xs font-mono text-purple-600 dark:text-purple-400 shrink-0 bg-purple-50 dark:bg-purple-900/30 px-1.5 py-0.5 rounded">
-                        {todo.transaction_count} txn{todo.transaction_count !== 1 ? 's' : ''}
-                      </span>
-                    </div>
-                    
-                    <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2 mb-1.5">
-                      {todo.clarification_question}
-                    </p>
-                    
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] text-purple-500 dark:text-purple-400 font-medium">
-                        Account Selection
-                      </span>
-                      <span className="text-[10px] font-medium text-purple-600 dark:text-purple-400 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        Select Account <span className="text-xs">→</span>
-                      </span>
-                    </div>
-                  </>
-                ) : (
-                  // Transaction clarification todo
-                  <>
-                    <div className="flex justify-between items-start mb-1 gap-2">
-                      <span className="font-medium text-sm text-slate-900 dark:text-white line-clamp-1 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors flex-1 min-w-0">
-                        {todo.merchant}
-                      </span>
-                      <span className="text-xs font-mono text-slate-500 dark:text-slate-400 shrink-0">
-                        ${Math.abs(todo.amount).toFixed(2)}
-                      </span>
-                    </div>
-                    
-                    <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2 mb-1.5">
-                      {todo.clarification_question}
-                    </p>
-                    
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] text-slate-400">
-                        {new Date(todo.date).toLocaleDateString()}
-                      </span>
-                      <span className="text-[10px] font-medium text-blue-600 dark:text-blue-400 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        Resolve <span className="text-xs">→</span>
-                      </span>
-                    </div>
-                  </>
-                )}
-              </button>
+                <button
+                  onClick={() => handleSelect(todo)}
+                  className="w-full text-left p-3 pr-12 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+                >
+                  {todo.type === 'account_selection' ? (
+                    // Account selection todo
+                    <>
+                      <div className="flex justify-between items-start mb-1 gap-2">
+                        <span className="font-medium text-sm text-slate-900 dark:text-white line-clamp-1 group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors flex-1 min-w-0">
+                          📷 {todo.file_name}
+                        </span>
+                        <span className="text-xs font-mono text-purple-600 dark:text-purple-400 shrink-0 bg-purple-50 dark:bg-purple-900/30 px-1.5 py-0.5 rounded">
+                          {todo.transaction_count} txn{todo.transaction_count !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+                      
+                      <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2 mb-1.5">
+                        {todo.clarification_question}
+                      </p>
+                      
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-purple-500 dark:text-purple-400 font-medium">
+                          Account Selection
+                        </span>
+                        <span className="text-[10px] font-medium text-purple-600 dark:text-purple-400 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          Select Account <span className="text-xs">→</span>
+                        </span>
+                      </div>
+                    </>
+                  ) : (
+                    // Transaction clarification todo
+                    <>
+                      <div className="flex justify-between items-start mb-1 gap-2">
+                        <span className="font-medium text-sm text-slate-900 dark:text-white line-clamp-1 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors flex-1 min-w-0">
+                          {todo.merchant}
+                        </span>
+                        <span className="text-xs font-mono text-slate-500 dark:text-slate-400 shrink-0">
+                          ${Math.abs(todo.amount).toFixed(2)}
+                        </span>
+                      </div>
+                      
+                      <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2 mb-1.5">
+                        {todo.clarification_question}
+                      </p>
+                      
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-slate-400">
+                          {new Date(todo.date).toLocaleDateString()}
+                        </span>
+                        <span className="text-[10px] font-medium text-blue-600 dark:text-blue-400 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          Resolve <span className="text-xs">→</span>
+                        </span>
+                      </div>
+                    </>
+                  )}
+                </button>
+                {/* Dismiss button */}
+                <button
+                  onClick={(e) => handleDismiss(e, todo)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors opacity-0 group-hover:opacity-100"
+                  title="Dismiss without resolving"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
             ))}
           </div>
         </div>

@@ -59,6 +59,8 @@ export interface Document {
   source_type?: 'statement' | 'screenshot';
   pending_account_selection?: boolean;
   batch_id?: string | null;
+  // Todo dismissal
+  is_dismissed?: boolean;
 }
 
 export interface Transaction {
@@ -84,6 +86,8 @@ export interface Transaction {
   plaid_transaction_id?: string | null;
   plaid_account_id?: string | null;
   source?: 'file_upload' | 'plaid';
+  // Todo dismissal
+  is_dismissed?: boolean;
 }
 
 export interface AccountSnapshot {
