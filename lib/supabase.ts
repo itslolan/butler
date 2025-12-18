@@ -35,6 +35,48 @@ export const supabase: SupabaseClient = new Proxy({} as SupabaseClient, {
 });
 
 // Database types
+
+// Upload represents a single upload action (1 or more files uploaded together)
+export interface Upload {
+  id?: string;
+  user_id: string;
+  upload_name: string;
+  source_type: 'manual_upload' | 'plaid_sync' | 'api';
+  status: 'processing' | 'completed' | 'failed';
+  uploaded_at?: Date | string;
+  created_at?: Date | string;
+}
+
+// Upload with additional computed stats for list views
+export interface UploadWithStats extends Upload {
+  document_count: number;
+  total_transactions: number;
+  documents?: DocumentSummary[];
+}
+
+// Minimal document info for upload list
+export interface DocumentSummary {
+  id: string;
+  file_name: string;
+  document_type: string;
+  transaction_count?: number;
+}
+
+// Full upload details with documents and transactions
+export interface UploadDetails {
+  upload: Upload;
+  documents: DocumentWithTransactions[];
+}
+
+export interface DocumentWithTransactions {
+  id: string;
+  file_name: string;
+  file_url: string;
+  document_type: string;
+  source_type?: string;
+  transactions: Transaction[];
+}
+
 export interface Document {
   id?: string;
   user_id: string;
@@ -59,6 +101,8 @@ export interface Document {
   source_type?: 'statement' | 'screenshot';
   pending_account_selection?: boolean;
   batch_id?: string | null;
+  // Upload reference
+  upload_id?: string | null;
   // Todo dismissal
   is_dismissed?: boolean;
 }

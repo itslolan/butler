@@ -83,8 +83,26 @@ export default function Home() {
     const pendingAccountDocs: string[] = [];
     const accountMatchDocs: any[] = [];
     
-    // Generate batch_id for multi-file uploads (for grouping screenshots)
-    const batchId = files.length > 1 ? crypto.randomUUID() : null;
+    // Create an upload record first
+    let uploadId: string | null = null;
+    try {
+      const uploadRes = await fetch('/api/uploads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user?.id || 'default-user',
+          fileCount: files.length,
+          sourceType: 'manual_upload',
+        }),
+      });
+      if (uploadRes.ok) {
+        const uploadData = await uploadRes.json();
+        uploadId = uploadData.uploadId;
+      }
+    } catch (err) {
+      console.error('Failed to create upload record:', err);
+      // Continue without upload tracking - backwards compatible
+    }
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
@@ -105,8 +123,8 @@ export default function Home() {
         const formData = new FormData();
         formData.append('file', file);
         formData.append('userId', user?.id || 'default-user');
-        if (batchId) {
-          formData.append('batchId', batchId);
+        if (uploadId) {
+          formData.append('uploadId', uploadId);
         }
 
         const response = await fetch('/api/process-statement-stream', {
@@ -349,6 +367,21 @@ export default function Home() {
             existingAccounts: firstMatch.existingAccounts,
           });
         }, 1200);
+      }
+    }
+    
+    // Update upload status when done
+    if (uploadId) {
+      try {
+        await fetch(`/api/uploads/${uploadId}/status`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            status: errors === files.length ? 'failed' : 'completed' 
+          }),
+        });
+      } catch (err) {
+        console.error('Failed to update upload status:', err);
       }
     }
 

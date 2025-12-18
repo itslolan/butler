@@ -1,4 +1,4 @@
-import { supabase, Document, Transaction, UserMetadata, AccountSnapshot, UserMemory, Account, CreateAccountInput, PendingAccountDocument } from './supabase';
+import { supabase, Document, Transaction, UserMetadata, AccountSnapshot, UserMemory, Account, CreateAccountInput, PendingAccountDocument, Upload, UploadWithStats, UploadDetails, DocumentWithTransactions } from './supabase';
 
 export interface DocumentFilter {
   documentType?: string;
@@ -1649,4 +1649,300 @@ export async function getOrCreateAccount(
   // Create new account
   const account = await createAccount(userId, input);
   return { account, created: true };
+}
+
+// ============================================================================
+// UPLOADS MANAGEMENT
+// ============================================================================
+
+/**
+ * Create a new upload record
+ * Call this BEFORE processing files to get an upload_id
+ */
+export async function createUpload(
+  userId: string,
+  uploadName: string,
+  sourceType: Upload['source_type'] = 'manual_upload'
+): Promise<Upload> {
+  const { data, error } = await supabase
+    .from('uploads')
+    .insert({
+      user_id: userId,
+      upload_name: uploadName,
+      source_type: sourceType,
+      status: 'processing',
+      uploaded_at: new Date().toISOString(),
+    })
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to create upload: ${error.message}`);
+  }
+
+  return data;
+}
+
+/**
+ * Update upload status
+ */
+export async function updateUploadStatus(
+  uploadId: string,
+  status: Upload['status']
+): Promise<void> {
+  const { error } = await supabase
+    .from('uploads')
+    .update({ status })
+    .eq('id', uploadId);
+
+  if (error) {
+    throw new Error(`Failed to update upload status: ${error.message}`);
+  }
+}
+
+/**
+ * Get all uploads for a user with document counts and transaction counts
+ */
+export async function getUploadsForUser(userId: string): Promise<UploadWithStats[]> {
+  // Get all uploads for user
+  const { data: uploads, error: uploadsError } = await supabase
+    .from('uploads')
+    .select('*')
+    .eq('user_id', userId)
+    .order('uploaded_at', { ascending: false });
+
+  if (uploadsError) {
+    throw new Error(`Failed to fetch uploads: ${uploadsError.message}`);
+  }
+
+  if (!uploads || uploads.length === 0) {
+    return [];
+  }
+
+  // Get document counts and info for each upload
+  const uploadIds = uploads.map(u => u.id);
+  
+  const { data: documents, error: docsError } = await supabase
+    .from('documents')
+    .select('id, upload_id, file_name, document_type')
+    .in('upload_id', uploadIds);
+
+  if (docsError) {
+    throw new Error(`Failed to fetch documents: ${docsError.message}`);
+  }
+
+  // Get transaction counts per document
+  const docIds = (documents || []).map(d => d.id);
+  
+  let transactionCounts: Record<string, number> = {};
+  if (docIds.length > 0) {
+    const { data: txnCounts, error: txnError } = await supabase
+      .from('transactions')
+      .select('document_id')
+      .in('document_id', docIds);
+
+    if (txnError) {
+      console.error('Failed to fetch transaction counts:', txnError.message);
+    } else {
+      // Count transactions per document
+      (txnCounts || []).forEach(t => {
+        if (t.document_id) {
+          transactionCounts[t.document_id] = (transactionCounts[t.document_id] || 0) + 1;
+        }
+      });
+    }
+  }
+
+  // Build upload stats
+  const uploadsWithStats: UploadWithStats[] = uploads.map(upload => {
+    const uploadDocs = (documents || []).filter(d => d.upload_id === upload.id);
+    const docSummaries = uploadDocs.map(d => ({
+      id: d.id,
+      file_name: d.file_name,
+      document_type: d.document_type || 'unknown',
+      transaction_count: transactionCounts[d.id] || 0,
+    }));
+    
+    const totalTransactions = docSummaries.reduce((sum, d) => sum + (d.transaction_count || 0), 0);
+
+    return {
+      ...upload,
+      document_count: uploadDocs.length,
+      total_transactions: totalTransactions,
+      documents: docSummaries,
+    };
+  });
+
+  return uploadsWithStats;
+}
+
+/**
+ * Get single upload with all documents and their transactions
+ */
+export async function getUploadDetails(
+  uploadId: string,
+  userId: string
+): Promise<UploadDetails | null> {
+  // Get the upload
+  const { data: upload, error: uploadError } = await supabase
+    .from('uploads')
+    .select('*')
+    .eq('id', uploadId)
+    .eq('user_id', userId)
+    .single();
+
+  if (uploadError) {
+    if (uploadError.code === 'PGRST116') {
+      return null; // Not found
+    }
+    throw new Error(`Failed to fetch upload: ${uploadError.message}`);
+  }
+
+  // Get all documents for this upload
+  const { data: documents, error: docsError } = await supabase
+    .from('documents')
+    .select('id, file_name, file_url, document_type, source_type')
+    .eq('upload_id', uploadId)
+    .order('created_at', { ascending: true });
+
+  if (docsError) {
+    throw new Error(`Failed to fetch documents: ${docsError.message}`);
+  }
+
+  // Get transactions for all documents
+  const docIds = (documents || []).map(d => d.id);
+  
+  let transactions: Transaction[] = [];
+  if (docIds.length > 0) {
+    const { data: txns, error: txnError } = await supabase
+      .from('transactions')
+      .select('*')
+      .in('document_id', docIds)
+      .order('date', { ascending: false });
+
+    if (txnError) {
+      console.error('Failed to fetch transactions:', txnError.message);
+    } else {
+      transactions = txns || [];
+    }
+  }
+
+  // Build documents with transactions
+  const documentsWithTransactions: DocumentWithTransactions[] = (documents || []).map(doc => ({
+    id: doc.id,
+    file_name: doc.file_name,
+    file_url: doc.file_url,
+    document_type: doc.document_type || 'unknown',
+    source_type: doc.source_type,
+    transactions: transactions.filter(t => t.document_id === doc.id),
+  }));
+
+  return {
+    upload,
+    documents: documentsWithTransactions,
+  };
+}
+
+/**
+ * Get transactions for a specific document
+ */
+export async function getTransactionsByDocumentId(
+  documentId: string
+): Promise<Transaction[]> {
+  const { data, error } = await supabase
+    .from('transactions')
+    .select('*')
+    .eq('document_id', documentId)
+    .order('date', { ascending: false });
+
+  if (error) {
+    throw new Error(`Failed to fetch transactions: ${error.message}`);
+  }
+
+  return data || [];
+}
+
+/**
+ * Delete an upload and all associated data
+ * Documents and transactions will cascade delete via FK constraints
+ * Also deletes files from Supabase Storage
+ */
+export async function deleteUpload(
+  uploadId: string,
+  userId: string
+): Promise<{ deletedDocuments: number; deletedTransactions: number }> {
+  // First get all documents to delete their storage files
+  const { data: documents, error: docsError } = await supabase
+    .from('documents')
+    .select('id, file_url')
+    .eq('upload_id', uploadId);
+
+  if (docsError) {
+    throw new Error(`Failed to fetch documents for deletion: ${docsError.message}`);
+  }
+
+  // Count transactions that will be deleted
+  const docIds = (documents || []).map(d => d.id);
+  let transactionCount = 0;
+  
+  if (docIds.length > 0) {
+    const { count, error: countError } = await supabase
+      .from('transactions')
+      .select('*', { count: 'exact', head: true })
+      .in('document_id', docIds);
+
+    if (!countError) {
+      transactionCount = count || 0;
+    }
+  }
+
+  // Delete files from storage
+  for (const doc of documents || []) {
+    if (doc.file_url) {
+      try {
+        // Extract path from URL
+        // URL format: https://xxx.supabase.co/storage/v1/object/public/statements/userId/timestamp_filename
+        const url = new URL(doc.file_url);
+        const pathMatch = url.pathname.match(/\/storage\/v1\/object\/public\/statements\/(.+)/);
+        if (pathMatch) {
+          const filePath = pathMatch[1];
+          await supabase.storage.from('statements').remove([filePath]);
+        }
+      } catch (err) {
+        console.error(`Failed to delete storage file: ${doc.file_url}`, err);
+        // Continue with deletion even if storage cleanup fails
+      }
+    }
+  }
+
+  // Delete the upload (documents and transactions will cascade delete)
+  const { error: deleteError } = await supabase
+    .from('uploads')
+    .delete()
+    .eq('id', uploadId)
+    .eq('user_id', userId);
+
+  if (deleteError) {
+    throw new Error(`Failed to delete upload: ${deleteError.message}`);
+  }
+
+  return {
+    deletedDocuments: documents?.length || 0,
+    deletedTransactions: transactionCount,
+  };
+}
+
+/**
+ * Generate an upload name based on current timestamp
+ */
+export function generateUploadName(): string {
+  const now = new Date();
+  return `Upload ${now.toLocaleDateString('en-US', { 
+    month: 'short', 
+    day: 'numeric', 
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  })}`;
 }

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import PlaidLinkButton from './PlaidLinkButton';
 import ScreenshotHelpModal from './ScreenshotHelpModal';
 
@@ -38,6 +39,7 @@ interface ConnectedAccountsProps {
 const isPlaidEnabled = process.env.NEXT_PUBLIC_PLAID_ENABLED === 'true';
 
 export default function ConnectedAccounts({ onSyncComplete, onFileUpload, isProcessing = false }: ConnectedAccountsProps) {
+  const router = useRouter();
   const [institutions, setInstitutions] = useState<Institution[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState<string | null>(null);
@@ -386,6 +388,19 @@ export default function ConnectedAccounts({ onSyncComplete, onFileUpload, isProc
                   className="text-[10px] text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 underline mt-1 font-medium"
                 >
                   How to take screenshots?
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    router.push('/uploads');
+                  }}
+                  className="text-[10px] text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 underline mt-1 font-medium flex items-center gap-1 mx-auto"
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  View upload history
                 </button>
               </div>
             </>

@@ -646,8 +646,10 @@ Use these memories to help classify transactions. For example, if you know the u
         // For screenshots without account info, mark as pending account selection
         const needsAccountSelection = isScreenshot && !accountName;
         
-        // Get batch_id from request if provided (for multi-file uploads)
-        const batchId = formData.get('batchId') as string || null;
+        // Get upload_id from request if provided (new upload entity)
+        const uploadId = formData.get('uploadId') as string || null;
+        // Keep batch_id for backwards compatibility (set to same as upload_id)
+        const batchId = uploadId || (formData.get('batchId') as string || null);
 
         // Save to Supabase
         const documentEntry = {
@@ -668,6 +670,7 @@ Use these memories to help classify transactions. For example, if you know the u
           due_date: extractedData.dueDate || null,
           source_type: sourceType,
           pending_account_selection: needsAccountSelection,
+          upload_id: uploadId,
           batch_id: batchId,
           metadata: {
             firstTransactionDate: extractedData.firstTransactionDate || null,
