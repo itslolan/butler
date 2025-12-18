@@ -128,7 +128,7 @@ export default function LandingPage() {
           </div>
 
           {/* Video Container */}
-          <div className="mt-10 relative mx-auto max-w-4xl animate-fade-in-up" style={{ animationDelay: '0.6s' }}>
+          <div className="mt-8 relative mx-auto max-w-3xl animate-fade-in-up" style={{ animationDelay: '0.6s' }}>
             <div className="relative rounded-2xl overflow-hidden shadow-2xl border border-slate-200 dark:border-slate-800 bg-slate-900 aspect-video group">
               <div className="absolute inset-0 bg-gradient-to-t from-slate-900/50 to-transparent pointer-events-none z-10"></div>
               
@@ -238,7 +238,7 @@ export default function LandingPage() {
                   </li>
                   <li className="flex items-start gap-3 text-slate-600 dark:text-slate-400">
                     <svg className="w-5 h-5 text-red-500 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                    <span>Missed tax deductions and hidden subscriptions</span>
+                    <span>Unknown fixed expenses and hidden subscriptions</span>
                   </li>
                   <li className="flex items-start gap-3 text-slate-600 dark:text-slate-400">
                     <svg className="w-5 h-5 text-red-500 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
@@ -271,7 +271,7 @@ export default function LandingPage() {
                   </li>
                   <li className="flex items-start gap-3 text-slate-700 dark:text-slate-300">
                     <svg className="w-5 h-5 text-green-500 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                    <span><strong>Smart categorization</strong> detects tax write-offs automatically</span>
+                    <span><strong>Auto-detect fixed expenses</strong> and recurring subscriptions</span>
                   </li>
                   <li className="flex items-start gap-3 text-slate-700 dark:text-slate-300">
                     <svg className="w-5 h-5 text-green-500 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
@@ -346,30 +346,6 @@ export default function LandingPage() {
                     </p>
                 </div>
             </div>
-          </div>
-        </div>
-      </section>
-
-      {/* How It Works */}
-      <section className="py-14 px-6 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-gray-950" aria-label="How it works">
-        <div className="max-w-4xl mx-auto">
-          <h2 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-white mb-3 text-center">From PDF to Insights in Seconds</h2>
-          <p className="text-base text-slate-600 dark:text-slate-400 text-center mb-8 max-w-2xl mx-auto">
-            Three simple steps to financial clarity.
-          </p>
-          
-          <div className="space-y-8 relative before:absolute before:left-4 before:top-4 before:h-full before:w-0.5 before:bg-slate-100 dark:before:bg-slate-800 md:before:left-[calc(1.5rem-1px)]">
-            {steps.map((step, i) => (
-              <div key={i} className="flex gap-5 md:gap-6 items-start relative bg-white dark:bg-gray-950">
-                <div className="flex-shrink-0 w-8 h-8 md:w-12 md:h-12 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center font-bold text-slate-600 dark:text-slate-400 shadow-sm border-4 border-white dark:border-gray-950 z-10 text-sm md:text-lg">
-                  {i + 1}
-                </div>
-                <div className="space-y-1 pt-1 md:pt-2">
-                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white">{step.title}</h3>
-                  <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">{step.description}</p>
-                </div>
-              </div>
-            ))}
           </div>
         </div>
       </section>
@@ -497,17 +473,3 @@ const features = [
   },
 ];
 
-const steps = [
-  {
-    title: 'Upload Your Statement',
-    description: 'Drag and drop your PDF bank statements or take screenshots of your mobile banking app.',
-  },
-  {
-    title: 'AI Processing',
-    description: 'Adphex scans the document, extracting dates, merchants, and amounts while identifying account details.',
-  },
-  {
-    title: 'Ask Questions',
-    description: 'Chat with your data. "How much did I spend on coffee last month?" or "What is my net worth trend?"',
-  },
-];
