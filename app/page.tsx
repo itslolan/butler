@@ -181,15 +181,24 @@ export default function Home() {
           
           // Handle clarifications and summary for THIS file (only if not batching)
           if (files.length === 1) {
+            const isMobile = typeof window !== 'undefined' && window.innerWidth < 1024;
+            
             if (finalResult.unclarifiedTransactions && finalResult.unclarifiedTransactions.length > 0) {
               const clarificationMsg = buildClarificationMessage(finalResult);
-              if (chatInterfaceRef.current?.sendSystemMessage) {
+              
+              if (isMobile) {
+                setIsMobileChatOpen(true);
+                setTimeout(() => {
+                  chatInterfaceRef.current?.sendSystemMessage?.(clarificationMsg);
+                }, 300);
+              } else if (chatInterfaceRef.current?.sendSystemMessage) {
                 setTimeout(() => {
                   chatInterfaceRef.current.sendSystemMessage(clarificationMsg);
                 }, 500);
               }
             } else if (!finalResult.pendingAccountSelection && !finalResult.accountMatchInfo?.needsConfirmation) {
               // Send summary only if no account selection needed
+              // Note: We don't need to open mobile chat for simple success summaries
               if (chatInterfaceRef.current?.sendSystemMessage) {
                 setTimeout(() => {
                   let message = `✅ **${file.name}**: Processed successfully.\n`;
@@ -257,30 +266,62 @@ export default function Home() {
     }
     
     // Handle pending account selections (screenshots without account info)
-    if (pendingAccountDocs.length > 0 && chatInterfaceRef.current?.showAccountSelection) {
-      setTimeout(() => {
-        chatInterfaceRef.current.showAccountSelection({
-          documentIds: pendingAccountDocs,
-          transactionCount: totalTransactions,
-          dateRange: earliestDate && latestDate ? { start: earliestDate, end: latestDate } : undefined,
-        });
-      }, 1000);
+    if (pendingAccountDocs.length > 0) {
+      // On mobile, open chat modal first before showing account selection
+      const isMobile = typeof window !== 'undefined' && window.innerWidth < 1024;
+      
+      if (isMobile) {
+        setIsMobileChatOpen(true);
+        // Wait for modal to mount/render, then show account selection
+        setTimeout(() => {
+          chatInterfaceRef.current?.showAccountSelection?.({
+            documentIds: pendingAccountDocs,
+            transactionCount: totalTransactions,
+            dateRange: earliestDate && latestDate ? { start: earliestDate, end: latestDate } : undefined,
+          });
+        }, 300); // Slightly longer delay to ensure modal is fully mounted
+      } else if (chatInterfaceRef.current?.showAccountSelection) {
+        setTimeout(() => {
+          chatInterfaceRef.current.showAccountSelection({
+            documentIds: pendingAccountDocs,
+            transactionCount: totalTransactions,
+            dateRange: earliestDate && latestDate ? { start: earliestDate, end: latestDate } : undefined,
+          });
+        }, 1000);
+      }
     }
     
     // Handle account match confirmations (statements with new official names)
-    if (accountMatchDocs.length > 0 && chatInterfaceRef.current?.showAccountMatchConfirmation) {
+    if (accountMatchDocs.length > 0) {
       // Show first one (they can be handled one at a time)
       const firstMatch = accountMatchDocs[0];
-      setTimeout(() => {
-        chatInterfaceRef.current.showAccountMatchConfirmation({
-          documentId: firstMatch.documentId,
-          transactionCount: firstMatch.transactionCount,
-          matchedAccount: firstMatch.matchedAccount,
-          officialName: firstMatch.officialName,
-          last4: firstMatch.last4,
-          existingAccounts: firstMatch.existingAccounts,
-        });
-      }, 1200);
+      const isMobile = typeof window !== 'undefined' && window.innerWidth < 1024;
+      
+      if (isMobile) {
+        setIsMobileChatOpen(true);
+        // Wait for modal to mount/render, then show account match confirmation
+        setTimeout(() => {
+          chatInterfaceRef.current?.showAccountMatchConfirmation?.({
+            documentId: firstMatch.documentId,
+            transactionCount: firstMatch.transactionCount,
+            matchedAccount: firstMatch.matchedAccount,
+            officialName: firstMatch.officialName,
+            last4: firstMatch.last4,
+            existingAccounts: firstMatch.existingAccounts,
+          });
+        }, 400); // Slightly longer delay to ensure modal is fully mounted
+      } else if (chatInterfaceRef.current?.showAccountMatchConfirmation) {
+        setTimeout(() => {
+          chatInterfaceRef.current.showAccountMatchConfirmation({
+            documentId: firstMatch.documentId,
+            transactionCount: firstMatch.transactionCount,
+            matchedAccount: firstMatch.matchedAccount,
+            officialName: firstMatch.officialName,
+            last4: firstMatch.last4,
+            existingAccounts: firstMatch.existingAccounts,
+          });
+        }, 1200);
+      }
     }
 
   }, [user]);
