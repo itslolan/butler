@@ -18,10 +18,34 @@ export default function FileUpload({ onFileUpload, isProcessing }: FileUploadPro
       return isImage || isPdf;
     });
 
-    if (validFiles.length > 0) {
-      onFileUpload(validFiles);
-    } else if (files.length > 0) {
-      alert('Please upload PDF, PNG, JPG, or similar image files.');
+    if (validFiles.length === 0) {
+      if (files.length > 0) {
+        alert('Please upload PDF, PNG, JPG, or similar image files.');
+      }
+      return;
+    }
+
+    // Separate PDFs and images
+    const pdfFiles = validFiles.filter(file => 
+      file.type === 'application/pdf' || file.name?.toLowerCase().endsWith('.pdf')
+    );
+    const imageFiles = validFiles.filter(file => file.type.startsWith('image/'));
+
+    // Validation: Only single PDF allowed, no mixing PDFs with images
+    if (pdfFiles.length > 0) {
+      if (pdfFiles.length > 1) {
+        alert('Please upload only one PDF at a time.');
+        return;
+      }
+      if (imageFiles.length > 0) {
+        alert('Please upload either a single PDF or multiple images, but not both together.');
+        return;
+      }
+      // Single PDF - valid
+      onFileUpload(pdfFiles);
+    } else {
+      // Only images - multiple allowed
+      onFileUpload(imageFiles);
     }
   };
 
