@@ -265,19 +265,38 @@ export function createMerchantSummaries(transactions: TransactionForSummary[]): 
 }
 
 /**
+ * Escape special characters in text to prevent JSON issues
+ * Replaces quotes, backslashes, and newlines
+ */
+function escapeForPrompt(text: string): string {
+  return text
+    .replace(/\\/g, '\\\\')  // Escape backslashes first
+    .replace(/"/g, '\\"')    // Escape double quotes
+    .replace(/\n/g, ' ')     // Replace newlines with spaces
+    .replace(/\r/g, '')      // Remove carriage returns
+    .replace(/\t/g, ' ');    // Replace tabs with spaces
+}
+
+/**
  * Format merchant summary as compact text (for LLM prompt)
  * Target: ≤200 tokens
  */
 export function formatMerchantSummaryForLLM(summary: MerchantSummary): string {
   const samples = summary.sample_transactions
-    .map(s => `  - ${s.date} debit $${s.amount.toFixed(2)} "${s.description.substring(0, 50)}"`)
+    .map(s => {
+      const cleanDesc = escapeForPrompt(s.description.substring(0, 50));
+      return `  - ${s.date} debit $${s.amount.toFixed(2)} "${cleanDesc}"`;
+    })
     .join('\n');
-  
-  const flags = summary.stats.flags.length > 0 
+
+  const flags = summary.stats.flags.length > 0
     ? `  - flags: [${summary.stats.flags.map(f => `"${f}"`).join(', ')}]`
     : '';
-  
-  return `PAYEE: "${summary.original_name}" (group key: ${summary.merchant_key})
+
+  const cleanName = escapeForPrompt(summary.original_name);
+  const cleanKey = escapeForPrompt(summary.merchant_key);
+
+  return `PAYEE: "${cleanName}" (group key: ${cleanKey})
 SAMPLES (${summary.sample_transactions.length}):
 ${samples}
 STATS:
