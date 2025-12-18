@@ -13,6 +13,7 @@ import LandingPage from '@/components/LandingPage';
 import TodoButton from '@/components/TodoButton';
 import TodoList from '@/components/TodoList';
 import OnboardingPanels from '@/components/OnboardingPanels';
+import SubscriptionsPanel from '@/components/SubscriptionsPanel';
 
 export default function Home() {
   const { user, loading } = useAuth();
@@ -426,6 +427,13 @@ export default function Home() {
                 onSyncComplete={() => setChartRefreshKey(prev => prev + 1)}
                 onFileUpload={handleFileUpload}
                 isProcessing={isProcessing}
+              />
+              
+              {/* Subscriptions Panel - Shows auto-detected subscriptions from fixed expenses */}
+              <SubscriptionsPanel 
+                userId={user?.id || 'default-user'}
+                refreshTrigger={chartRefreshKey}
+                currency="USD"
               />
               
               <VisualizationPanel key={chartRefreshKey} userId={user?.id || 'default-user'} />
