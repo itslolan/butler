@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { useAuth } from '@/components/AuthProvider';
 import { useRef, useEffect } from 'react';
 
@@ -82,7 +83,7 @@ export default function LandingPage() {
       </nav>
 
       {/* Hero Section */}
-      <section className="relative pt-32 pb-20 px-6 overflow-hidden">
+      <section className="relative pt-24 pb-12 px-6 overflow-hidden">
         {/* Background Elements */}
         <div className="absolute inset-0 bg-grid-pattern opacity-[0.15] dark:opacity-[0.2] pointer-events-none"></div>
         <div className="absolute inset-0 bg-grid-pattern-lg opacity-[0.2] dark:opacity-[0.25] pointer-events-none"></div>
@@ -92,7 +93,7 @@ export default function LandingPage() {
         
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[500px] bg-gradient-to-b from-blue-100/40 to-transparent dark:from-blue-900/20 rounded-full blur-3xl -z-10"></div>
         
-        <div className="max-w-6xl mx-auto text-center space-y-8 relative z-10">
+        <div className="max-w-6xl mx-auto text-center space-y-5 relative z-10">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 text-xs font-medium border border-blue-100 dark:border-blue-800 animate-fade-in-up" style={{ animationDelay: '0.1s' }}>
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
@@ -101,34 +102,33 @@ export default function LandingPage() {
             New: Smart duplicate transaction detection
           </div>
           
-          <h1 className="text-5xl md:text-7xl font-bold tracking-tight text-slate-900 dark:text-white leading-[1.1] animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
-            Your Personal <br />
-            <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">AI Financial Butler</span>
+          <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight text-slate-900 dark:text-white leading-[1.1] animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
+            Your Personal <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">AI Financial Butler</span>
           </h1>
           
-          <div className="max-w-2xl mx-auto space-y-4 animate-fade-in-up" style={{ animationDelay: '0.3s' }}>
-            <p className="text-xl text-slate-600 dark:text-slate-400 leading-relaxed">
+          <div className="max-w-2xl mx-auto animate-fade-in-up" style={{ animationDelay: '0.3s' }}>
+            <p className="text-lg text-slate-600 dark:text-slate-400 leading-relaxed">
               Stop fighting with spreadsheets. Upload your statements, ask questions, and let AI handle the boring parts of your finances.
             </p>
           </div>
           
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4 animate-fade-in-up" style={{ animationDelay: '0.4s' }}>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2 animate-fade-in-up" style={{ animationDelay: '0.4s' }}>
               <Link 
                 href="/demo"
-              className="w-full sm:w-auto px-8 py-4 bg-blue-600 dark:bg-blue-500 text-white rounded-xl font-semibold hover:bg-blue-700 dark:hover:bg-blue-600 transition-all shadow-lg hover:shadow-blue-500/25 transform hover:-translate-y-0.5"
+              className="w-full sm:w-auto px-6 py-3 bg-blue-600 dark:bg-blue-500 text-white rounded-xl font-semibold hover:bg-blue-700 dark:hover:bg-blue-600 transition-all shadow-lg hover:shadow-blue-500/25 transform hover:-translate-y-0.5"
               >
               Try Demo Free
               </Link>
               <Link 
                 href="/signup"
-              className="w-full sm:w-auto px-8 py-4 bg-white dark:bg-gray-900 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-800 rounded-xl font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 transition-all shadow-sm hover:shadow-md transform hover:-translate-y-0.5"
+              className="w-full sm:w-auto px-6 py-3 bg-white dark:bg-gray-900 text-slate-900 dark:text-white border border-slate-200 dark:border-slate-800 rounded-xl font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 transition-all shadow-sm hover:shadow-md transform hover:-translate-y-0.5"
             >
               Sign Up
             </Link>
           </div>
 
           {/* Video Container */}
-          <div className="mt-16 relative mx-auto max-w-5xl animate-fade-in-up" style={{ animationDelay: '0.6s' }}>
+          <div className="mt-10 relative mx-auto max-w-4xl animate-fade-in-up" style={{ animationDelay: '0.6s' }}>
             <div className="relative rounded-2xl overflow-hidden shadow-2xl border border-slate-200 dark:border-slate-800 bg-slate-900 aspect-video group">
               <div className="absolute inset-0 bg-gradient-to-t from-slate-900/50 to-transparent pointer-events-none z-10"></div>
               
@@ -164,12 +164,51 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* How Does It Work - Features Grid */}
+      <section id="features" className="py-16 bg-white dark:bg-gray-950" aria-label="Features">
+        <div className="max-w-6xl mx-auto px-6">
+          <div className="text-center mb-10">
+            <h2 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-white mb-3">How does it work?</h2>
+            <p className="text-base text-slate-600 dark:text-slate-400 max-w-3xl mx-auto leading-relaxed">
+              Simply <span className="font-semibold text-slate-800 dark:text-slate-200">share your bank statements</span> or <span className="font-semibold text-slate-800 dark:text-slate-200">screenshots from your banking app</span>. 
+              Adphex instantly transforms your financial data into <span className="text-blue-600 dark:text-blue-400 font-medium">interactive dashboards</span>, 
+              lets you <span className="text-blue-600 dark:text-blue-400 font-medium">ask questions in plain English</span>, and gives you 
+              <span className="text-blue-600 dark:text-blue-400 font-medium"> AI-powered insights</span> to take control of your money.
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-5">
+            {features.map((feature, i) => (
+              <article key={i} className="bg-slate-50 dark:bg-gray-900 rounded-xl border border-slate-100 dark:border-slate-800 hover:border-blue-200 dark:hover:border-blue-900/50 hover:shadow-lg transition-all group duration-300 overflow-hidden">
+                {/* Screenshot Preview */}
+                <div className="relative w-full h-48 md:h-56 bg-slate-100 dark:bg-slate-800 overflow-hidden flex items-center justify-center">
+                  <Image
+                    src={feature.image}
+                    alt={feature.title}
+                    width={600}
+                    height={400}
+                    className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-500"
+                  />
+                </div>
+                {/* Content */}
+                <div className="p-4">
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">{feature.title}</h3>
+                  <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+                    {feature.description}
+                  </p>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* Before vs After Section */}
-      <section className="py-24 px-6 bg-slate-50 dark:bg-gray-900/50 relative overflow-hidden">
+      <section className="py-16 px-6 bg-slate-50 dark:bg-gray-900/50 relative overflow-hidden">
         <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold text-slate-900 dark:text-white mb-4">Financial Clarity in Seconds</h2>
-            <p className="text-lg text-slate-600 dark:text-slate-400">See the difference Adphex makes in your financial life.</p>
+          <div className="text-center mb-10">
+            <h2 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-white mb-3">Financial Clarity in Seconds</h2>
+            <p className="text-base text-slate-600 dark:text-slate-400">See the difference Adphex makes in your financial life.</p>
           </div>
 
           <div className="grid md:grid-cols-2 gap-8 lg:gap-12 relative">
@@ -250,59 +289,59 @@ export default function LandingPage() {
       </section>
 
       {/* Why not just use ChatGPT? */}
-      <section className="py-24 px-6 bg-white dark:bg-gray-950 border-y border-slate-100 dark:border-slate-800" aria-label="Why choose Adphex">
+      <section className="py-14 px-6 bg-white dark:bg-gray-950 border-y border-slate-100 dark:border-slate-800" aria-label="Why choose Adphex">
         <div className="max-w-3xl mx-auto">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold text-slate-900 dark:text-white mb-6">Why not just use ChatGPT?</h2>
-            <p className="text-lg text-slate-600 dark:text-slate-400 max-w-2xl mx-auto">
+          <div className="text-center mb-10">
+            <h2 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-white mb-4">Why not just use ChatGPT?</h2>
+            <p className="text-base text-slate-600 dark:text-slate-400 max-w-2xl mx-auto">
               While ChatGPT is great for general questions, Adphex is specifically designed for personal finance management. We offer specialized features that make tracking your money effortless and accurate.
             </p>
           </div>
 
-          <div className="space-y-12">
-            <div className="flex gap-6 items-start group">
-                <div className="flex-shrink-0 w-12 h-12 rounded-2xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400 mt-1 transition-transform group-hover:scale-110">
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+          <div className="space-y-6">
+            <div className="flex gap-4 items-start group">
+                <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400 mt-0.5 transition-transform group-hover:scale-110">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                 </div>
                 <div>
-                    <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Advanced Duplicate Detection</h3>
-                    <p className="text-lg text-slate-600 dark:text-slate-400 leading-relaxed">
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-1">Advanced Duplicate Detection</h3>
+                    <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
                         Adphex uses context-aware algorithms to identify duplicate transactions across multiple files, ensuring your financial records are always accurate.
                     </p>
                 </div>
             </div>
 
-            <div className="flex gap-6 items-start group">
-                <div className="flex-shrink-0 w-12 h-12 rounded-2xl bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-600 dark:text-indigo-400 mt-1 transition-transform group-hover:scale-110">
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" /></svg>
+            <div className="flex gap-4 items-start group">
+                <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-600 dark:text-indigo-400 mt-0.5 transition-transform group-hover:scale-110">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" /></svg>
                 </div>
                 <div>
-                    <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Interactive Visualizations</h3>
-                    <p className="text-lg text-slate-600 dark:text-slate-400 leading-relaxed">
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-1">Interactive Visualizations</h3>
+                    <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
                         Don&apos;t just read numbers. Explore your spending habits with interactive charts, treemaps, and trend lines that bring your financial data to life.
                     </p>
                 </div>
             </div>
 
-            <div className="flex gap-6 items-start group">
-                <div className="flex-shrink-0 w-12 h-12 rounded-2xl bg-green-100 dark:bg-green-900/30 flex items-center justify-center text-green-600 dark:text-green-400 mt-1 transition-transform group-hover:scale-110">
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            <div className="flex gap-4 items-start group">
+                <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-green-100 dark:bg-green-900/30 flex items-center justify-center text-green-600 dark:text-green-400 mt-0.5 transition-transform group-hover:scale-110">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                 </div>
                 <div>
-                    <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Long-term Financial Memory</h3>
-                    <p className="text-lg text-slate-600 dark:text-slate-400 leading-relaxed">
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-1">Long-term Financial Memory</h3>
+                    <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
                         Unlike transient chat sessions, Adphex builds a persistent database of your finances over years, allowing you to track net worth and spending trends over time.
                     </p>
                 </div>
             </div>
 
-             <div className="flex gap-6 items-start group">
-                <div className="flex-shrink-0 w-12 h-12 rounded-2xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-purple-600 dark:text-purple-400 mt-1 transition-transform group-hover:scale-110">
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+             <div className="flex gap-4 items-start group">
+                <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-purple-600 dark:text-purple-400 mt-0.5 transition-transform group-hover:scale-110">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                 </div>
                 <div>
-                    <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Proactive Insights</h3>
-                    <p className="text-lg text-slate-600 dark:text-slate-400 leading-relaxed">
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-1">Proactive Insights</h3>
+                    <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
                         Adphex doesn&apos;t just wait for questions. It actively monitors your spending and suggests ways to save money and improve your financial health.
                     </p>
                 </div>
@@ -311,49 +350,23 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Features Grid */}
-      <section id="features" className="py-24 bg-slate-50 dark:bg-gray-900/50" aria-label="Features">
-        <div className="max-w-6xl mx-auto px-6">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl font-bold text-slate-900 dark:text-white mb-4">Everything you need to master your money</h2>
-            <p className="text-slate-600 dark:text-slate-400 max-w-2xl mx-auto">
-              Stop manually tagging transactions. Adphex automates the tedious parts of personal finance management.
-            </p>
-          </div>
-
-          <div className="grid md:grid-cols-3 gap-8">
-            {features.map((feature, i) => (
-              <article key={i} className="bg-white dark:bg-gray-950 p-8 rounded-2xl border border-slate-100 dark:border-slate-800 hover:border-blue-100 dark:hover:border-blue-900/30 hover:shadow-xl transition-all group duration-300">
-                <div className="w-12 h-12 bg-blue-50 dark:bg-blue-900/20 rounded-xl flex items-center justify-center text-blue-600 dark:text-blue-400 mb-6 group-hover:scale-110 transition-transform duration-300 shadow-sm" aria-hidden="true">
-                  {feature.icon}
-                </div>
-                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3">{feature.title}</h3>
-                <p className="text-slate-600 dark:text-slate-400 leading-relaxed text-sm">
-                  {feature.description}
-                </p>
-              </article>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* How It Works */}
-      <section className="py-24 px-6 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-gray-950" aria-label="How it works">
+      <section className="py-14 px-6 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-gray-950" aria-label="How it works">
         <div className="max-w-4xl mx-auto">
-          <h2 className="text-3xl font-bold text-slate-900 dark:text-white mb-4 text-center">From PDF to Insights in Seconds</h2>
-          <p className="text-lg text-slate-600 dark:text-slate-400 text-center mb-12 max-w-2xl mx-auto">
+          <h2 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-white mb-3 text-center">From PDF to Insights in Seconds</h2>
+          <p className="text-base text-slate-600 dark:text-slate-400 text-center mb-8 max-w-2xl mx-auto">
             Three simple steps to financial clarity.
           </p>
           
-          <div className="space-y-12 relative before:absolute before:left-4 before:top-4 before:h-full before:w-0.5 before:bg-slate-100 dark:before:bg-slate-800 md:before:left-[calc(2rem-1px)]">
+          <div className="space-y-8 relative before:absolute before:left-4 before:top-4 before:h-full before:w-0.5 before:bg-slate-100 dark:before:bg-slate-800 md:before:left-[calc(1.5rem-1px)]">
             {steps.map((step, i) => (
-              <div key={i} className="flex gap-6 md:gap-8 items-start relative bg-white dark:bg-gray-950">
-                <div className="flex-shrink-0 w-8 h-8 md:w-16 md:h-16 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center font-bold text-slate-600 dark:text-slate-400 mt-1 shadow-sm border-4 border-white dark:border-gray-950 z-10 text-sm md:text-xl">
+              <div key={i} className="flex gap-5 md:gap-6 items-start relative bg-white dark:bg-gray-950">
+                <div className="flex-shrink-0 w-8 h-8 md:w-12 md:h-12 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center font-bold text-slate-600 dark:text-slate-400 shadow-sm border-4 border-white dark:border-gray-950 z-10 text-sm md:text-lg">
                   {i + 1}
                 </div>
-                <div className="space-y-2 pt-1.5 md:pt-4">
-                  <h3 className="text-xl font-semibold text-slate-900 dark:text-white">{step.title}</h3>
-                  <p className="text-slate-600 dark:text-slate-400 leading-relaxed">{step.description}</p>
+                <div className="space-y-1 pt-1 md:pt-2">
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white">{step.title}</h3>
+                  <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">{step.description}</p>
                 </div>
               </div>
             ))}
@@ -362,25 +375,25 @@ export default function LandingPage() {
       </section>
 
       {/* CTA */}
-      <section className="py-32 px-6 bg-slate-900 dark:bg-blue-950 text-white text-center relative overflow-hidden" aria-label="Call to action">
+      <section className="py-20 px-6 bg-slate-900 dark:bg-blue-950 text-white text-center relative overflow-hidden" aria-label="Call to action">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-blue-800/30 via-slate-900/0 to-slate-900/0 pointer-events-none" aria-hidden="true"></div>
         <div className="absolute inset-0 bg-grid-pattern opacity-[0.05] pointer-events-none mix-blend-overlay"></div>
         
-        <div className="relative max-w-3xl mx-auto space-y-8">
-          <h2 className="text-4xl md:text-5xl font-bold tracking-tight">Ready to take control?</h2>
-          <p className="text-xl text-slate-300 max-w-xl mx-auto">
+        <div className="relative max-w-3xl mx-auto space-y-5">
+          <h2 className="text-3xl md:text-4xl font-bold tracking-tight">Ready to take control?</h2>
+          <p className="text-lg text-slate-300 max-w-xl mx-auto">
             Join thousands who have ditched their spreadsheets for Adphex&apos;s AI insights.
           </p>
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
           <Link 
               href="/signup"
-              className="inline-block px-8 py-4 bg-white text-slate-900 rounded-xl font-bold hover:bg-blue-50 transition-colors shadow-xl hover:shadow-2xl hover:scale-105 transform duration-200"
+              className="inline-block px-6 py-3 bg-white text-slate-900 rounded-xl font-bold hover:bg-blue-50 transition-colors shadow-xl hover:shadow-2xl hover:scale-105 transform duration-200"
           >
             Get Started Now
           </Link>
              <Link 
               href="/demo"
-              className="inline-block px-8 py-4 bg-transparent border border-white/20 text-white rounded-xl font-bold hover:bg-white/10 transition-colors"
+              className="inline-block px-6 py-3 bg-transparent border border-white/20 text-white rounded-xl font-bold hover:bg-white/10 transition-colors"
             >
               View Demo
             </Link>
@@ -463,19 +476,24 @@ export default function LandingPage() {
 
 const features = [
   {
-    title: 'Bank Statement Analysis',
-    description: 'Upload PDFs or images. Adphex parses messy layouts and extracts clean, structured transaction data instantly.',
-    icon: <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 011.414.586l4 4a1 1 0 01.586 1.414V19a2 2 0 01-2 2z" /></svg>
+    title: "You're in control — bank statements, screenshots... you choose",
+    description: 'Bring your data as bank statements, screenshots from your bank app, or even a paper napkin. Adphex actively protects you against duplicate transactions and automatically detects account details.',
+    image: '/screenshots/data-import.png',
   },
   {
-    title: 'Smart Categorization',
-    description: 'Transactions are automatically tagged as Income, Expense, or Transfers. No more manual sorting.',
-    icon: <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" /></svg>
+    title: 'One-click budgets using AI',
+    description: 'Create personalized zero-based budgets in seconds. Adphex analyzes your historic spending trends and preferences to automatically distribute your income across categories — so every dollar has a purpose.',
+    image: '/screenshots/budget-ai.png',
   },
   {
-    title: 'Duplicate Detection',
-    description: 'Our advanced algorithms ensure no duplicate transactions are logged, even if you make mistakes saving them.',
-    icon: <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+    title: 'Chat with your own personal financial assistant',
+    description: 'Ask Adphex anything — from everyday questions like "How much did I spend on groceries?" to advanced analysis like "Show me my spending trends over the last 6 months." Get instant answers in plain English.',
+    image: '/screenshots/chat-ui.png',
+  },
+  {
+    title: 'Auto-Detect Fixed Expenses',
+    description: 'Adphex uses AI to smartly detect your regular fixed expenses — rent, subscriptions, loan payments — giving you a clear picture of your non-negotiable baseline lifestyle costs each month.',
+    image: '/screenshots/fixed-expenses.png',
   },
 ];
 
