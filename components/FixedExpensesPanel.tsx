@@ -25,6 +25,7 @@ interface FixedExpensesPanelProps {
   refreshTrigger?: number;
   maxItemsToShow?: number;
   currency?: string;
+  demoData?: FixedExpensesData | null;
 }
 
 function formatCurrency(amount: number, currency: string = 'USD'): string {
@@ -50,6 +51,7 @@ export default function FixedExpensesPanel({
   refreshTrigger = 0,
   maxItemsToShow = 5,
   currency = 'USD',
+  demoData = null,
 }: FixedExpensesPanelProps) {
   const [data, setData] = useState<FixedExpensesData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -268,6 +270,14 @@ export default function FixedExpensesPanel({
   }, []);
 
   useEffect(() => {
+    // If demo data is provided, use it directly and skip API calls
+    if (demoData) {
+      setData(demoData);
+      setIsFromCache(false);
+      setLoading(false);
+      return;
+    }
+
     // Check if refreshTrigger has actually changed (indicating bank upload or Plaid sync)
     const hasRefreshTriggerChanged = previousRefreshTrigger.current !== refreshTrigger;
     
@@ -281,7 +291,7 @@ export default function FixedExpensesPanel({
       // Normal load - use cache if available
       fetchData(false);
     }
-  }, [refreshTrigger, fetchData, clearCache]);
+  }, [refreshTrigger, fetchData, clearCache, demoData]);
 
   // Loading skeleton - Compact
   if (loading) {

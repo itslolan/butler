@@ -11,6 +11,69 @@ import Link from 'next/link';
 // Demo user ID - this will be used to load sample data
 const DEMO_USER_ID = 'demo-user';
 
+// Hardcoded fixed expenses for demo mode (aligned with seed-sample-data)
+const DEMO_FIXED_EXPENSES = {
+  total: 360.97,
+  expenses: [
+    {
+      merchant_name: 'Pacific Gas & Electric',
+      median_amount: 125.00,
+      occurrence_count: 12,
+      months_tracked: 12,
+      avg_day_of_month: 15,
+      last_occurrence_date: new Date().toISOString().split('T')[0],
+      merchant_key: 'pacific_gas_electric'
+    },
+    {
+      merchant_name: 'Verizon Wireless',
+      median_amount: 85.00,
+      occurrence_count: 12,
+      months_tracked: 12,
+      avg_day_of_month: 5,
+      last_occurrence_date: new Date().toISOString().split('T')[0],
+      merchant_key: 'verizon_wireless'
+    },
+    {
+      merchant_name: 'AT&T Internet',
+      median_amount: 75.00,
+      occurrence_count: 12,
+      months_tracked: 12,
+      avg_day_of_month: 10,
+      last_occurrence_date: new Date().toISOString().split('T')[0],
+      merchant_key: 'att_internet'
+    },
+    {
+      merchant_name: 'Planet Fitness',
+      median_amount: 49.99,
+      occurrence_count: 12,
+      months_tracked: 12,
+      avg_day_of_month: 1,
+      last_occurrence_date: new Date().toISOString().split('T')[0],
+      merchant_key: 'planet_fitness'
+    },
+    {
+      merchant_name: 'Netflix',
+      median_amount: 15.99,
+      occurrence_count: 12,
+      months_tracked: 12,
+      avg_day_of_month: 8,
+      last_occurrence_date: new Date().toISOString().split('T')[0],
+      merchant_key: 'netflix'
+    },
+    {
+      merchant_name: 'Spotify',
+      median_amount: 9.99,
+      occurrence_count: 12,
+      months_tracked: 12,
+      avg_day_of_month: 12,
+      last_occurrence_date: new Date().toISOString().split('T')[0],
+      merchant_key: 'spotify'
+    }
+  ],
+  calculated_at: new Date().toISOString(),
+  from_cache: false
+};
+
 export default function DemoPage() {
   const [showSignupModal, setShowSignupModal] = useState(false);
   const [questionCount, setQuestionCount] = useState(0);
@@ -138,7 +201,11 @@ export default function DemoPage() {
               {/* Left Column: Visualization & Data (65%) */}
               <div className="col-span-12 lg:col-span-8 flex flex-col h-full lg:border-r border-slate-200 dark:border-slate-800 overflow-y-auto bg-slate-50/50 dark:bg-black/5 p-4 lg:p-6">
                 <div className="max-w-5xl w-full mx-auto space-y-6">
-                  <VisualizationPanel key={dataLoaded ? 'loaded' : 'loading'} userId={DEMO_USER_ID} />
+                  <VisualizationPanel 
+                    key={dataLoaded ? 'loaded' : 'loading'} 
+                    userId={DEMO_USER_ID}
+                    fixedExpensesDemoData={DEMO_FIXED_EXPENSES}
+                  />
                 </div>
               </div>
 
