@@ -287,7 +287,7 @@ async function classifyMerchantBatch(
       if (classifications.length < summaries.length) {
         for (let i = classifications.length; i < summaries.length; i++) {
           classifications.push({
-            merchant_key: summaries[i].normalized_merchant,
+            merchant_key: summaries[i].merchant_key,
             label: 'maybe',
             confidence: 0.5,
             llm_reasoning_score: 0.5,
