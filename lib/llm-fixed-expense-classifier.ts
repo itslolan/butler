@@ -1,15 +1,29 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
 import { MerchantSummary, formatMerchantSummaryForLLM } from './merchant-summarizer';
 
-// Initialize Gemini client
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-const model = genAI.getGenerativeModel({ 
-  model: 'gemini-2.0-flash-exp',
-  generationConfig: {
-    responseMimeType: 'application/json',
-    temperature: 0.1, // Low temperature for consistent classification
+// Lazy-initialize Gemini client to avoid memory usage at module load time
+let _genAI: GoogleGenerativeAI | null = null;
+let _model: GenerativeModel | null = null;
+
+function getModel(): GenerativeModel {
+  if (_model) return _model;
+  
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error('Missing GEMINI_API_KEY environment variable');
   }
-});
+  
+  _genAI = new GoogleGenerativeAI(apiKey);
+  _model = _genAI.getGenerativeModel({ 
+    model: 'gemini-2.0-flash-exp',
+    generationConfig: {
+      responseMimeType: 'application/json',
+      temperature: 0.1, // Low temperature for consistent classification
+    }
+  });
+  
+  return _model;
+}
 
 export interface LLMClassification {
   merchant_key: string; // Added to match merchants with their classifications
@@ -183,8 +197,7 @@ export async function classifyAllMerchantsWithLLM(
   const prompt = buildBatchPrompt(summaries, userMemories);
   
   try {
-    console.log(`[LLM Classifier] Sending ${summaries.length} merchants to LLM in single call...`);
-    
+    const model = getModel();
     const result = await model.generateContent(prompt);
     const response = result.response;
     const text = response.text();
@@ -230,14 +243,6 @@ export async function classifyAllMerchantsWithLLM(
       if (typeof classification.explain !== 'string') {
         throw new Error(`Classification ${i} has invalid explain`);
       }
-      
-      // Log each classification
-      console.log(
-        `[LLM] ${classification.merchant_key}: ` +
-        `label=${classification.label}, conf=${classification.confidence.toFixed(2)}, ` +
-        `score=${classification.llm_reasoning_score.toFixed(2)}, ` +
-        `reasons=[${classification.primary_reasons.join(', ')}]`
-      );
     }
     
     return classifications;

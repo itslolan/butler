@@ -178,28 +178,12 @@ export function createMerchantSummaries(transactions: TransactionForSummary[]): 
   for (const txn of transactions) {
     const normalizedName = normalizeMerchantName(txn.merchant);
     
-    // Debug logging for rent-related transactions
-    if (txn.merchant.toLowerCase().includes('rent') || 
-        txn.merchant.toLowerCase().includes('lease') || 
-        txn.merchant.toLowerCase().includes('realty')) {
-      console.log(`[Merchant Summarizer] RENT DEBUG: "${txn.merchant}" → normalized to: "${normalizedName}"`);
-    }
-    
     if (!merchantGroups.has(normalizedName)) {
       merchantGroups.set(normalizedName, []);
     }
     
     merchantGroups.get(normalizedName)!.push(txn);
   }
-  
-  // Log merchant grouping for debugging
-  console.log('[Merchant Summarizer] Grouped transactions:', 
-    Array.from(merchantGroups.entries()).map(([key, txns]) => ({
-      normalized_key: key,
-      count: txns.length,
-      original_names: [...new Set(txns.map(t => t.merchant))],
-    }))
-  );
   
   const summaries: MerchantSummary[] = [];
   
@@ -210,32 +194,19 @@ export function createMerchantSummaries(transactions: TransactionForSummary[]): 
       new Date(a.date).getTime() - new Date(b.date).getTime()
     );
     
-    // Get all unique original merchant names for logging
-    const originalNames = [...new Set(sortedTxns.map(t => t.merchant))].join(', ');
-    
     // Need at least 3 transactions
     if (sortedTxns.length < 3) {
-      console.log(`[Merchant Summarizer] Filtered out "${merchantKey}" (original names: [${originalNames}]): only ${sortedTxns.length} transactions`);
       continue;
     }
     
     // Calculate unique months using UTC to avoid timezone issues
-    const monthsDebug = sortedTxns.map(t => {
+    const uniqueMonths = new Set(sortedTxns.map(t => {
       const d = new Date(t.date);
-      // Use UTC methods to avoid timezone conversion issues
-      const monthKey = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-      return { date: t.date, parsed: d.toISOString(), monthKey };
-    });
-    
-    const uniqueMonths = new Set(monthsDebug.map(m => m.monthKey));
-    
-    // Debug log for this merchant group
-    console.log(`[Merchant Summarizer] Checking "${merchantKey}" (${originalNames}): ${sortedTxns.length} txns, ${uniqueMonths.size} months`);
-    console.log(`[Merchant Summarizer] Date parsing for "${merchantKey}":`, monthsDebug);
+      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+    }));
     
     // Need at least 3 unique months
     if (uniqueMonths.size < 3) {
-      console.log(`[Merchant Summarizer] Filtered out "${merchantKey}" (original names: [${originalNames}]): only ${uniqueMonths.size} unique months (${Array.from(uniqueMonths).join(', ')})`);
       continue;
     }
     
@@ -286,8 +257,6 @@ export function createMerchantSummaries(transactions: TransactionForSummary[]): 
       last_date: dateToString(sortedTxns[sortedTxns.length - 1].date),
       unique_months: uniqueMonths.size
     };
-    
-    console.log(`[Merchant Summarizer] Created summary for "${merchantKey}": ${sortedTxns.length} txns, ${uniqueMonths.size} months, interval=${Math.round(medianInterval)}d, amount=$${Math.round(amountMean)}, flags=[${flags.join(', ')}]`);
     
     summaries.push(summary);
   }

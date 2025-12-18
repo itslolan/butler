@@ -87,10 +87,52 @@ function createFixedExpense(
 }
 
 /**
+ * Fetch all expense transactions with pagination to avoid memory issues
+ */
+async function fetchAllExpenseTransactions(
+  userId: string
+): Promise<Array<{ merchant: string; amount: number; date: string; description: string | null; transaction_type: string }>> {
+  const PAGE_SIZE = 1000;
+  let allData: Array<{ merchant: string; amount: number; date: string; description: string | null; transaction_type: string }> = [];
+  let page = 0;
+  let hasMore = true;
+
+  while (hasMore) {
+    const from = page * PAGE_SIZE;
+    const to = from + PAGE_SIZE - 1;
+
+    const { data, error } = await supabase
+      .from('transactions')
+      .select('merchant, amount, date, description, transaction_type')
+      .eq('user_id', userId)
+      .in('transaction_type', ['expense', 'other'])
+      .order('date', { ascending: true })
+      .range(from, to);
+
+    if (error) {
+      throw new Error(`Failed to fetch transactions: ${error.message}`);
+    }
+
+    if (!data || data.length === 0) {
+      hasMore = false;
+    } else {
+      allData = allData.concat(data);
+      if (data.length < PAGE_SIZE) {
+        hasMore = false;
+      } else {
+        page++;
+      }
+    }
+  }
+
+  return allData;
+}
+
+/**
  * Calculate fixed expenses using LLM-powered classification
  * 
  * This function:
- * 1. Fetches all expense transactions for the user
+ * 1. Fetches all expense transactions for the user (with pagination)
  * 2. Creates merchant summaries with compact stats
  * 3. Sends ALL summaries to LLM in a single batch call
  * 4. Filters results based on LLM confidence and score
@@ -106,49 +148,16 @@ export async function calculateFixedExpenses(userId: string): Promise<FixedExpen
   };
 
   try {
-    console.log('[Fixed Expenses] Starting calculation for user:', userId);
+    // 1. Fetch all expense transactions with pagination
+    const transactions = await fetchAllExpenseTransactions(userId);
 
-    // 1. Fetch all expense transactions
-    const { data: transactions, error } = await supabase
-      .from('transactions')
-      .select('merchant, amount, date, description, transaction_type')
-      .eq('user_id', userId)
-      .in('transaction_type', ['expense', 'other'])
-      .order('date', { ascending: true });
-
-    if (error) {
-      throw new Error(`Failed to fetch transactions: ${error.message}`);
-    }
-
-    if (!transactions || transactions.length === 0) {
-      console.log('[Fixed Expenses] No transactions found');
+    if (transactions.length === 0) {
       return [];
-    }
-
-    console.log(`[Fixed Expenses] Processing ${transactions.length} transactions`);
-    
-    // Debug: Log rent-related transactions
-    const rentRelated = transactions.filter(t => 
-      t.merchant.toLowerCase().includes('rent') || 
-      t.merchant.toLowerCase().includes('lease') || 
-      t.merchant.toLowerCase().includes('realty')
-    );
-    if (rentRelated.length > 0) {
-      console.log('[Fixed Expenses] Found rent-related transactions:', 
-        rentRelated.map(t => ({ 
-          date: t.date, 
-          merchant: t.merchant, 
-          type: t.transaction_type,
-          amount: t.amount 
-        }))
-      );
     }
 
     // 2. Create merchant summaries
     const summaries = createMerchantSummaries(transactions);
     stats.total_merchants = summaries.length;
-    
-    console.log(`[Fixed Expenses] Created ${summaries.length} merchant summaries`);
 
     if (summaries.length === 0) {
       return [];
@@ -157,12 +166,6 @@ export async function calculateFixedExpenses(userId: string): Promise<FixedExpen
     // 3. Fetch user memories about confirmed and rejected fixed expenses
     const memoriesText = await getAllMemories(userId);
     
-    // Log all memories for debugging
-    console.log('[Fixed Expenses] All memories from database:');
-    console.log('---START MEMORIES---');
-    console.log(memoriesText || '(empty)');
-    console.log('---END MEMORIES---');
-    
     const fixedExpenseMemories = memoriesText
       .split('\n')
       .filter(line => 
@@ -170,18 +173,6 @@ export async function calculateFixedExpenses(userId: string): Promise<FixedExpen
          line.toLowerCase().includes('rejected fixed expense')) && 
         line.trim().length > 0
       );
-    
-    if (fixedExpenseMemories.length > 0) {
-      const confirmed = fixedExpenseMemories.filter(m => m.toLowerCase().includes('confirmed')).length;
-      const rejected = fixedExpenseMemories.filter(m => m.toLowerCase().includes('rejected')).length;
-      console.log(`[Fixed Expenses] Found ${confirmed} confirmed and ${rejected} rejected fixed expense memories`);
-      console.log('[Fixed Expenses] Filtered fixed expense memories:');
-      fixedExpenseMemories.forEach((mem, i) => {
-        console.log(`  ${i + 1}. ${mem}`);
-      });
-    } else {
-      console.log('[Fixed Expenses] No fixed expense memories found in database');
-    }
 
     // 4. Send ALL merchants to LLM in a single batch call with memories
     const classifications = await classifyAllMerchantsWithLLM(summaries, fixedExpenseMemories);
@@ -197,45 +188,24 @@ export async function calculateFixedExpenses(userId: string): Promise<FixedExpen
       if (classification.label === 'fixed' && classification.confidence >= 0.7 && classification.llm_reasoning_score >= 0.7) {
         stats.llm_accepted++;
         results.push(createFixedExpense(summary, classification));
-        console.log(
-          `[Fixed Expenses] [ACCEPTED] ${summary.merchant_key}: ` +
-          `conf=${classification.confidence.toFixed(2)}, ` +
-          `score=${classification.llm_reasoning_score.toFixed(2)}`
-        );
       } else if (classification.label === 'maybe') {
         // Show ALL "maybe" items for user confirmation, regardless of confidence
         stats.llm_maybe_accepted++;
         results.push(createFixedExpense(summary, classification));
-        console.log(
-          `[Fixed Expenses] [MAYBE - NEEDS CONFIRMATION] ${summary.merchant_key}: ` +
-          `conf=${classification.confidence.toFixed(2)}, ` +
-          `score=${classification.llm_reasoning_score.toFixed(2)}`
-        );
       } else {
         stats.llm_rejected++;
-        console.log(
-          `[Fixed Expenses] [REJECTED] ${summary.merchant_key}: ` +
-          `label=${classification.label}, conf=${classification.confidence.toFixed(2)}, ` +
-          `score=${classification.llm_reasoning_score.toFixed(2)}`
-        );
       }
     }
 
-    // 5. Sort by median amount descending
+    // 6. Sort by median amount descending
     results.sort((a, b) => b.median_amount - a.median_amount);
 
     stats.processing_time_ms = Date.now() - startTime;
 
-    // Log summary
-    console.log('[Fixed Expenses] Calculation complete:', {
-      total_found: results.length,
-      stats,
-    });
-
     return results;
   } catch (error: any) {
     stats.processing_time_ms = Date.now() - startTime;
-    console.error('[Fixed Expenses] Error:', error.message, { stats });
+    console.error('[Fixed Expenses] Error:', error.message);
     throw error;
   }
 }
