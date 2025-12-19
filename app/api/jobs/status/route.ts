@@ -47,12 +47,15 @@ export async function GET(request: NextRequest) {
     const summary = summarize(jobs);
     const allDone = summary.total > 0 && (summary.pending + summary.processing) === 0;
 
-    return NextResponse.json({ jobs, summary, allDone });
+    return NextResponse.json(
+      { jobs, summary, allDone },
+      { headers: { 'Cache-Control': 'no-store' } }
+    );
   } catch (error: any) {
     console.error('[jobs/status] Error:', error?.message || error);
     return NextResponse.json(
       { error: error?.message || 'Failed to fetch job status' },
-      { status: 500 }
+      { status: 500, headers: { 'Cache-Control': 'no-store' } }
     );
   }
 }

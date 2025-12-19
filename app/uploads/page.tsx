@@ -53,7 +53,7 @@ export default function UploadsPage() {
       try {
         const results = await Promise.all(
           processingUploads.map(async (u) => {
-            const res = await fetch(`/api/jobs/status?uploadId=${encodeURIComponent(u.id!)}`);
+            const res = await fetch(`/api/jobs/status?uploadId=${encodeURIComponent(u.id!)}`, { cache: 'no-store' });
             if (!res.ok) return [u.id!, null] as const;
             const data = await res.json();
             return [u.id!, data] as const;
@@ -73,7 +73,7 @@ export default function UploadsPage() {
         // Refresh uploads list occasionally so completed uploads show document stats
         const anyDone = results.some(([, data]) => data?.allDone);
         if (anyDone) {
-          const res = await fetch(`/api/uploads?userId=${user.id}`);
+          const res = await fetch(`/api/uploads?userId=${user.id}`, { cache: 'no-store' });
           if (res.ok) {
             const data = await res.json();
             if (!cancelled) setUploads(data.uploads || []);

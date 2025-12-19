@@ -64,15 +64,18 @@ export async function GET(request: NextRequest) {
       uploads = uploads.slice(0, limit);
     }
 
-    return NextResponse.json({
-      uploads,
-      count: uploads.length,
-    });
+    return NextResponse.json(
+      {
+        uploads,
+        count: uploads.length,
+      },
+      { headers: { 'Cache-Control': 'no-store' } }
+    );
   } catch (error: any) {
     console.error('[uploads] GET Error:', error.message);
     return NextResponse.json(
       { error: error.message || 'Failed to fetch uploads' },
-      { status: 500 }
+      { status: 500, headers: { 'Cache-Control': 'no-store' } }
     );
   }
 }

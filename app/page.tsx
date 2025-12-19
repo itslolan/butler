@@ -39,7 +39,7 @@ export default function Home() {
 
     const check = async () => {
       try {
-        const res = await fetch(`/api/uploads?userId=${encodeURIComponent(user.id)}&status=processing&limit=10`);
+        const res = await fetch(`/api/uploads?userId=${encodeURIComponent(user.id)}&status=processing&limit=10`, { cache: 'no-store' });
         if (!res.ok) return;
         const data = await res.json();
         if (!isCancelled) setProcessingUploadsCount((data.uploads || []).length);
