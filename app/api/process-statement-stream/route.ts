@@ -468,57 +468,34 @@ Use these memories to help classify transactions. For example, if you know the u
               };
               sendUpdate('account-match', `🔗 Found ${matchingAccounts.length} accounts with ****${last4} - please confirm which one`, 'complete');
             } else {
-              // No last4 match - get all accounts for user to choose or create new
-              const allAccounts = await getAccountsByUserId(userId);
-              if (allAccounts.length > 0) {
-                accountMatchInfo = {
-                  needsConfirmation: true,
-                  allAccounts,
-                  officialName,
-                  last4,
-                };
-                sendUpdate('account-match', `🔗 New account detected - please confirm or link to existing`, 'complete');
-              } else {
-                // No existing accounts - create new automatically
-                try {
-                  await getOrCreateAccount(userId, {
-                    display_name: officialName || `Account ****${last4}`,
-                    account_number_last4: last4 || undefined,
-                    official_name: officialName || undefined,
-                    issuer: extractedData.issuer || undefined,
-                    source: 'statement',
-                  });
-                  sendUpdate('account-match', `✅ Created new account: ${officialName || `****${last4}`}`, 'complete');
-                } catch (error) {
-                  console.error('[process-statement] Error creating account:', error);
-                  sendUpdate('account-match', `⚠️ Failed to create account, continuing...`, 'complete');
-                }
-              }
-            }
-          } else if (officialName) {
-            // No last4 but have official name - ask user which account it maps to
-            const allAccounts = await getAccountsByUserId(userId);
-            if (allAccounts.length > 0) {
-              accountMatchInfo = {
-                needsConfirmation: true,
-                allAccounts,
-                officialName,
-              };
-              sendUpdate('account-match', `🔗 Please confirm which account "${officialName}" belongs to`, 'complete');
-            } else {
-              // No existing accounts - create new automatically
+              // No last4 match - create new account automatically
               try {
                 await getOrCreateAccount(userId, {
-                  display_name: officialName,
-                  official_name: officialName,
+                  display_name: officialName || `Account ****${last4}`,
+                  account_number_last4: last4 || undefined,
+                  official_name: officialName || undefined,
                   issuer: extractedData.issuer || undefined,
                   source: 'statement',
                 });
-                sendUpdate('account-match', `✅ Created new account: ${officialName}`, 'complete');
+                sendUpdate('account-match', `✅ Created new account: ${officialName || `****${last4}`}`, 'complete');
               } catch (error) {
                 console.error('[process-statement] Error creating account:', error);
                 sendUpdate('account-match', `⚠️ Failed to create account, continuing...`, 'complete');
               }
+            }
+          } else if (officialName) {
+            // No last4 but have official name - create new automatically
+            try {
+              await getOrCreateAccount(userId, {
+                display_name: officialName,
+                official_name: officialName,
+                issuer: extractedData.issuer || undefined,
+                source: 'statement',
+              });
+              sendUpdate('account-match', `✅ Created new account: ${officialName}`, 'complete');
+            } catch (error) {
+              console.error('[process-statement] Error creating account:', error);
+              sendUpdate('account-match', `⚠️ Failed to create account, continuing...`, 'complete');
             }
           }
         }
