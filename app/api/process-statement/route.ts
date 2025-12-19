@@ -325,6 +325,13 @@ export async function POST(request: NextRequest) {
         amount: txn.amount,
         category: txn.category || null,
         description: txn.description || null,
+        // IMPORTANT: older versions of this route forgot to persist these fields,
+        // which made expenses "invisible" to the UI (charts/budget filter by transaction_type).
+        transaction_type: txn.transactionType || null,
+        spend_classification: txn.spendClassification || null,
+        needs_clarification: txn.clarificationNeeded || false,
+        clarification_question: txn.clarificationQuestion || null,
+        suggested_actions: txn.suggestedActions || null,
         metadata: {},
       }));
 
