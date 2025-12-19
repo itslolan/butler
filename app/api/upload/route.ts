@@ -78,6 +78,13 @@ export async function POST(request: NextRequest) {
       }
     } catch (innerErr: any) {
       await updateUploadStatus(upload.id as string, 'failed');
+      const msg = innerErr?.message || String(innerErr);
+      // Common Supabase error when migration wasn't applied or schema cache is stale.
+      if (msg.includes("Could not find the table 'public.processing_jobs' in the schema cache")) {
+        throw new Error(
+          "Background job queue table is missing. Run the Supabase migration `supabase-migration-background-jobs.sql` to create `processing_jobs`, then reload PostgREST schema cache (SQL: `NOTIFY pgrst, 'reload schema';`)."
+        );
+      }
       throw innerErr;
     }
 
