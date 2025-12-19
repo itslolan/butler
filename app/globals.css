@@ -108,6 +108,18 @@ body {
   .dark *:hover {
     scrollbar-color: #475569 transparent; /* slate-600 */
   }
+
+  /*
+   * Prevent iOS Safari from zooming when focusing inputs.
+   * Safari auto-zooms if the computed font-size is < 16px.
+   */
+  @media (max-width: 768px) {
+    input,
+    textarea,
+    select {
+      font-size: 16px !important;
+    }
+  }
 }
 
 /* Webkit (Chrome, Edge, Safari) */

@@ -703,7 +703,7 @@ Successfully mapped **${result.transactions_updated} transaction${result.transac
               rows={1}
               className="flex-1 px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl 
                        focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500
-                       text-sm text-slate-900 dark:text-white placeholder:text-slate-400
+                       text-base md:text-sm text-slate-900 dark:text-white placeholder:text-slate-400
                        disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm
                        resize-none overflow-hidden min-h-[44px] max-h-[200px]"
               style={{
