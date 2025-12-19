@@ -3,6 +3,7 @@ import { getJobsByIds, getJobsByUploadId, updateUploadStatusFromJobs } from '@/l
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
+export const fetchCache = 'force-no-store';
 
 function summarize(jobs: any[]) {
   const summary = { total: jobs.length, pending: 0, processing: 0, completed: 0, failed: 0 };
@@ -49,13 +50,29 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(
       { jobs, summary, allDone },
-      { headers: { 'Cache-Control': 'no-store' } }
+      {
+        headers: {
+          // Be extremely explicit to defeat any intermediate caches/CDNs/browsers.
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          Pragma: 'no-cache',
+          Expires: '0',
+          'Surrogate-Control': 'no-store',
+        },
+      }
     );
   } catch (error: any) {
     console.error('[jobs/status] Error:', error?.message || error);
     return NextResponse.json(
       { error: error?.message || 'Failed to fetch job status' },
-      { status: 500, headers: { 'Cache-Control': 'no-store' } }
+      {
+        status: 500,
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          Pragma: 'no-cache',
+          Expires: '0',
+          'Surrogate-Control': 'no-store',
+        },
+      }
     );
   }
 }

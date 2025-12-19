@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createUpload, getUploadsForUser, generateUploadName } from '@/lib/db-tools';
 
 export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
 
 /**
  * POST /api/uploads - Create a new upload record
@@ -65,17 +66,29 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json(
+      { uploads, count: uploads.length },
       {
-        uploads,
-        count: uploads.length,
-      },
-      { headers: { 'Cache-Control': 'no-store' } }
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          Pragma: 'no-cache',
+          Expires: '0',
+          'Surrogate-Control': 'no-store',
+        },
+      }
     );
   } catch (error: any) {
     console.error('[uploads] GET Error:', error.message);
     return NextResponse.json(
       { error: error.message || 'Failed to fetch uploads' },
-      { status: 500, headers: { 'Cache-Control': 'no-store' } }
+      {
+        status: 500,
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          Pragma: 'no-cache',
+          Expires: '0',
+          'Surrogate-Control': 'no-store',
+        },
+      }
     );
   }
 }
