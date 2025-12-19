@@ -46,6 +46,11 @@ export default function ProfilePage() {
       setShowDeleteConfirm(false);
       setDeleteConfirmText('');
 
+      // Reload the page after 2 seconds to clear all cached data
+      setTimeout(() => {
+        window.location.href = '/';
+      }, 2000);
+
     } catch (error: any) {
       setDeleteResult({
         success: false,
