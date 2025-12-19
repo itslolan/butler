@@ -276,21 +276,26 @@ export async function updateTransactionType(
   transactionType: 'income' | 'expense' | 'transfer' | 'other'
 ): Promise<void> {
   try {
+    console.log(`[updateTransactionType] Starting update for transaction ${id} to type: ${transactionType}`);
+    
     // Get the transaction to retrieve user_id for RLS policy compliance
     const { data: currentTransaction, error: fetchError } = await supabase
       .from('transactions')
-      .select('id, user_id')
+      .select('id, user_id, needs_clarification')
       .eq('id', id)
       .single();
 
     if (fetchError || !currentTransaction) {
+      console.error(`[updateTransactionType] Transaction ${id} not found:`, fetchError);
       throw new Error(`Transaction with id ${id} not found`);
     }
+
+    console.log(`[updateTransactionType] Before update - needs_clarification: ${currentTransaction.needs_clarification}`);
 
     // Update with explicit user_id check to ensure RLS policies allow it
     const { data, error } = await supabase
       .from('transactions')
-      .update({ 
+      .update({
         transaction_type: transactionType,
         needs_clarification: false,
         clarification_question: null,
@@ -300,18 +305,29 @@ export async function updateTransactionType(
       .select();
 
     if (error) {
+      console.error(`[updateTransactionType] Update error:`, error);
       throw new Error(`Failed to update transaction type: ${error.message}`);
     }
 
     if (!data || data.length === 0) {
+      console.error(`[updateTransactionType] No data returned after update`);
       throw new Error(`Transaction with id ${id} not found or could not be updated`);
     }
 
     // Verify that needs_clarification was actually set to false
     const updatedTransaction = data[0];
+    console.log(`[updateTransactionType] After update - needs_clarification: ${updatedTransaction.needs_clarification}`);
+    
     if (updatedTransaction.needs_clarification !== false) {
       throw new Error(`Update failed: needs_clarification is still ${updatedTransaction.needs_clarification} instead of false`);
     }
+    
+    console.log(`[updateTransactionType] Successfully updated transaction ${id}`);
+  } catch (error) {
+    console.error(`[updateTransactionType] Error:`, error);
+    throw error;
+  }
+}
   } catch (error: any) {
     console.error('[updateTransactionType] Error:', error.message);
     throw error;
@@ -329,7 +345,7 @@ export async function getUnclarifiedTransactions(
     .from('transactions')
     .select('*')
     .eq('user_id', userId)
-    .is('needs_clarification', true)
+    .eq('needs_clarification', true)  // Changed from .is() to .eq()
     .eq('is_dismissed', false);
 
   if (documentId) {
@@ -339,11 +355,17 @@ export async function getUnclarifiedTransactions(
   const { data, error } = await query.order('date', { ascending: false });
 
   if (error) {
+    console.error('[getUnclarifiedTransactions] Query error:', error);
     throw new Error(`Failed to get unclarified transactions: ${error.message}`);
   }
 
+  console.log(`[getUnclarifiedTransactions] Found ${data?.length || 0} unclarified transactions for user ${userId}`);
+  
   // Client-side filter to ensure we only return transactions that actually need clarification
-  return (data || []).filter(txn => txn.needs_clarification === true && txn.is_dismissed !== true);
+  const filtered = (data || []).filter(txn => txn.needs_clarification === true && txn.is_dismissed !== true);
+  console.log(`[getUnclarifiedTransactions] After filtering: ${filtered.length} transactions`);
+  
+  return filtered;
 }
 
 /**
