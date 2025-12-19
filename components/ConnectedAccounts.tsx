@@ -214,7 +214,45 @@ export default function ConnectedAccounts({ onSyncComplete, onFileUpload, isProc
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0 && onFileUpload) {
-      onFileUpload(Array.from(files));
+      const fileArray = Array.from(files);
+      
+      // Filter valid files
+      const validFiles = fileArray.filter(file => {
+        const isImage = file.type.startsWith('image/');
+        const isPdf = file.type === 'application/pdf' || file.name?.toLowerCase().endsWith('.pdf');
+        return isImage || isPdf;
+      });
+
+      if (validFiles.length === 0) {
+        alert('Please upload PDF, PNG, JPG, or similar image files.');
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        return;
+      }
+
+      // Separate PDFs and images
+      const pdfFiles = validFiles.filter(file => 
+        file.type === 'application/pdf' || file.name?.toLowerCase().endsWith('.pdf')
+      );
+      const imageFiles = validFiles.filter(file => file.type.startsWith('image/'));
+
+      // Validation: Only single PDF allowed, no mixing PDFs with images
+      if (pdfFiles.length > 0) {
+        if (pdfFiles.length > 1) {
+          alert('Please upload only one PDF at a time.');
+          if (fileInputRef.current) fileInputRef.current.value = '';
+          return;
+        }
+        if (imageFiles.length > 0) {
+          alert('Please upload either a single PDF or multiple images, but not both together.');
+          if (fileInputRef.current) fileInputRef.current.value = '';
+          return;
+        }
+        // Single PDF - valid
+        onFileUpload(pdfFiles);
+      } else {
+        // Only images - multiple allowed
+        onFileUpload(imageFiles);
+      }
     }
     // Reset input
     if (fileInputRef.current) {
@@ -301,6 +339,7 @@ export default function ConnectedAccounts({ onSyncComplete, onFileUpload, isProc
         accept="image/*,.pdf"
         onChange={handleFileSelect}
         className="hidden"
+        multiple
       />
 
       <div className={`grid ${isPlaidEnabled ? 'grid-cols-2' : 'grid-cols-1'} gap-2 flex-1 min-h-0`}>

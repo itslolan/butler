@@ -31,25 +31,23 @@ export default function Home() {
     // Handle different todo types
     if (todo.type === 'account_selection') {
       // Account selection todo - show account selector in chat
+      // Pass accounts from the todo (already fetched by /api/todos)
+      const accountSelectionData = {
+        documentIds: [todo.document_id],
+        transactionCount: todo.transaction_count,
+        dateRange: todo.first_transaction_date && todo.last_transaction_date 
+          ? { start: todo.first_transaction_date, end: todo.last_transaction_date }
+          : undefined,
+        accounts: todo.accounts || [], // Pass accounts from the todo
+      };
+      
       if (isMobile) {
         setIsMobileChatOpen(true);
         setTimeout(() => {
-          chatInterfaceRef.current?.showAccountSelection?.({
-            documentIds: [todo.document_id],
-            transactionCount: todo.transaction_count,
-            dateRange: todo.first_transaction_date && todo.last_transaction_date 
-              ? { start: todo.first_transaction_date, end: todo.last_transaction_date }
-              : undefined,
-          });
+          chatInterfaceRef.current?.showAccountSelection?.(accountSelectionData);
         }, 300);
       } else {
-        chatInterfaceRef.current?.showAccountSelection?.({
-          documentIds: [todo.document_id],
-          transactionCount: todo.transaction_count,
-          dateRange: todo.first_transaction_date && todo.last_transaction_date 
-            ? { start: todo.first_transaction_date, end: todo.last_transaction_date }
-            : undefined,
-        });
+        chatInterfaceRef.current?.showAccountSelection?.(accountSelectionData);
       }
     } else {
       // Transaction clarification todo - use existing resolveTodo

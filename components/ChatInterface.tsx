@@ -125,28 +125,34 @@ Please reply with the correct category or explain what this transaction is.`;
       documentIds: string[];
       transactionCount: number;
       dateRange?: { start?: string; end?: string };
+      accounts?: any[]; // Optional - if provided, skip fetching
     }) => {
-      // Fetch accounts
       try {
-        const response = await fetch('/api/accounts');
+        let accounts = data.accounts || [];
         
-        if (!response.ok) {
-          const contentType = response.headers.get('content-type');
-          let errorMessage = 'Failed to fetch accounts';
+        // Only fetch accounts if not provided
+        if (accounts.length === 0) {
+          const response = await fetch('/api/accounts');
           
-          if (contentType && contentType.includes('application/json')) {
-            try {
-              const errorData = await response.json();
-              errorMessage = errorData.error || errorMessage;
-            } catch (e) {
-              // Couldn't parse JSON error
+          if (!response.ok) {
+            const contentType = response.headers.get('content-type');
+            let errorMessage = 'Failed to fetch accounts';
+            
+            if (contentType && contentType.includes('application/json')) {
+              try {
+                const errorData = await response.json();
+                errorMessage = errorData.error || errorMessage;
+              } catch (e) {
+                // Couldn't parse JSON error
+              }
             }
+            
+            throw new Error(errorMessage);
           }
           
-          throw new Error(errorMessage);
+          const result = await response.json();
+          accounts = result.accounts || [];
         }
-        
-        const result = await response.json();
         
         const content = `📷 **Account Selection Required**
 
@@ -162,7 +168,7 @@ Please select which account these transactions belong to, or create a new accoun
             documentIds: data.documentIds,
             transactionCount: data.transactionCount,
             dateRange: data.dateRange,
-            accounts: result.accounts || [],
+            accounts: accounts,
           }
         }]);
       } catch (error) {
