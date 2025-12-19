@@ -235,24 +235,15 @@ export default function ConnectedAccounts({ onSyncComplete, onFileUpload, isProc
       );
       const imageFiles = validFiles.filter(file => file.type.startsWith('image/'));
 
-      // Validation: Only single PDF allowed, no mixing PDFs with images
-      if (pdfFiles.length > 0) {
-        if (pdfFiles.length > 1) {
-          alert('Please upload only one PDF at a time.');
-          if (fileInputRef.current) fileInputRef.current.value = '';
-          return;
-        }
-        if (imageFiles.length > 0) {
-          alert('Please upload either a single PDF or multiple images, but not both together.');
-          if (fileInputRef.current) fileInputRef.current.value = '';
-          return;
-        }
-        // Single PDF - valid
-        onFileUpload(pdfFiles);
-      } else {
-        // Only images - multiple allowed
-        onFileUpload(imageFiles);
+      // Validation: No mixing PDFs with images
+      if (pdfFiles.length > 0 && imageFiles.length > 0) {
+        alert('Please upload either PDFs or images, but not both together.');
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        return;
       }
+
+      // All PDFs or all images - both allowed in multiple
+      onFileUpload(validFiles);
     }
     // Reset input
     if (fileInputRef.current) {
@@ -414,9 +405,9 @@ export default function ConnectedAccounts({ onSyncComplete, onFileUpload, isProc
                 </svg>
               </div>
               <div className="text-center relative z-10">
-                <span className="block text-xs font-bold">Upload bank statement</span>
+                <span className="block text-xs font-bold">Upload bank statements</span>
                 <span className="block text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 font-medium leading-tight px-1">
-                  Supports PDF &<br/>Screenshots
+                  Multiple PDFs or<br/>Screenshots
                 </span>
                 <button
                   type="button"

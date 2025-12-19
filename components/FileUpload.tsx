@@ -31,22 +31,14 @@ export default function FileUpload({ onFileUpload, isProcessing }: FileUploadPro
     );
     const imageFiles = validFiles.filter(file => file.type.startsWith('image/'));
 
-    // Validation: Only single PDF allowed, no mixing PDFs with images
-    if (pdfFiles.length > 0) {
-      if (pdfFiles.length > 1) {
-        alert('Please upload only one PDF at a time.');
-        return;
-      }
-      if (imageFiles.length > 0) {
-        alert('Please upload either a single PDF or multiple images, but not both together.');
-        return;
-      }
-      // Single PDF - valid
-      onFileUpload(pdfFiles);
-    } else {
-      // Only images - multiple allowed
-      onFileUpload(imageFiles);
+    // Validation: No mixing PDFs with images
+    if (pdfFiles.length > 0 && imageFiles.length > 0) {
+      alert('Please upload either PDFs or images, but not both together.');
+      return;
     }
+
+    // All PDFs or all images - both allowed in multiple
+    onFileUpload(validFiles);
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -122,7 +114,7 @@ export default function FileUpload({ onFileUpload, isProcessing }: FileUploadPro
               {isProcessing ? 'Uploading...' : 'Upload Statements'}
             </p>
             <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-              {isDragging ? 'Drop files now' : 'PDFs or Images'}
+              {isDragging ? 'Drop files now' : 'Multiple PDFs or Images'}
             </p>
           </div>
         </div>
