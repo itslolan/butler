@@ -328,11 +328,6 @@ export async function updateTransactionType(
     throw error;
   }
 }
-  } catch (error: any) {
-    console.error('[updateTransactionType] Error:', error.message);
-    throw error;
-  }
-}
 
 /**
  * Get transactions that need clarification
