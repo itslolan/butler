@@ -1,4 +1,20 @@
-import { supabase, Document, Transaction, UserMetadata, AccountSnapshot, UserMemory, Account, CreateAccountInput, PendingAccountDocument, Upload, UploadWithStats, UploadDetails, DocumentWithTransactions } from './supabase';
+import {
+  supabase,
+  Document,
+  Transaction,
+  UserMetadata,
+  AccountSnapshot,
+  UserMemory,
+  Account,
+  CreateAccountInput,
+  PendingAccountDocument,
+  Upload,
+  UploadWithStats,
+  UploadDetails,
+  DocumentWithTransactions,
+  ProcessingJob,
+  ProcessingJobProgress,
+} from './supabase';
 
 export interface DocumentFilter {
   documentType?: string;
@@ -1717,6 +1733,148 @@ export async function updateUploadStatus(
   if (error) {
     throw new Error(`Failed to update upload status: ${error.message}`);
   }
+}
+
+// ============================================================================
+// BACKGROUND PROCESSING JOBS
+// ============================================================================
+
+export async function createProcessingJob(input: Omit<ProcessingJob, 'id' | 'created_at' | 'started_at' | 'completed_at'>): Promise<ProcessingJob> {
+  const { data, error } = await supabase
+    .from('processing_jobs')
+    .insert({
+      user_id: input.user_id,
+      upload_id: input.upload_id ?? null,
+      bucket: input.bucket,
+      file_path: input.file_path,
+      file_name: input.file_name,
+      status: input.status,
+      priority: input.priority ?? 0,
+      attempts: input.attempts ?? 0,
+      max_attempts: input.max_attempts ?? 3,
+      progress: input.progress ?? {},
+    })
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to create processing job: ${error.message}`);
+  }
+
+  return data;
+}
+
+export async function getJobsByUploadId(uploadId: string): Promise<ProcessingJob[]> {
+  const { data, error } = await supabase
+    .from('processing_jobs')
+    .select('*')
+    .eq('upload_id', uploadId)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    throw new Error(`Failed to fetch jobs: ${error.message}`);
+  }
+
+  return data || [];
+}
+
+export async function getJobsByIds(jobIds: string[]): Promise<ProcessingJob[]> {
+  if (jobIds.length === 0) return [];
+
+  const { data, error } = await supabase
+    .from('processing_jobs')
+    .select('*')
+    .in('id', jobIds);
+
+  if (error) {
+    throw new Error(`Failed to fetch jobs: ${error.message}`);
+  }
+
+  return data || [];
+}
+
+export async function updateJobProgress(jobId: string, progress: ProcessingJobProgress): Promise<void> {
+  const { error } = await supabase
+    .from('processing_jobs')
+    .update({
+      progress,
+    })
+    .eq('id', jobId);
+
+  if (error) {
+    throw new Error(`Failed to update job progress: ${error.message}`);
+  }
+}
+
+export async function completeJob(jobId: string, result: Record<string, any>): Promise<void> {
+  const { error } = await supabase
+    .from('processing_jobs')
+    .update({
+      status: 'completed',
+      completed_at: new Date().toISOString(),
+      progress: { step: 'complete', percent: 100, message: 'Completed' },
+      result,
+      error_message: null,
+    })
+    .eq('id', jobId);
+
+  if (error) {
+    throw new Error(`Failed to complete job: ${error.message}`);
+  }
+}
+
+export async function failJob(jobId: string, errorMessage: string): Promise<void> {
+  const { error } = await supabase
+    .from('processing_jobs')
+    .update({
+      status: 'failed',
+      completed_at: new Date().toISOString(),
+      error_message: errorMessage,
+    })
+    .eq('id', jobId);
+
+  if (error) {
+    throw new Error(`Failed to fail job: ${error.message}`);
+  }
+}
+
+export async function claimNextPendingJob(workerId: string): Promise<ProcessingJob | null> {
+  const { data, error } = await supabase
+    .rpc('claim_next_job', { worker_id: workerId });
+
+  if (error) {
+    throw new Error(`Failed to claim next job: ${error.message}`);
+  }
+
+  // When there are no rows, PostgREST returns null
+  return (data as any) || null;
+}
+
+export async function updateUploadStatusFromJobs(uploadId: string): Promise<void> {
+  const { data, error } = await supabase
+    .from('processing_jobs')
+    .select('status')
+    .eq('upload_id', uploadId);
+
+  if (error) {
+    throw new Error(`Failed to fetch job statuses: ${error.message}`);
+  }
+
+  const statuses = (data || []).map((r: any) => r.status as string);
+  if (statuses.length === 0) return;
+
+  if (statuses.some(s => s === 'processing' || s === 'pending')) {
+    await updateUploadStatus(uploadId, 'processing');
+    return;
+  }
+
+  if (statuses.every(s => s === 'completed')) {
+    await updateUploadStatus(uploadId, 'completed');
+    return;
+  }
+
+  // Mixed completed/failed OR all failed => failed
+  await updateUploadStatus(uploadId, 'failed');
 }
 
 /**

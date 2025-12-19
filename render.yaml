@@ -11,3 +11,19 @@ services:
       - key: NODE_VERSION
         value: 20
     healthCheckPath: /
+
+  - type: worker
+    name: butler-worker
+    env: node
+    repo: https://github.com/itslolan/butler
+    branch: main
+    autoDeploy: true
+    buildCommand: npm install && npm run build
+    startCommand: npm run start:worker
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: WORKER_CONCURRENCY
+        value: 3
+      - key: POLL_INTERVAL_MS
+        value: 2000

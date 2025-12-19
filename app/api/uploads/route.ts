@@ -46,12 +46,23 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId');
+    const status = searchParams.get('status');
+    const limitParam = searchParams.get('limit');
+    const limit = limitParam ? Number(limitParam) : null;
 
     if (!userId) {
       return NextResponse.json({ error: 'userId is required' }, { status: 400 });
     }
 
-    const uploads = await getUploadsForUser(userId);
+    let uploads = await getUploadsForUser(userId);
+
+    if (status) {
+      uploads = uploads.filter(u => u.status === status);
+    }
+
+    if (limit !== null && Number.isFinite(limit) && limit > 0) {
+      uploads = uploads.slice(0, limit);
+    }
 
     return NextResponse.json({
       uploads,

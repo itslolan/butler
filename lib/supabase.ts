@@ -47,6 +47,33 @@ export interface Upload {
   created_at?: Date | string;
 }
 
+export interface ProcessingJobProgress {
+  step?: string;
+  message?: string;
+  percent?: number;
+  [key: string]: any;
+}
+
+export interface ProcessingJob {
+  id?: string;
+  user_id: string;
+  upload_id?: string | null;
+  bucket: string;
+  file_path: string;
+  file_name: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  priority?: number;
+  attempts?: number;
+  max_attempts?: number;
+  progress?: ProcessingJobProgress;
+  result?: Record<string, any> | null;
+  error_message?: string | null;
+  created_at?: Date | string;
+  started_at?: Date | string | null;
+  completed_at?: Date | string | null;
+  worker_id?: string | null;
+}
+
 // Upload with additional computed stats for list views
 export interface UploadWithStats extends Upload {
   document_count: number;

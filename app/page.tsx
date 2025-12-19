@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import FileUpload from '@/components/FileUpload';
 import ChatInterface from '@/components/ChatInterface';
 import VisualizationPanel from '@/components/VisualizationPanel';
@@ -17,13 +18,50 @@ import SubscriptionsPanel from '@/components/SubscriptionsPanel';
 
 export default function Home() {
   const { user, loading } = useAuth();
+  const router = useRouter();
   const [uploadCount, setUploadCount] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [lastUploadResult, setLastUploadResult] = useState<string>('');
   const [processingSteps, setProcessingSteps] = useState<Array<{ step: string; status: string; message: string; timestamp: number }>>([]);
   const [chartRefreshKey, setChartRefreshKey] = useState(0);
   const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
+  const [processingUploadsCount, setProcessingUploadsCount] = useState(0);
   const chatInterfaceRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (!user?.id) {
+      setProcessingUploadsCount(0);
+      return;
+    }
+
+    let isCancelled = false;
+    let interval: any;
+
+    const check = async () => {
+      try {
+        const res = await fetch(`/api/uploads?userId=${encodeURIComponent(user.id)}&status=processing&limit=10`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!isCancelled) setProcessingUploadsCount((data.uploads || []).length);
+      } catch {
+        // ignore banner fetch errors
+      }
+    };
+
+    check();
+    interval = setInterval(check, 30000);
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') check();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      isCancelled = true;
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [user?.id]);
 
   const handleTodoSelect = (todo: any) => {
     const isMobile = typeof window !== 'undefined' && window.innerWidth < 1024;
@@ -65,325 +103,66 @@ export default function Home() {
 
   const handleFileUpload = useCallback(async (files: File[]) => {
     if (files.length === 0) return;
-    
     setIsProcessing(true);
     setLastUploadResult('');
-    setProcessingSteps([]);
-    
-    let processedCount = 0;
-    let totalTransactions = 0;
-    let duplicatesSkipped = 0;
-    let errors = 0;
-    
-    // Track date ranges and pending account selections
-    let earliestDate: string | null = null;
-    let latestDate: string | null = null;
-    const pendingAccountDocs: string[] = [];
-    const accountMatchDocs: any[] = [];
-    
-    // Create an upload record first
-    let uploadId: string | null = null;
+    setProcessingSteps([
+      {
+        step: 'upload',
+        status: 'processing',
+        message: `⬆️ Uploading ${files.length} file${files.length !== 1 ? 's' : ''}...`,
+        timestamp: Date.now(),
+      },
+    ]);
+
     try {
-      const uploadRes = await fetch('/api/uploads', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user?.id || 'default-user',
-          fileCount: files.length,
-          sourceType: 'manual_upload',
-        }),
-      });
-      if (uploadRes.ok) {
-        const uploadData = await uploadRes.json();
-        uploadId = uploadData.uploadId;
+      const formData = new FormData();
+      formData.append('userId', user?.id || 'default-user');
+      formData.append('sourceType', 'manual_upload');
+      for (const f of files) formData.append('files', f);
+
+      const res = await fetch('/api/upload', { method: 'POST', body: formData });
+      const body = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(body.error || 'Failed to queue upload');
       }
-    } catch (err) {
-      console.error('Failed to create upload record:', err);
-      // Continue without upload tracking - backwards compatible
-    }
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const fileIndex = i + 1;
-      const totalFiles = files.length;
-      
-      // Initial step for this file
-      setProcessingSteps([{ 
-        step: 'init', 
-        status: 'processing', 
-        message: totalFiles > 1 
-          ? `📄 Processing file ${fileIndex}/${totalFiles}: ${file.name}...` 
-          : `📄 Processing ${file.name}...`, 
-        timestamp: Date.now() 
-      }]);
-    
-      try {
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('userId', user?.id || 'default-user');
-        if (uploadId) {
-          formData.append('uploadId', uploadId);
-        }
+      const uploadId = body.uploadId as string | undefined;
 
-        const response = await fetch('/api/process-statement-stream', {
-          method: 'POST',
-          body: formData,
-        });
+      setProcessingSteps([
+        {
+          step: 'queued',
+          status: 'complete',
+          message: '✅ Upload queued. Processing will continue in the background.',
+          timestamp: Date.now(),
+        },
+      ]);
+      setLastUploadResult(`✅ Upload queued (${files.length} file${files.length !== 1 ? 's' : ''}). You can leave and come back later.`);
+      setUploadCount(prev => prev + 1);
 
-        if (!response.ok) {
-          throw new Error('Failed to process statement');
-        }
-
-        const reader = response.body?.getReader();
-        const decoder = new TextDecoder();
-
-        if (!reader) {
-          throw new Error('No response body');
-        }
-
-        let done = false;
-        let finalResult: any = null;
-
-        while (!done) {
-          const { value, done: readerDone } = await reader.read();
-          done = readerDone;
-
-          if (value) {
-            const chunk = decoder.decode(value);
-            const lines = chunk.split('\n');
-
-            for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                const data = JSON.parse(line.substring(6));
-
-                if (data.error) {
-                  throw new Error(data.error);
-                }
-
-                if (data.done) {
-                  finalResult = data;
-                } else if (data.step) {
-                  // Update processing steps in real-time
-                  setProcessingSteps(prev => {
-                    const newSteps = [...prev];
-                    // Check if we already have this step type for THIS file context?
-                    // Actually, since we reset steps for each file, we can just look for step name
-                    const existingIndex = newSteps.findIndex(s => s.step === data.step);
-                    
-                    // Prefix message with file info if batch processing
-                    const message = totalFiles > 1 
-                      ? `[${fileIndex}/${totalFiles}] ${data.message}` 
-                      : data.message;
-
-                    if (existingIndex >= 0) {
-                      newSteps[existingIndex] = { ...data, message };
-                    } else {
-                      newSteps.push({ ...data, message });
-                    }
-                    
-                    return newSteps;
-                  });
-                }
-              }
-            }
-          }
-        }
-
-        if (finalResult) {
-          processedCount++;
-          totalTransactions += finalResult.transactionCount || 0;
-          duplicatesSkipped += finalResult.duplicatesRemoved || 0;
-          
-          // Track date ranges across all files
-          if (finalResult.firstTransactionDate) {
-            if (!earliestDate || finalResult.firstTransactionDate < earliestDate) {
-              earliestDate = finalResult.firstTransactionDate;
-            }
-          }
-          if (finalResult.lastTransactionDate) {
-            if (!latestDate || finalResult.lastTransactionDate > latestDate) {
-              latestDate = finalResult.lastTransactionDate;
-            }
-          }
-          
-          // Track pending account selections (screenshots)
-          if (finalResult.pendingAccountSelection) {
-            pendingAccountDocs.push(finalResult.id);
-          }
-          
-          // Track account match confirmations (statements)
-          if (finalResult.accountMatchInfo?.needsConfirmation) {
-            accountMatchDocs.push({
-              documentId: finalResult.id,
-              transactionCount: finalResult.transactionCount,
-              ...finalResult.accountMatchInfo,
-            });
-          }
-          
-          // Trigger chart refresh immediately after each file
-          setChartRefreshKey(prev => prev + 1);
-          
-          // Handle clarifications and summary for THIS file (only if not batching)
-          if (files.length === 1) {
-            const isMobile = typeof window !== 'undefined' && window.innerWidth < 1024;
-            
-            if (finalResult.unclarifiedTransactions && finalResult.unclarifiedTransactions.length > 0) {
-              const clarificationMsg = buildClarificationMessage(finalResult);
-              
-              if (isMobile) {
-                setIsMobileChatOpen(true);
-                setTimeout(() => {
-                  chatInterfaceRef.current?.sendSystemMessage?.(clarificationMsg);
-                }, 300);
-              } else if (chatInterfaceRef.current?.sendSystemMessage) {
-                setTimeout(() => {
-                  chatInterfaceRef.current.sendSystemMessage(clarificationMsg);
-                }, 500);
-              }
-            } else if (!finalResult.pendingAccountSelection && !finalResult.accountMatchInfo?.needsConfirmation) {
-              // Send summary only if no account selection needed
-              // Note: We don't need to open mobile chat for simple success summaries
-              if (chatInterfaceRef.current?.sendSystemMessage) {
-                setTimeout(() => {
-                  let message = `✅ **${file.name}**: Processed successfully.\n`;
-                  message += `• Saved ${finalResult.transactionCount} transactions`;
-                  if (finalResult.duplicatesRemoved > 0) {
-                    message += `\n• Skipped ${finalResult.duplicatesRemoved} duplicates`;
-                  }
-                  if (finalResult.firstTransactionDate && finalResult.lastTransactionDate) {
-                    const formatDate = (d: string) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-                    message += `\n• Date range: ${formatDate(finalResult.firstTransactionDate)} - ${formatDate(finalResult.lastTransactionDate)}`;
-                  }
-                  chatInterfaceRef.current.sendSystemMessage(message);
-                }, 500);
-              }
-            }
-          }
-        }
-
-      } catch (error: any) {
-        console.error(`Error processing file ${file.name}:`, error);
-        errors++;
-        setLastUploadResult(`❌ Error with ${file.name}: ${error.message}`);
-        // Keep going to next file
+      // Send user to uploads page for progress details
+      if (uploadId) {
+        router.push(`/uploads?processingUploadId=${encodeURIComponent(uploadId)}`);
+      } else {
+        router.push('/uploads');
       }
-    }
-
-    setIsProcessing(false);
-    
-    // Helper to format date
-    const formatDate = (d: string) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    
-    // Final batch summary
-    if (files.length > 1) {
-      const summary = errors === 0
-        ? `✅ Batch Complete: ${processedCount}/${files.length} files processed (${totalTransactions} txns)`
-        : `⚠️ Batch Complete: ${processedCount}/${files.length} files processed (${errors} failed)`;
-      
-      setLastUploadResult(summary);
-      
-      // Send detailed batch summary to chat
-      if (chatInterfaceRef.current?.sendSystemMessage && processedCount > 0) {
-        setTimeout(() => {
-          let message = `✅ **Upload Complete**: ${processedCount} file${processedCount !== 1 ? 's' : ''} processed\n\n`;
-          message += `📊 **Summary:**\n`;
-          message += `• Transactions added: **${totalTransactions}**\n`;
-          if (duplicatesSkipped > 0) {
-            message += `• Duplicates skipped: ${duplicatesSkipped}\n`;
-          }
-          if (earliestDate && latestDate) {
-            message += `• Date range: ${formatDate(earliestDate)} - ${formatDate(latestDate)}\n`;
-          }
-          
-          chatInterfaceRef.current.sendSystemMessage(message);
-        }, 500);
-      }
-      
-      // Clear steps after a delay
+    } catch (error: any) {
+      console.error('[dashboard] Failed to queue upload:', error);
+      setProcessingSteps([
+        {
+          step: 'error',
+          status: 'complete',
+          message: `❌ ${error?.message || 'Failed to upload'}`,
+          timestamp: Date.now(),
+        },
+      ]);
+      setLastUploadResult(`❌ ${error?.message || 'Failed to upload'}`);
+    } finally {
+      setIsProcessing(false);
+      // Clear steps after a short delay so toast doesn't linger forever
       setTimeout(() => setProcessingSteps([]), 5000);
-    } else {
-      // Single file logic
-      if (errors === 0) {
-         setLastUploadResult(`✅ Upload Complete`);
-         setTimeout(() => setProcessingSteps([]), 5000);
-      }
     }
-    
-    // Handle pending account selections (screenshots without account info)
-    if (pendingAccountDocs.length > 0) {
-      // On mobile, open chat modal first before showing account selection
-      const isMobile = typeof window !== 'undefined' && window.innerWidth < 1024;
-      
-      if (isMobile) {
-        setIsMobileChatOpen(true);
-        // Wait for modal to mount/render, then show account selection
-        setTimeout(() => {
-          chatInterfaceRef.current?.showAccountSelection?.({
-            documentIds: pendingAccountDocs,
-            transactionCount: totalTransactions,
-            dateRange: earliestDate && latestDate ? { start: earliestDate, end: latestDate } : undefined,
-          });
-        }, 300); // Slightly longer delay to ensure modal is fully mounted
-      } else if (chatInterfaceRef.current?.showAccountSelection) {
-        setTimeout(() => {
-          chatInterfaceRef.current.showAccountSelection({
-            documentIds: pendingAccountDocs,
-            transactionCount: totalTransactions,
-            dateRange: earliestDate && latestDate ? { start: earliestDate, end: latestDate } : undefined,
-          });
-        }, 1000);
-      }
-    }
-    
-    // Handle account match confirmations (statements with new official names)
-    if (accountMatchDocs.length > 0) {
-      // Show first one (they can be handled one at a time)
-      const firstMatch = accountMatchDocs[0];
-      const isMobile = typeof window !== 'undefined' && window.innerWidth < 1024;
-      
-      if (isMobile) {
-        setIsMobileChatOpen(true);
-        // Wait for modal to mount/render, then show account match confirmation
-        setTimeout(() => {
-          chatInterfaceRef.current?.showAccountMatchConfirmation?.({
-            documentId: firstMatch.documentId,
-            transactionCount: firstMatch.transactionCount,
-            matchedAccount: firstMatch.matchedAccount,
-            officialName: firstMatch.officialName,
-            last4: firstMatch.last4,
-            existingAccounts: firstMatch.existingAccounts,
-          });
-        }, 400); // Slightly longer delay to ensure modal is fully mounted
-      } else if (chatInterfaceRef.current?.showAccountMatchConfirmation) {
-        setTimeout(() => {
-          chatInterfaceRef.current.showAccountMatchConfirmation({
-            documentId: firstMatch.documentId,
-            transactionCount: firstMatch.transactionCount,
-            matchedAccount: firstMatch.matchedAccount,
-            officialName: firstMatch.officialName,
-            last4: firstMatch.last4,
-            existingAccounts: firstMatch.existingAccounts,
-          });
-        }, 1200);
-      }
-    }
-    
-    // Update upload status when done
-    if (uploadId) {
-      try {
-        await fetch(`/api/uploads/${uploadId}/status`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            status: errors === files.length ? 'failed' : 'completed' 
-          }),
-        });
-      } catch (err) {
-        console.error('Failed to update upload status:', err);
-      }
-    }
-
-  }, [user]);
+  }, [user, router]);
 
   const buildClarificationMessage = (result: any) => {
     const unclarified = result.unclarifiedTransactions || [];
@@ -437,6 +216,22 @@ export default function Home() {
             <UserMenu />
           </div>
         </header>
+
+        {processingUploadsCount > 0 && (
+          <div className="border-b border-amber-100 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-900/10">
+            <div className="px-6 py-2 flex items-center justify-between gap-3">
+              <div className="text-sm text-amber-800 dark:text-amber-200">
+                You have <span className="font-semibold">{processingUploadsCount}</span> upload{processingUploadsCount !== 1 ? 's' : ''} processing in the background.
+              </div>
+              <button
+                onClick={() => router.push('/uploads')}
+                className="text-sm font-medium text-amber-800 dark:text-amber-200 hover:underline"
+              >
+                View progress →
+              </button>
+            </div>
+          </div>
+        )}
 
       <div className="flex-1 flex overflow-hidden min-h-0">
         {/* Main Content Grid */}
