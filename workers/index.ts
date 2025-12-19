@@ -25,6 +25,7 @@ async function main() {
   const workerId = process.env.WORKER_ID || `${os.hostname()}-${process.pid}`;
 
   console.log(`[worker] Starting. workerId=${workerId} concurrency=${concurrency} pollIntervalMs=${pollIntervalMs}`);
+  console.log(`[worker] Log level: ${process.env.WORKER_LOG_LEVEL || 'info'}`);
 
   const shutdown = (signal: string) => {
     console.log(`[worker] Received ${signal}. Exiting...`);

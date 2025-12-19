@@ -27,6 +27,48 @@ import { BASE_SYSTEM_PROMPT, GEMINI_MODEL } from '../lib/gemini-prompts';
 
 type SendUpdate = (step: string, message: string, status?: 'processing' | 'complete') => void;
 
+type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+
+function getLogLevel(): LogLevel {
+  const v = (process.env.WORKER_LOG_LEVEL || 'info').toLowerCase();
+  if (v === 'debug' || v === 'info' || v === 'warn' || v === 'error') return v;
+  return 'info';
+}
+
+function shouldLog(level: LogLevel): boolean {
+  const cur = getLogLevel();
+  const order: Record<LogLevel, number> = { debug: 10, info: 20, warn: 30, error: 40 };
+  return order[level] >= order[cur];
+}
+
+function safeJson(value: any): string {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return '"[unserializable]"';
+  }
+}
+
+function log(level: LogLevel, message: string, meta?: Record<string, any>) {
+  if (!shouldLog(level)) return;
+  const ts = new Date().toISOString();
+  const metaStr = meta ? ` ${safeJson(meta)}` : '';
+  const line = `[worker] ${ts} ${level.toUpperCase()} ${message}${metaStr}`;
+  if (level === 'error') console.error(line);
+  else if (level === 'warn') console.warn(line);
+  else console.log(line);
+}
+
+async function timed<T>(label: string, fn: () => Promise<T>, meta?: Record<string, any>): Promise<{ result: T; ms: number }> {
+  const start = Date.now();
+  try {
+    const result = await fn();
+    return { result, ms: Date.now() - start };
+  } finally {
+    // Caller logs if needed
+  }
+}
+
 function guessMimeType(fileName: string): string {
   const lower = fileName.toLowerCase();
   if (lower.endsWith('.pdf')) return 'application/pdf';
@@ -75,6 +117,8 @@ async function ensureUploadExists(uploadId: string, userId: string) {
     // If lookup fails for any reason other than not found, rethrow.
     if (err?.code && err.code !== 'PGRST116') throw err;
   }
+
+  log('warn', 'Missing upload row, creating placeholder to satisfy FK', { uploadId, userId });
 
   const now = new Date().toISOString();
   const { error: insertError } = await supabase
@@ -137,17 +181,22 @@ async function processFileBuffer(opts: {
     },
   };
 
-  const geminiResponse = await model.generateContent({
-    contents: [
-      {
-        role: 'user',
-        parts: [
-          { text: 'Extract all information from this financial document and return the structured JSON.' },
-          filePart,
-        ],
-      },
-    ],
+  log('info', 'Calling Gemini for extraction', { fileName, mimeType, bytes: buffer.length });
+
+  const { result: geminiResponse, ms: geminiMs } = await timed('gemini.generateContent', async () => {
+    return await model.generateContent({
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { text: 'Extract all information from this financial document and return the structured JSON.' },
+            filePart,
+          ],
+        },
+      ],
+    });
   });
+  log('info', 'Gemini extraction complete', { fileName, ms: geminiMs });
 
   const content = geminiResponse.response.text();
   if (!content) throw new Error('No response from Gemini');
@@ -378,6 +427,7 @@ async function processFileBuffer(opts: {
 
   const insertedDoc = await insertDocument(documentEntry as any);
   const documentId = insertedDoc.id!;
+  log('info', 'Inserted document', { documentId, fileName, uploadId: normalizedUploadId, userId });
 
   if (transactionsToInsert.length > 0) {
     const transactions: Transaction[] = transactionsToInsert.map((txn: any) => ({
@@ -399,6 +449,7 @@ async function processFileBuffer(opts: {
     }));
 
     await insertTransactions(transactions);
+    log('info', 'Inserted transactions', { documentId, count: transactions.length, needsClarification: transactions.filter(t => t.needs_clarification).length });
   }
 
   // Append metadata summary
@@ -434,12 +485,14 @@ async function processFileBuffer(opts: {
     if (snapshots.length > 0) {
       await insertAccountSnapshots(snapshots);
       sendUpdate('snapshots', `📊 Saved ${snapshots.length} monthly snapshot${snapshots.length !== 1 ? 's' : ''}`, 'complete');
+      log('info', 'Inserted account snapshots', { documentId, count: snapshots.length });
     }
   }
 
   sendUpdate('saving', '💾 Saved to database successfully', 'complete');
 
   const unclarifiedTransactions = await getUnclarifiedTransactions(userId, documentId);
+  log('info', 'Fetched unclarified transactions', { documentId, count: unclarifiedTransactions.length });
 
   if (transactionsToInsert.length > 0) {
     refreshFixedExpensesCache(userId).catch(err => {
@@ -494,14 +547,32 @@ async function processFileBuffer(opts: {
 }
 
 async function runSingleJobLoop(workerId: string, pollIntervalMs: number) {
+  let idleCount = 0;
   while (true) {
     const job = await claimNextPendingJob(workerId);
     if (!job || !job.id) {
+      idleCount++;
+      if (idleCount % 15 === 0) {
+        log('debug', 'No pending jobs found (idle)', { workerId, pollIntervalMs });
+      }
       await new Promise(r => setTimeout(r, pollIntervalMs));
       continue;
     }
 
+    idleCount = 0;
     const jobId = job.id;
+    const jobMeta = {
+      workerId,
+      jobId,
+      uploadId: (job as any).upload_id || null,
+      userId: (job as any).user_id,
+      bucket: (job as any).bucket || 'statements',
+      filePath: (job as any).file_path,
+      fileName: (job as any).file_name,
+      attempts: (job as any).attempts,
+      maxAttempts: (job as any).max_attempts,
+    };
+    log('info', 'Claimed job', jobMeta);
 
     const sendUpdate: SendUpdate = (step, message, status = 'processing') => {
       updateJobProgress(jobId, {
@@ -511,7 +582,7 @@ async function runSingleJobLoop(workerId: string, pollIntervalMs: number) {
         status,
         updatedAt: new Date().toISOString(),
       }).catch(err => {
-        console.error('[worker] Failed to update job progress:', err);
+        log('warn', 'Failed to update job progress', { jobId, step, err: err?.message || String(err) });
       });
     };
 
@@ -522,16 +593,22 @@ async function runSingleJobLoop(workerId: string, pollIntervalMs: number) {
       const filePath = (job as any).file_path;
       const fileName = (job as any).file_name;
 
-      const { data: blob, error: dlError } = await supabase.storage.from(bucket).download(filePath);
+      log('info', 'Downloading file from storage', { jobId, bucket, filePath });
+      const { result: dlRes, ms: dlMs } = await timed('storage.download', async () => {
+        return await supabase.storage.from(bucket).download(filePath);
+      });
+      const { data: blob, error: dlError } = dlRes as any;
       if (dlError || !blob) {
         throw new Error(`Failed to download file: ${dlError?.message || 'No data'}`);
       }
+      log('info', 'Downloaded file from storage', { jobId, ms: dlMs });
 
       const buffer = Buffer.from(await blob.arrayBuffer());
       const mimeType = guessMimeType(fileName);
       const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(filePath);
       const fileUrl = urlData.publicUrl;
 
+      log('info', 'Starting processing pipeline', { jobId, mimeType, bytes: buffer.length });
       const result = await processFileBuffer({
         userId: (job as any).user_id,
         fileName,
@@ -543,19 +620,22 @@ async function runSingleJobLoop(workerId: string, pollIntervalMs: number) {
       });
 
       await completeJob(jobId, result);
+      log('info', 'Job completed', { jobId, documentId: result?.id, uploadId: (job as any).upload_id || null });
 
       if ((job as any).upload_id) {
         await updateUploadStatusFromJobs((job as any).upload_id);
+        log('debug', 'Upload status updated from jobs', { jobId, uploadId: (job as any).upload_id });
       }
     } catch (err: any) {
       const msg = err?.message || String(err);
-      console.error('[worker] Job failed:', jobId, msg);
+      log('error', 'Job failed', { jobId, msg, stack: err?.stack });
 
       // Retry if attempts remain (attempts is incremented during claim)
       const attempts = (job as any).attempts ?? 1;
       const maxAttempts = (job as any).max_attempts ?? 3;
 
       if (attempts < maxAttempts) {
+        log('warn', 'Re-queueing job for retry', { jobId, attempts, maxAttempts });
         await supabase
           .from('processing_jobs')
           .update({
@@ -565,6 +645,7 @@ async function runSingleJobLoop(workerId: string, pollIntervalMs: number) {
           })
           .eq('id', jobId);
       } else {
+        log('error', 'Job exhausted retries; marking failed', { jobId, attempts, maxAttempts });
         await failJob(jobId, msg);
         if ((job as any).upload_id) {
           await updateUploadStatusFromJobs((job as any).upload_id);
