@@ -8,6 +8,7 @@ interface MobileChatModalProps {
   chatInterfaceRef: React.RefObject<any>;
   isOpen: boolean;
   onOpenChange: (isOpen: boolean) => void;
+  onTodoResolved?: () => void;
   isDemoMode?: boolean;
   maxQuestions?: number;
   questionCount?: number;
@@ -20,6 +21,7 @@ export default function MobileChatModal({
   chatInterfaceRef, 
   isOpen, 
   onOpenChange,
+  onTodoResolved,
   isDemoMode = false,
   maxQuestions,
   questionCount,
@@ -100,6 +102,7 @@ export default function MobileChatModal({
               <ChatInterface 
                 ref={chatInterfaceRef} 
                 userId={userId}
+                onTodoResolved={onTodoResolved}
                 isDemoMode={isDemoMode}
                 maxQuestions={maxQuestions}
                 questionCount={questionCount}

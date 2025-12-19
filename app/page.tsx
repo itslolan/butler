@@ -323,6 +323,7 @@ export default function Home() {
             chatInterfaceRef={chatInterfaceRef} 
             isOpen={isMobileChatOpen}
             onOpenChange={setIsMobileChatOpen}
+            onTodoResolved={() => setChartRefreshKey(prev => prev + 1)}
           />
           
           {/* Mobile Processing Toast - Only visible on mobile */}
