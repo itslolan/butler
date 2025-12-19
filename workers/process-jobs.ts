@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '../lib/supabase';
 import {
   claimNextPendingJob,
   updateJobProgress,
@@ -16,13 +16,13 @@ import {
   searchTransactions,
   findAccountsByLast4,
   getOrCreateAccount,
-} from '@/lib/db-tools';
-import { Transaction } from '@/lib/supabase';
-import { calculateMonthlySnapshots } from '@/lib/snapshot-calculator';
-import { generateSuggestedActions } from '@/lib/action-generator';
-import { refreshFixedExpensesCache } from '@/lib/fixed-expenses';
-import { deduplicateTransactionsSimple } from '@/lib/deduplication-test';
-import { BASE_SYSTEM_PROMPT, GEMINI_MODEL } from '@/lib/gemini-prompts';
+} from '../lib/db-tools';
+import { Transaction } from '../lib/supabase';
+import { calculateMonthlySnapshots } from '../lib/snapshot-calculator';
+import { generateSuggestedActions } from '../lib/action-generator';
+import { refreshFixedExpensesCache } from '../lib/fixed-expenses';
+import { deduplicateTransactionsSimple } from '../lib/deduplication-test';
+import { BASE_SYSTEM_PROMPT, GEMINI_MODEL } from '../lib/gemini-prompts';
 
 type SendUpdate = (step: string, message: string, status?: 'processing' | 'complete') => void;
 

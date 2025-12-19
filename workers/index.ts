@@ -1,5 +1,15 @@
-import os from 'os';
-import { startWorker } from './process-jobs';
+// Important: background worker runs in plain Node (not Next), so we must
+// register runtime aliases for imports like `@/lib/...` used throughout `lib/`.
+//
+// This reads `_moduleAliases` from package.json (we map `@` -> dist/workers).
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+require('module-alias/register');
+
+// Use require() to ensure alias registration happens before any other modules load.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const os = require('os');
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { startWorker } = require('./process-jobs');
 
 function getEnvNumber(key: string, def: number) {
   const v = process.env[key];

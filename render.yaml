@@ -10,6 +10,12 @@ services:
     envVars:
       - key: NODE_VERSION
         value: 20
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
     healthCheckPath: /
 
   - type: worker
@@ -23,6 +29,12 @@ services:
     envVars:
       - key: NODE_VERSION
         value: 20
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
       - key: WORKER_CONCURRENCY
         value: 3
       - key: POLL_INTERVAL_MS
