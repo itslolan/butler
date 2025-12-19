@@ -2053,6 +2053,17 @@ export async function deleteUpload(
   uploadId: string,
   userId: string
 ): Promise<{ deletedDocuments: number; deletedTransactions: number }> {
+  // Fetch any queued/processing jobs for this upload (these may exist even if no documents were created yet)
+  const { data: jobs, error: jobsError } = await supabase
+    .from('processing_jobs')
+    .select('id, bucket, file_path')
+    .eq('upload_id', uploadId);
+
+  if (jobsError) {
+    // Don't hard-fail deletion if jobs table isn't present (backwards compatibility)
+    console.error('[deleteUpload] Failed to fetch processing jobs:', jobsError.message);
+  }
+
   // First get all documents to delete their storage files
   const { data: documents, error: docsError } = await supabase
     .from('documents')
@@ -2078,22 +2089,67 @@ export async function deleteUpload(
     }
   }
 
+  // IMPORTANT: account_snapshots references documents(document_id) without cascading,
+  // so we must delete snapshots first to avoid FK violations.
+  if (docIds.length > 0) {
+    const { error: snapshotsError } = await supabase
+      .from('account_snapshots')
+      .delete()
+      .in('document_id', docIds);
+
+    if (snapshotsError) {
+      throw new Error(`Failed to delete account snapshots: ${snapshotsError.message}`);
+    }
+  }
+
   // Delete files from storage
   for (const doc of documents || []) {
     if (doc.file_url) {
       try {
-        // Extract path from URL
-        // URL format: https://xxx.supabase.co/storage/v1/object/public/statements/userId/timestamp_filename
+        // Extract path from Supabase URL
         const url = new URL(doc.file_url);
-        const pathMatch = url.pathname.match(/\/storage\/v1\/object\/public\/statements\/(.+)/);
-        if (pathMatch) {
-          const filePath = pathMatch[1];
-          await supabase.storage.from('statements').remove([filePath]);
+        const pathname = decodeURIComponent(url.pathname);
+        const prefixes = [
+          '/storage/v1/object/public/statements/',
+          '/storage/v1/object/statements/',
+          '/storage/v1/object/sign/statements/',
+        ];
+        for (const prefix of prefixes) {
+          if (pathname.startsWith(prefix)) {
+            const filePath = pathname.slice(prefix.length).replace(/^\/+/, '');
+            if (filePath) {
+              await supabase.storage.from('statements').remove([filePath]);
+            }
+            break;
+          }
         }
       } catch (err) {
         console.error(`Failed to delete storage file: ${doc.file_url}`, err);
         // Continue with deletion even if storage cleanup fails
       }
+    }
+  }
+
+  // Delete any job-uploaded storage objects (pending files) too
+  for (const job of jobs || []) {
+    const bucket = (job as any).bucket || 'statements';
+    const filePath = (job as any).file_path;
+    if (!filePath) continue;
+    try {
+      await supabase.storage.from(bucket).remove([filePath]);
+    } catch (err) {
+      console.error(`[deleteUpload] Failed to delete job storage file: ${bucket}/${filePath}`, err);
+    }
+  }
+
+  // Delete processing jobs explicitly (they also cascade when upload is deleted, but do it here to clean status fast)
+  if ((jobs || []).length > 0) {
+    const { error: deleteJobsError } = await supabase
+      .from('processing_jobs')
+      .delete()
+      .eq('upload_id', uploadId);
+    if (deleteJobsError) {
+      console.error('[deleteUpload] Failed to delete processing jobs:', deleteJobsError.message);
     }
   }
 

@@ -11,24 +11,30 @@ export const dynamic = 'force-dynamic';
  */
 function extractStoragePath(fileUrl: string): string | null {
   try {
-    // Handle both public and authenticated URL patterns
-    // Pattern: /storage/v1/object/public/statements/{path}
-    // Pattern: /storage/v1/object/statements/{path}
-    const patterns = [
-      /\/storage\/v1\/object\/public\/statements\/(.+)$/,
-      /\/storage\/v1\/object\/statements\/(.+)$/,
-    ];
-
-    for (const pattern of patterns) {
-      const match = fileUrl.match(pattern);
-      if (match) {
-        return decodeURIComponent(match[1]);
-      }
+    // If it's already just a path (no URL), return as-is (trim leading slash)
+    if (!fileUrl.startsWith('http')) {
+      const p = fileUrl.split('?')[0].replace(/^\/+/, '');
+      return p || null;
     }
 
-    // If it's already just a path (no URL), return as-is
-    if (!fileUrl.startsWith('http')) {
-      return fileUrl;
+    const url = new URL(fileUrl);
+    const pathname = decodeURIComponent(url.pathname);
+
+    // Handle common Supabase formats:
+    // - /storage/v1/object/public/statements/{path}
+    // - /storage/v1/object/statements/{path}
+    // - /storage/v1/object/sign/statements/{path}
+    const prefixes = [
+      '/storage/v1/object/public/statements/',
+      '/storage/v1/object/statements/',
+      '/storage/v1/object/sign/statements/',
+    ];
+
+    for (const prefix of prefixes) {
+      if (pathname.startsWith(prefix)) {
+        const p = pathname.slice(prefix.length).replace(/^\/+/, '');
+        return p || null;
+      }
     }
 
     return null;
@@ -80,9 +86,10 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       console.error('[signed-url] Error generating signed URL:', error);
+      const isNotFound = (error as any)?.statusCode === '404' || (error as any)?.status === 404;
       return NextResponse.json(
         { error: `Failed to generate signed URL: ${error.message}` },
-        { status: 500 }
+        { status: isNotFound ? 404 : 500 }
       );
     }
 
