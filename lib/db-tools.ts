@@ -505,6 +505,12 @@ async function fetchAllTransactions(
     startDate?: string;
     endDate?: string;
     selectFields?: string;
+    /**
+     * Backward-compat: older ingestion paths stored rows without `transaction_type`.
+     * When enabled, we include untyped rows that "look like" the requested types
+     * using amount sign inference (positive = income, negative = expense/other).
+     */
+    inferMissingTypesByAmountSign?: boolean;
   }
 ): Promise<any[]> {
   const PAGE_SIZE = 1000;
@@ -521,7 +527,25 @@ async function fetchAllTransactions(
       .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
 
     if (filters.transactionTypes && filters.transactionTypes.length > 0) {
-      query = query.in('transaction_type', filters.transactionTypes);
+      if (filters.inferMissingTypesByAmountSign) {
+        const wantsIncome = filters.transactionTypes.includes('income');
+        const wantsExpenseLike = filters.transactionTypes.includes('expense') || filters.transactionTypes.includes('other');
+
+        // If only one "side" is requested, keep the inference tight by amount sign.
+        if (wantsIncome && !wantsExpenseLike) {
+          query = query.or('transaction_type.eq.income,and(transaction_type.is.null,amount.gt.0)');
+        } else if (wantsExpenseLike && !wantsIncome) {
+          query = query.or('transaction_type.in.(expense,other),and(transaction_type.is.null,amount.lt.0)');
+        } else {
+          // Mixed request: include the explicit types plus any untyped rows.
+          // (Caller is responsible for classifying by sign downstream.)
+          query = query.or(
+            `transaction_type.in.(${filters.transactionTypes.join(',')}),transaction_type.is.null`
+          );
+        }
+      } else {
+        query = query.in('transaction_type', filters.transactionTypes);
+      }
     }
 
     if (filters.startDate) {
@@ -580,6 +604,7 @@ export async function getMonthlySpendingTrend(
   // Get all expense transactions in the date range using pagination
   const data = await fetchAllTransactions(userId, {
     transactionTypes: ['expense', 'other'],
+    inferMissingTypesByAmountSign: true,
     startDate,
     endDate,
     selectFields: 'date, amount, transaction_type',
@@ -661,6 +686,7 @@ export async function getCategoryBreakdown(
   // Get all transactions using pagination
   const data = await fetchAllTransactions(userId, {
     transactionTypes: ['expense', 'other'],
+    inferMissingTypesByAmountSign: true,
     startDate,
     endDate,
     selectFields: 'category, amount, transaction_type, date, spend_classification',
@@ -1086,20 +1112,30 @@ export async function getIncomeVsExpenses(
       // If month is in our pre-filled map, update it
       if (current) {
         const absAmount = Math.abs(Number(txn.amount));
-        
-        if (txn.transaction_type === 'income') {
+
+        // Backward-compat: infer missing transaction_type from amount sign.
+        // Our ingestion convention is: positive = credits/deposits (income), negative = debits/charges (expense).
+        const inferredType =
+          txn.transaction_type ||
+          (Number(txn.amount) > 0 ? 'income' : Number(txn.amount) < 0 ? 'expense' : null);
+
+        if (inferredType === 'income') {
           current.income += absAmount;
-        } else if (txn.transaction_type === 'expense' || txn.transaction_type === 'other') {
+        } else if (inferredType === 'expense' || inferredType === 'other') {
           current.expenses += absAmount;
         }
       } else if (!specificMonth) {
         // If not in map and we're in range mode, add it (edge case for data outside expected range)
         const absAmount = Math.abs(Number(txn.amount));
         const newEntry = { income: 0, expenses: 0 };
-        
-        if (txn.transaction_type === 'income') {
+
+        const inferredType =
+          txn.transaction_type ||
+          (Number(txn.amount) > 0 ? 'income' : Number(txn.amount) < 0 ? 'expense' : null);
+
+        if (inferredType === 'income') {
           newEntry.income = absAmount;
-        } else if (txn.transaction_type === 'expense' || txn.transaction_type === 'other') {
+        } else if (inferredType === 'expense' || inferredType === 'other') {
           newEntry.expenses = absAmount;
         }
         

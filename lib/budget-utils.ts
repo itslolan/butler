@@ -495,7 +495,9 @@ export async function getSpendingByCategory(
     .eq('user_id', userId)
     .gte('date', startDate)
     .lte('date', endDate)
-    .in('transaction_type', ['expense', 'other']);
+    // Backward-compat: older ingestion paths stored rows without transaction_type.
+    // Ingestion convention: negative = debits/charges (expense-like).
+    .or('transaction_type.in.(expense,other),and(transaction_type.is.null,amount.lt.0)');
 
   if (error) {
     throw new Error(`Failed to get spending: ${error.message}`);
@@ -525,7 +527,9 @@ export async function getIncomeForMonth(userId: string, month: string): Promise<
     .eq('user_id', userId)
     .gte('date', startDate)
     .lte('date', endDate)
-    .eq('transaction_type', 'income');
+    // Backward-compat: older ingestion paths stored rows without transaction_type.
+    // Ingestion convention: positive = credits/deposits (income-like).
+    .or('transaction_type.eq.income,and(transaction_type.is.null,amount.gt.0)');
 
   if (error) {
     throw new Error(`Failed to get income: ${error.message}`);
@@ -600,7 +604,7 @@ export async function findLastMonthWithIncome(userId: string): Promise<string | 
     .from('transactions')
     .select('date')
     .eq('user_id', userId)
-    .eq('transaction_type', 'income')
+    .or('transaction_type.eq.income,and(transaction_type.is.null,amount.gt.0)')
     .order('date', { ascending: false })
     .limit(1);
 
@@ -634,7 +638,7 @@ export async function getHistoricalSpendingBreakdown(
     .select('date, category, amount, transaction_type')
     .eq('user_id', userId)
     .gte('date', startDateStr)
-    .in('transaction_type', ['expense', 'other']);
+    .or('transaction_type.in.(expense,other),and(transaction_type.is.null,amount.lt.0)');
 
   if (error) {
     throw new Error(`Failed to get historical spending: ${error.message}`);
