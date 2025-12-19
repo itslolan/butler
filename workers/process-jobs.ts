@@ -6,6 +6,7 @@ import {
   completeJob,
   failJob,
   updateUploadStatusFromJobs,
+  generateUploadName,
   insertDocument,
   insertTransactions,
   appendMetadata,
@@ -54,6 +55,43 @@ function stepPercent(step: string, status: 'processing' | 'complete' = 'processi
   const normalized = step.replace(/-/g, '_');
   const pct = base[normalized] ?? (status === 'complete' ? 100 : 50);
   return Math.max(0, Math.min(100, pct));
+}
+
+async function ensureUploadExists(uploadId: string, userId: string) {
+  try {
+    const { data, error } = await supabase
+      .from('uploads')
+      .select('id')
+      .eq('id', uploadId)
+      .single();
+
+    if (!error && data?.id) return;
+
+    // If not found, Supabase returns PGRST116
+    if (error && error.code !== 'PGRST116') {
+      throw error;
+    }
+  } catch (err: any) {
+    // If lookup fails for any reason other than not found, rethrow.
+    if (err?.code && err.code !== 'PGRST116') throw err;
+  }
+
+  const now = new Date().toISOString();
+  const { error: insertError } = await supabase
+    .from('uploads')
+    .insert({
+      id: uploadId,
+      user_id: userId,
+      upload_name: generateUploadName(),
+      source_type: 'manual_upload',
+      status: 'processing',
+      uploaded_at: now,
+      created_at: now,
+    });
+
+  if (insertError) {
+    throw new Error(`Failed to create missing upload row for FK repair: ${insertError.message}`);
+  }
 }
 
 async function processFileBuffer(opts: {
@@ -299,7 +337,15 @@ async function processFileBuffer(opts: {
   const accountLast4 = extractedData.accountNumberLast4 || null;
   const needsAccountSelection = isScreenshot && !accountName;
 
-  const batchId = uploadId || null;
+  const normalizedUploadId = uploadId && uploadId.trim() !== '' ? uploadId : null;
+  const batchId = normalizedUploadId || null;
+
+  // Ensure the uploads row exists before inserting documents with upload_id FK.
+  if (normalizedUploadId) {
+    sendUpdate('upload-check', '🔗 Verifying upload reference...', 'processing');
+    await ensureUploadExists(normalizedUploadId, userId);
+    sendUpdate('upload-check', '🔗 Upload reference verified', 'complete');
+  }
 
   const documentEntry = {
     user_id: userId,
@@ -319,7 +365,7 @@ async function processFileBuffer(opts: {
     due_date: extractedData.dueDate || null,
     source_type: sourceType,
     pending_account_selection: needsAccountSelection,
-    upload_id: uploadId,
+    upload_id: normalizedUploadId,
     batch_id: batchId,
     metadata: {
       firstTransactionDate: extractedData.firstTransactionDate || null,

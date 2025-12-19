@@ -1830,6 +1830,11 @@ export async function failJob(jobId: string, errorMessage: string): Promise<void
       status: 'failed',
       completed_at: new Date().toISOString(),
       error_message: errorMessage,
+      progress: {
+        step: 'failed',
+        percent: 100,
+        message: `Failed: ${errorMessage}`,
+      },
     })
     .eq('id', jobId);
 
