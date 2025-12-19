@@ -132,7 +132,7 @@ Please reply with the correct category or explain what this transaction is.`;
         
         // Only fetch accounts if not provided
         if (accounts.length === 0) {
-          const response = await fetch('/api/accounts');
+          const response = await fetch(`/api/accounts?userId=${userId}`);
           
           if (!response.ok) {
             const contentType = response.headers.get('content-type');

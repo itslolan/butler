@@ -8,25 +8,30 @@ export const dynamic = 'force-dynamic';
 /**
  * GET /api/accounts - List all accounts for the authenticated user
  * Also returns documents pending account selection
+ * Supports both cookie auth and userId query param for flexibility
  */
 export async function GET(request: NextRequest) {
   try {
-    // Get authenticated user
-    const supabaseAuth = createClient();
-    const { data: { user }, error: authError } = await supabaseAuth.auth.getUser();
+    const { searchParams } = new URL(request.url);
+    let userId = searchParams.get('userId');
 
-    if (authError || !user) {
-      console.error('[accounts] Authentication failed:', authError?.message);
-      return NextResponse.json(
-        { error: 'Unauthorized', accounts: [] },
-        { 
-          status: 401,
-          headers: { 'Content-Type': 'application/json' }
-        }
-      );
+    // If no userId in query, try cookie auth
+    if (!userId) {
+      const supabaseAuth = createClient();
+      const { data: { user }, error: authError } = await supabaseAuth.auth.getUser();
+
+      if (authError || !user) {
+        console.error('[accounts] Authentication failed:', authError?.message);
+        return NextResponse.json(
+          { error: 'Unauthorized', accounts: [] },
+          { 
+            status: 401,
+            headers: { 'Content-Type': 'application/json' }
+          }
+        );
+      }
+      userId = user.id;
     }
-
-    const userId = user.id;
 
     // Get all accounts
     const accounts = await getAccountsByUserId(userId);

@@ -1341,14 +1341,16 @@ export async function getAccountsByUserId(userId: string): Promise<Account[]> {
     .from('accounts')
     .select('*')
     .eq('user_id', userId)
-    // Include accounts where is_active is true OR null (for backward compatibility)
-    .or('is_active.is.true,is_active.is.null')
+    // Include accounts where is_active is not explicitly false
+    .neq('is_active', false)
     .order('display_name', { ascending: true });
 
   if (error) {
+    console.error(`[getAccountsByUserId] Error for userId ${userId}:`, error.message);
     throw new Error(`Failed to get accounts: ${error.message}`);
   }
 
+  console.log(`[getAccountsByUserId] Found ${data?.length || 0} accounts for userId ${userId}`);
   return data || [];
 }
 
