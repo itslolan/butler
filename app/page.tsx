@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import FileUpload from '@/components/FileUpload';
 import ChatInterface from '@/components/ChatInterface';
 import VisualizationPanel from '@/components/VisualizationPanel';
@@ -211,6 +212,12 @@ export default function Home() {
           </div>
           
           <div className="flex items-center gap-4">
+            <Link 
+              href="/pricing"
+              className="text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+            >
+              Pricing
+            </Link>
             <TodoButton 
               userId={user?.id || 'default-user'} 
               onSelectTodo={handleTodoSelect}

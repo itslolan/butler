@@ -34,3 +34,4 @@ export default function ResultCard({ title, value, subtitle, color = 'blue', siz
   );
 }
 
+

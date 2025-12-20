@@ -67,6 +67,12 @@ export default function LandingPage() {
               Free Tools
             </Link>
             <Link 
+              href="/pricing"
+              className="text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+            >
+              Pricing
+            </Link>
+            <Link 
               href="/login"
               className="text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
             >
