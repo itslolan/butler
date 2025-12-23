@@ -18,6 +18,13 @@ import {
   upsertMemory
 } from '@/lib/db-tools';
 import { getBudgetData, analyzeBudgetHealth, adjustBudgetAllocations } from '@/lib/budget-utils';
+import { createClient } from '@supabase/supabase-js';
+
+// Initialize Supabase client for direct database operations
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 export const runtime = 'nodejs';
 
@@ -280,51 +287,66 @@ async function executeToolCall(name: string, args: any, effectiveUserId: string,
         };
       }
     } else if (name === 'resolve_todo') {
-      // Unified TODO resolver (resolve or dismiss)
-      let fullApiUrl: string;
-
-      if (requestUrl) {
-        const url = new URL(requestUrl);
-        fullApiUrl = `${url.protocol}//${url.host}/api/todos/resolve`;
-      } else {
-        const baseUrl =
-          process.env.NEXT_PUBLIC_SITE_URL ||
-          process.env.NEXT_PUBLIC_BASE_URL ||
-          'http://localhost:3000';
-        fullApiUrl = `${baseUrl}/api/todos/resolve`;
-      }
-
+      // Call resolve logic directly instead of making HTTP request
+      // This avoids URL construction issues in different deployment environments
       try {
-        const response = await fetch(fullApiUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userId: effectiveUserId,
-            todoType: args.todo_type,
-            todoId: args.todo_id,
-            action: args.action,
-            transaction_type: args.transaction_type,
-            document_ids: args.document_ids,
-            account_id: args.account_id,
-            new_account: args.new_account,
-          }),
-        });
+        const { updateTransactionType } = await import('@/lib/db-tools');
+        const todoType = args.todo_type;
+        const todoId = args.todo_id;
+        const action = args.action;
 
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error('[chat API] resolve_todo failed:', response.status, errorText);
+        if (todoType === 'transaction_clarification') {
+          const transactionId = todoId;
+
+          if (action === 'dismiss') {
+            const { error } = await supabase
+              .from('transactions')
+              .update({
+                is_dismissed: true,
+                needs_clarification: false,
+                clarification_question: null,
+              })
+              .eq('id', transactionId)
+              .eq('user_id', effectiveUserId);
+
+            if (error) {
+              functionResult = { error: error.message, success: false };
+            } else {
+              functionResult = { success: true, dismissed: true };
+            }
+          } else {
+            // resolve action
+            const transactionType = args.transaction_type;
+            if (!transactionType || !['income', 'expense', 'transfer', 'other'].includes(transactionType)) {
+              functionResult = {
+                error: 'transaction_type is required for resolving transaction_clarification todos',
+                success: false
+              };
+            } else {
+              await updateTransactionType(transactionId, transactionType);
+              functionResult = { 
+                success: true, 
+                resolved: true, 
+                transaction_id: transactionId, 
+                transaction_type: transactionType 
+              };
+            }
+          }
+        } else if (todoType === 'account_selection') {
+          // Handle account selection todos
           functionResult = {
-            error: `API error: ${response.status} ${response.statusText}`,
-            details: errorText,
+            error: 'Account selection not implemented in direct call yet. Use /api/todos/resolve endpoint.',
+            success: false
           };
         } else {
-          functionResult = await response.json();
+          functionResult = { error: 'Invalid todoType', success: false };
         }
-      } catch (fetchError: any) {
-        console.error('[chat API] resolve_todo fetch error:', fetchError.message);
+      } catch (resolveError: any) {
+        console.error('[chat API] resolve_todo error:', resolveError.message);
         functionResult = {
-          error: `Fetch failed: ${fetchError.message}`,
-          error_type: fetchError.name,
+          error: `Resolution failed: ${resolveError.message}`,
+          error_type: resolveError.name,
+          success: false
         };
       }
     } else if (name === 'get_account_snapshots') {
@@ -1221,10 +1243,17 @@ When answering questions, use these memories to provide context-aware responses.
         }
         return true;
       })
-      .map((msg: any) => ({
-        role: msg.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: msg.content }],
-      }));
+      .map((msg: any) => {
+        // For system messages with aiContext, include the hidden instructions for the LLM
+        let textContent = msg.content;
+        if (msg.aiContext) {
+          textContent = `${msg.content}\n\n---\n[Hidden context for AI only, not shown to user]:\n${msg.aiContext}`;
+        }
+        return {
+          role: msg.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: textContent }],
+        };
+      });
 
     const chat = model.startChat({ history });
 

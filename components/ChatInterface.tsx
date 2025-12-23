@@ -37,6 +37,7 @@ interface Message {
   toolCalls?: ToolCall[];
   isStreaming?: boolean;
   accountSelection?: AccountSelectionData;
+  aiContext?: string; // Hidden instructions for AI, not displayed to user
 }
 
 interface ChatInterfaceProps {
@@ -156,25 +157,28 @@ const ChatInterface = forwardRef(({
       await sendMessage(content);
     },
     resolveTodo: (transaction: any) => {
-      const content = `📝 **Action Required: Clarification Needed**
+      // User-facing content (what the user sees)
+      const userContent = `📝 **Action Required: Clarification Needed**
 
 I need your help categorizing this transaction:
-* **TRANSACTION_ID:** ${transaction.id}
 * **Merchant:** ${transaction.merchant}
 * **Date:** ${new Date(transaction.date).toLocaleDateString()}
 * **Amount:** $${Math.abs(transaction.amount).toFixed(2)}
 * **Question:** ${transaction.clarification_question}
 
-**IMPORTANT INSTRUCTION FOR AI:**
+Please reply with the correct category or explain what this transaction is.`;
+
+      // AI instructions (hidden metadata for the LLM)
+      const aiInstructions = `TRANSACTION_ID: ${transaction.id}
+
+IMPORTANT INSTRUCTION FOR AI:
 Once the user provides an answer about this transaction type (income, expense, transfer, or other), you MUST call the \`resolve_todo\` tool with:
 - todo_type: "transaction_clarification"
 - todo_id: "${transaction.id}"
 - action: "resolve"
 - transaction_type: the appropriate type based on the user's answer (one of: "income", "expense", "transfer", "other")
 
-Do NOT simply acknowledge the answer - you MUST call the resolve_todo tool to actually resolve this item.
-
-Please reply with the correct category or explain what this transaction is.`;
+Do NOT simply acknowledge the answer - you MUST call the resolve_todo tool to actually resolve this item.`;
       
       // Generic fallback actions for when LLM generation fails or isn't available
       const genericActions = [
@@ -191,7 +195,13 @@ Please reply with the correct category or explain what this transaction is.`;
         ? transaction.suggested_actions
         : genericActions;
       
-      setMessages(prev => [...prev, { role: 'system' as const, content, suggestedActions }]);
+      // Add the user-facing message with hidden AI instructions
+      setMessages(prev => [...prev, { 
+        role: 'system' as const, 
+        content: userContent, 
+        suggestedActions,
+        aiContext: aiInstructions // Hidden metadata that gets sent to LLM but not shown to user
+      }]);
       setActiveClarifyTransactionId(transaction.id);
     },
     // Show account selection for screenshots
