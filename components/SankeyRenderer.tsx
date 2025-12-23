@@ -105,10 +105,10 @@ export default function SankeyRenderer({ config, height = 400, className }: Sank
     const percentStr = `${percent.toFixed(1)}%`;
 
     const textAnchor = isLeft ? 'end' : 'start';
-    const textX = isLeft ? x - 10 : x + width + 10;
+    const textX = isLeft ? x - 12 : x + width + 12;
     
     // Check if node is too small to render meaningful text
-    if (height < 10) return (
+    if (height < 15) return (
       <Layer key={`custom-node-${index}`}>
         <Rectangle
           x={x}
@@ -116,7 +116,8 @@ export default function SankeyRenderer({ config, height = 400, className }: Sank
           width={width}
           height={height}
           fill={payload.color || '#3b82f6'}
-          fillOpacity={1}
+          fillOpacity={0.95}
+          rx={2}
         />
       </Layer>
     );
@@ -129,7 +130,8 @@ export default function SankeyRenderer({ config, height = 400, className }: Sank
           width={width}
           height={height}
           fill={payload.color || '#3b82f6'}
-          fillOpacity={1}
+          fillOpacity={0.95}
+          rx={2}
         />
         
         {/* Render text with label and value/percentage */}
@@ -138,15 +140,15 @@ export default function SankeyRenderer({ config, height = 400, className }: Sank
           y={y + height / 2}
           textAnchor={textAnchor}
           dominantBaseline="middle"
-          className="text-xs font-sans pointer-events-none"
+          className="text-sm font-sans pointer-events-none"
         >
           {/* Node Name */}
-          <tspan x={textX} dy="-0.6em" className="fill-slate-600 dark:fill-slate-400 font-medium">
+          <tspan x={textX} dy="-0.7em" className="fill-slate-700 dark:fill-slate-300 font-semibold">
             {payload.name}
           </tspan>
           
           {/* Value + Percentage */}
-          <tspan x={textX} dy="1.4em" className="fill-slate-900 dark:fill-slate-100 font-bold">
+          <tspan x={textX} dy="1.5em" className="fill-slate-900 dark:fill-slate-100 font-bold text-base">
             {currency ? formatCompactCurrency(value) : value} ({percentStr})
           </tspan>
         </text>
@@ -199,12 +201,12 @@ export default function SankeyRenderer({ config, height = 400, className }: Sank
           stroke={color}
           strokeWidth={Math.max(1, linkWidth)}
           fill="none"
-          strokeOpacity={0.4}
+          strokeOpacity={0.3}
           onMouseEnter={(e) => {
-             e.currentTarget.style.strokeOpacity = '0.7';
+             e.currentTarget.style.strokeOpacity = '0.6';
           }}
           onMouseLeave={(e) => {
-             e.currentTarget.style.strokeOpacity = '0.4';
+             e.currentTarget.style.strokeOpacity = '0.3';
           }}
         />
       </Layer>
@@ -218,8 +220,9 @@ export default function SankeyRenderer({ config, height = 400, className }: Sank
           data={sankeyData}
           node={renderNode}
           link={renderLink}
-          nodePadding={10}
-          margin={{ top: 20, right: 160, bottom: 20, left: 160 }}
+          nodePadding={30}
+          nodeWidth={15}
+          margin={{ top: 30, right: 180, bottom: 30, left: 180 }}
         >
           <Tooltip 
              content={({ active, payload }) => {

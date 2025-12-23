@@ -1245,25 +1245,43 @@ export async function getCashFlowSankeyData(
   const links: Array<{ source: number; target: number; value: number; color?: string }> = [];
 
   // --- Level 0: Income Sources ---
-  // Sort income sources and take top N
+  // Sort income sources and take top 2, group rest as "Other Income"
   const sortedIncome = Array.from(incomeSources.entries()).sort((a, b) => b[1] - a[1]);
   const incomeNodesStartIdx = 0;
   
-  sortedIncome.forEach(([name, val], idx) => {
-    nodes.push({ name, color: '#3b82f6', depth: 0 }); // Blue for sources
+  const MAX_INCOME_SOURCES = 2;
+  let incomeSourcesToShow: Array<[string, number]> = [];
+  let otherIncomeTotal = 0;
+
+  if (sortedIncome.length > MAX_INCOME_SOURCES) {
+    incomeSourcesToShow = sortedIncome.slice(0, MAX_INCOME_SOURCES);
+    otherIncomeTotal = sortedIncome.slice(MAX_INCOME_SOURCES).reduce((sum, item) => sum + item[1], 0);
+  } else {
+    incomeSourcesToShow = sortedIncome;
+  }
+  
+  // Add main income sources
+  incomeSourcesToShow.forEach(([name, val], idx) => {
+    nodes.push({ name, color: '#0891b2', depth: 0 }); // Cyan-600 for sources
   });
+
+  // Add "Other Income" if there are more sources
+  if (otherIncomeTotal > 0) {
+    nodes.push({ name: 'Other Income', color: '#0891b2', depth: 0 });
+    incomeSourcesToShow.push(['Other Income', otherIncomeTotal]);
+  }
 
   // --- Level 1: Total Income ---
   const totalIncomeNodeIdx = nodes.length;
-  nodes.push({ name: 'Income', color: '#10b981', depth: 1 }); // Green for total income
+  nodes.push({ name: 'Income', color: '#059669', depth: 1 }); // Emerald-600 for total income
 
   // Links Level 0 -> Level 1
-  sortedIncome.forEach((_, idx) => {
+  incomeSourcesToShow.forEach(([_, val], idx) => {
     links.push({
       source: incomeNodesStartIdx + idx,
       target: totalIncomeNodeIdx,
-      value: sortedIncome[idx][1],
-      color: '#93c5fd' // Light blue links
+      value: val,
+      color: '#99f6e4' // Teal-200 for links
     });
   });
 
@@ -1272,20 +1290,20 @@ export async function getCashFlowSankeyData(
   
   // Add Savings Node first (if > 0)
   if (savings > 0) {
-    nodes.push({ name: 'Savings', color: '#10b981', depth: 2 }); // Green for savings
+    nodes.push({ name: 'Savings', color: '#10b981', depth: 2 }); // Emerald-500 for savings
     links.push({
       source: totalIncomeNodeIdx,
       target: expenseNodesStartIdx,
       value: savings,
-      color: '#86efac' // Light green
+      color: '#a7f3d060' // Emerald-300 semi-transparent
     });
   }
 
   // Add Expense Categories
   const sortedExpenses = Array.from(expenseCategories.entries()).sort((a, b) => b[1] - a[1]);
   
-  // Limit to top 15 expenses to prevent UI overcrowding, group rest into "Other Expenses"
-  const MAX_EXPENSE_NODES = 15;
+  // Limit to top 8 expenses for cleaner UI, group rest into "Other Expenses"
+  const MAX_EXPENSE_NODES = 8;
   let expensesToShow = sortedExpenses;
   let otherExpensesTotal = 0;
 
@@ -1294,9 +1312,16 @@ export async function getCashFlowSankeyData(
     otherExpensesTotal = sortedExpenses.slice(MAX_EXPENSE_NODES).reduce((sum, item) => sum + item[1], 0);
   }
   
-  // Color palette for expenses
+  // Color palette for expenses - vibrant and distinct colors
   const expenseColors = [
-    '#6366f1', '#8b5cf6', '#ec4899', '#f43f5e', '#f97316', '#eab308', '#84cc16', '#06b6d4', '#3b82f6'
+    '#6366f1', // Indigo-500 for Housing
+    '#8b5cf6', // Violet-500 for Shopping
+    '#ec4899', // Pink-500 for Food & Dining
+    '#f43f5e', // Rose-500 
+    '#f97316', // Orange-500
+    '#eab308', // Yellow-500
+    '#84cc16', // Lime-500
+    '#06b6d4', // Cyan-500
   ];
 
   expensesToShow.forEach(([name, val], idx) => {
@@ -1309,7 +1334,7 @@ export async function getCashFlowSankeyData(
       source: totalIncomeNodeIdx,
       target: nodeIdx,
       value: val,
-      color: color + '80' // Semi-transparent
+      color: color + '60' // More transparent for softer look
     });
   });
 
@@ -1322,7 +1347,7 @@ export async function getCashFlowSankeyData(
       source: totalIncomeNodeIdx,
       target: nodeIdx,
       value: otherExpensesTotal,
-      color: '#cbd5e1' // Slate-300 semi-transparent
+      color: '#cbd5e160' // Slate-300 semi-transparent
     });
   }
 
