@@ -568,3 +568,73 @@ export async function refreshFixedExpensesCache(userId: string): Promise<void> {
     console.error(`[Fixed Expenses] Error refreshing cache for user ${userId}:`, error.message);
   }
 }
+
+/**
+ * Get fixed expenses grouped by category
+ * Looks up the category for each fixed expense merchant from transactions
+ * Returns a map of category -> total fixed expense amount
+ */
+export async function getFixedExpensesByCategory(userId: string): Promise<Record<string, number>> {
+  // Get cached fixed expenses (confirmed ones only, not "maybe")
+  const cached = await getCachedFixedExpenses(userId);
+  if (!cached || !cached.expenses || cached.expenses.length === 0) {
+    return {};
+  }
+
+  // Filter to only confirmed fixed expenses (not "maybe")
+  const confirmedExpenses = cached.expenses.filter(exp => !exp.is_maybe);
+  if (confirmedExpenses.length === 0) {
+    return {};
+  }
+
+  // Get the merchant -> category mapping from transactions
+  const merchantNames = confirmedExpenses.map(exp => exp.merchant_name);
+  
+  const { data: transactions, error } = await supabase
+    .from('transactions')
+    .select('merchant, category')
+    .eq('user_id', userId)
+    .in('merchant', merchantNames)
+    .not('category', 'is', null);
+
+  if (error) {
+    console.error('[getFixedExpensesByCategory] Error fetching categories:', error);
+    return {};
+  }
+
+  // Build merchant -> category map (use most common category per merchant)
+  const merchantCategoryMap: Record<string, string> = {};
+  const merchantCategoryCounts: Record<string, Record<string, number>> = {};
+  
+  for (const txn of transactions || []) {
+    if (!txn.merchant || !txn.category) continue;
+    
+    if (!merchantCategoryCounts[txn.merchant]) {
+      merchantCategoryCounts[txn.merchant] = {};
+    }
+    merchantCategoryCounts[txn.merchant][txn.category] = 
+      (merchantCategoryCounts[txn.merchant][txn.category] || 0) + 1;
+  }
+
+  // Pick most common category for each merchant
+  for (const [merchant, categories] of Object.entries(merchantCategoryCounts)) {
+    let maxCount = 0;
+    let bestCategory = 'Other Expenses';
+    for (const [category, count] of Object.entries(categories)) {
+      if (count > maxCount) {
+        maxCount = count;
+        bestCategory = category;
+      }
+    }
+    merchantCategoryMap[merchant] = bestCategory;
+  }
+
+  // Group fixed expenses by category
+  const fixedByCategory: Record<string, number> = {};
+  for (const expense of confirmedExpenses) {
+    const category = merchantCategoryMap[expense.merchant_name] || 'Other Expenses';
+    fixedByCategory[category] = (fixedByCategory[category] || 0) + expense.median_amount;
+  }
+
+  return fixedByCategory;
+}

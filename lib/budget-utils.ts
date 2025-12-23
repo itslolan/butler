@@ -1,34 +1,40 @@
 import { supabase, BudgetCategory, Budget } from './supabase';
 
-// Default categories for freelancers
+// Default categories - aligned with AI categorizer output for consistency
+// These match the categories the LLM typically generates when categorizing transactions
 export const DEFAULT_FREELANCER_CATEGORIES = [
-  // Income
-  'Client Payments',
-  'Freelance Income',
-  'Side Projects',
-  'Refunds',
-  // Essential Expenses
+  // Housing & Utilities (Essential)
+  'Housing',
   'Rent / Housing',
   'Utilities',
+  
+  // Food (Essential & Discretionary)
   'Groceries',
-  'Health Insurance',
+  'Food & Dining',
+  
+  // Transportation (Essential)
   'Transportation',
-  // Business Expenses
-  'Software & Subscriptions',
-  'Office Supplies',
-  'Professional Development',
-  'Marketing',
-  'Coworking Space',
-  // Discretionary
-  'Dining Out',
-  'Entertainment',
+  'Gas',
+  
+  // Healthcare (Essential)
+  'Healthcare',
+  'Health Insurance',
+  
+  // Financial
+  'Loans',
+  'Insurance',
+  'Savings',
+  
+  // Lifestyle (Discretionary)
   'Shopping',
+  'Entertainment',
   'Travel',
   'Personal Care',
-  // Savings
-  'Emergency Fund',
-  'Retirement',
-  'Investments',
+  'Subscriptions',
+  
+  // Other
+  'Other Expenses',
+  'Uncategorized',
 ];
 
 /**

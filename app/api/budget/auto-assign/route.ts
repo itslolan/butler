@@ -6,6 +6,7 @@ import {
   getIncomeForMonth,
   findLastMonthWithIncome
 } from '@/lib/budget-utils';
+import { getFixedExpensesByCategory } from '@/lib/fixed-expenses';
 
 export const runtime = 'nodejs';
 
@@ -43,10 +44,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get categories and historical spending
-    const [categories, historicalData] = await Promise.all([
+    // Get categories, historical spending, and fixed expenses
+    const [categories, historicalData, fixedExpensesByCategory] = await Promise.all([
       getBudgetCategories(userId),
       getHistoricalSpendingBreakdown(userId, 6),
+      getFixedExpensesByCategory(userId),
     ]);
 
     if (categories.length === 0) {
@@ -109,7 +111,8 @@ export async function POST(request: NextRequest) {
         rent,
         existingAllocations,
         isReassign,
-        userSetBudgets
+        userSetBudgets,
+        fixedExpensesByCategory
       );
 
       try {
@@ -216,7 +219,8 @@ function buildPrompt(
   userProvidedRent?: number | null,
   existingAllocations?: Record<string, number> | null,
   isReassign?: boolean,
-  userSetBudgets?: Record<string, number>
+  userSetBudgets?: Record<string, number>,
+  fixedExpensesByCategory?: Record<string, number>
 ): string {
   const retryWarning = previousTotal !== null 
     ? `\n\n**⚠️ CORRECTION NEEDED:** Your previous attempt allocated $${previousTotal.toFixed(2)}, but the income is $${budgetIncome.toFixed(2)} (difference: $${Math.abs(previousTotal - budgetIncome).toFixed(2)}). You MUST adjust allocations to make the total EXACTLY EQUAL TO the income.\n`
@@ -233,6 +237,17 @@ function buildPrompt(
         .join('\n')}\n\nOnly adjust the OTHER categories (not listed above) to make the total equal EXACTLY $${budgetIncome.toFixed(2)}.\n`
     : '';
 
+  const fixedExpensesInstruction = fixedExpensesByCategory && Object.keys(fixedExpensesByCategory).length > 0
+    ? `\n\n**📌 DETECTED FIXED EXPENSES (Minimum Budget Required):**
+These are recurring fixed expenses detected from transaction history. Each category MUST be allocated AT LEAST these amounts:
+${Object.entries(fixedExpensesByCategory)
+  .sort(([, a], [, b]) => b - a)
+  .map(([cat, amount]) => `- ${cat}: $${amount.toFixed(2)} (minimum required for fixed expenses)`)
+  .join('\n')}
+
+You may allocate MORE than these minimums for discretionary spending in these categories, but never LESS.\n`
+    : '';
+
   const reassignInstruction = isReassign && existingAllocations
     ? `\n\n**🔄 RE-ASSIGNMENT REQUEST:** The user has already assigned budgets but the total doesn't equal the income. Here are the current allocations:\n${Object.entries(existingAllocations)
         .filter(([, amount]) => amount > 0)
@@ -246,7 +261,7 @@ function buildPrompt(
     : `Allocate income across the budget categories to equal EXACTLY $${budgetIncome.toFixed(2)}`;
 
   return `You are a financial advisor helping create a zero-based budget.
-${retryWarning}${rentInstruction}${userSetInstruction}${reassignInstruction}
+${retryWarning}${rentInstruction}${userSetInstruction}${fixedExpensesInstruction}${reassignInstruction}
 **Available Income to Budget:** $${budgetIncome.toFixed(2)}
 
 **Budget Categories:** ${categoryNames.join(', ')}
@@ -266,9 +281,10 @@ The SUM of all allocations MUST EQUAL EXACTLY $${budgetIncome.toFixed(2)}. Every
 1. ${taskDescription}
 2. ${userProvidedRent && userProvidedRent > 0 ? `Use EXACTLY $${userProvidedRent.toFixed(2)} for Rent / Housing as specified by the user` : 'Base allocations on historical spending patterns but optimize for financial health'}
 3. ${userSetBudgets && Object.keys(userSetBudgets).length > 0 ? 'PRESERVE all user-set budget amounts EXACTLY as specified above' : 'Adjust all categories as needed'}
-4. The total of all allocations MUST EQUAL EXACTLY $${budgetIncome.toFixed(2)} (zero-based budgeting)
-5. For categories with no historical data and not set by user, assign reasonable amounts
-6. ${isReassign ? 'Maintain the relative priorities from existing allocations while adjusting to hit the exact target' : 'Distribute remaining funds after preserving user-set amounts'}
+4. ${fixedExpensesByCategory && Object.keys(fixedExpensesByCategory).length > 0 ? 'Ensure each category with fixed expenses gets AT LEAST the minimum required amount' : 'Account for any recurring bills in relevant categories'}
+5. The total of all allocations MUST EQUAL EXACTLY $${budgetIncome.toFixed(2)} (zero-based budgeting)
+6. For categories with no historical data and not set by user, assign reasonable amounts
+7. ${isReassign ? 'Maintain the relative priorities from existing allocations while adjusting to hit the exact target' : 'Distribute remaining funds after preserving user-set amounts and fixed expense minimums'}
 
 **Response Format (JSON only, no markdown):**
 {

@@ -8,7 +8,11 @@ import {
   getCategoriesWithTransactions,
   getMostRecentBudgetMonth,
   getBudgetsForMonth,
+  getHistoricalSpendingBreakdown,
+  getCategoriesFromTransactions,
+  syncTransactionCategoriesToBudget,
 } from '@/lib/budget-utils';
+import { getFixedExpensesByCategory } from '@/lib/fixed-expenses';
 
 export const runtime = 'nodejs';
 
@@ -52,11 +56,19 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const [data, transactionsExist, incomeStats, categoriesWithTransactions] = await Promise.all([
+    // First, ensure budget categories are synced with transaction categories
+    const transactionCategories = await getCategoriesFromTransactions(userId);
+    if (transactionCategories.length > 0) {
+      await syncTransactionCategoriesToBudget(userId, transactionCategories);
+    }
+
+    const [data, transactionsExist, incomeStats, categoriesWithTransactions, historicalSpending, fixedExpensesByCategory] = await Promise.all([
       getBudgetData(userId, month),
       hasTransactions(userId),
       getMedianMonthlyIncome(userId, 12),
       getCategoriesWithTransactions(userId),
+      getHistoricalSpendingBreakdown(userId, 6),
+      getFixedExpensesByCategory(userId),
     ]);
     
     // Check if this is a past month with no budgets - use baseline data
@@ -86,32 +98,87 @@ export async function GET(request: NextRequest) {
       const categoryId = category.id ?? '';
       const budget = data.budgets.find(b => b.category_id === categoryId);
       const spent = data.spending[category.name] || 0;
+      const historicalAverage = historicalSpending.categoryAverages[category.name] || 0;
+      const fixedExpenseAmount = fixedExpensesByCategory[category.name] || 0;
+      
+      // Suggested budget: max of historical average and fixed expenses
+      // This ensures fixed expenses are always covered
+      const suggestedBudget = Math.max(historicalAverage, fixedExpenseAmount);
       
       // Use actual budget if exists, otherwise use baseline budget for past months
-      // (use nullish coalescing so a valid 0 budget doesn't fall back)
-      const budgeted = budget?.budgeted_amount ??
+      // For current/future months with no budget, pre-fill with suggested budget
+      let budgeted = budget?.budgeted_amount ??
         (isBaselineData ? (baselineBudgets[categoryId] ?? 0) : 0);
+      
+      // Pre-fill with suggested budget if no budget is set and we have a suggestion
+      // Round UP to whole dollars for cleaner budgeting
+      if (budgeted === 0 && suggestedBudget > 0 && !isPastMonth) {
+        budgeted = Math.ceil(suggestedBudget);
+      }
       
       return {
         id: categoryId,
         name: category.name,
         isCustom: category.is_custom,
         hasTransactions: categoriesWithTransactions.has(category.name),
-        budgeted: Number(budgeted), // Ensure number
+        budgeted: Math.round(Number(budgeted)), // Round to whole dollars
         spent: Number(spent),       // Ensure number
-        available: Number(budgeted) - Number(spent),
+        available: Math.round(Number(budgeted)) - Number(spent),
+        // Pre-fill data for reference
+        historicalAverage: Math.round(historicalAverage * 100) / 100,
+        fixedExpenseAmount: Math.round(fixedExpenseAmount * 100) / 100,
+        suggestedBudget: Math.ceil(suggestedBudget), // Round up suggested budget too
       };
     });
 
-    // Sort by spent amount (highest first)
-    categoryBudgets.sort((a, b) => b.spent - a.spent);
+    // Filter out categories that have no activity and no historical data
+    // Keep categories that have:
+    // 1. Transactions (spent > 0), OR
+    // 2. Budget allocated (budgeted > 0), OR  
+    // 3. Historical spending or fixed expenses (suggestedBudget > 0)
+    const activeCategoryBudgets = categoryBudgets.filter(cat => 
+      cat.spent > 0 || 
+      cat.budgeted > 0 || 
+      (cat.suggestedBudget && cat.suggestedBudget > 0) ||
+      cat.hasTransactions
+    );
+
+    // Sort by: budgeted amount desc (budgeted > 0 first), then suggested budget, then spent, then name
+    activeCategoryBudgets.sort((a, b) => {
+      // Priority 1: Categories with budget allocated come first
+      if ((a.budgeted > 0 ? 1 : 0) !== (b.budgeted > 0 ? 1 : 0)) {
+        return (b.budgeted > 0 ? 1 : 0) - (a.budgeted > 0 ? 1 : 0);
+      }
+      
+      // Priority 2: Within budgeted categories, sort by amount desc
+      if (a.budgeted > 0 && b.budgeted > 0 && b.budgeted !== a.budgeted) {
+        return b.budgeted - a.budgeted;
+      }
+      
+      // Priority 3: For unbudgeted categories, sort by suggested budget desc
+      const aSuggested = a.suggestedBudget || 0;
+      const bSuggested = b.suggestedBudget || 0;
+      if (aSuggested > 0 || bSuggested > 0) {
+        if (bSuggested !== aSuggested) {
+          return bSuggested - aSuggested;
+        }
+      }
+      
+      // Priority 4: Sort by spent amount desc
+      if (b.spent !== a.spent) {
+        return b.spent - a.spent;
+      }
+      
+      // Priority 5: Alphabetically by name
+      return a.name.localeCompare(b.name);
+    });
 
     // Determine effective income: prefer median, then month-specific, then 0
     const medianIncome = incomeStats?.medianMonthlyIncome || 0;
     const effectiveIncome = medianIncome > 0 ? medianIncome : data.income;
     const effectiveIncomeMonth = medianIncome > 0 ? 'median' : data.incomeMonth;
 
-    // Calculate ready to assign using effective income
+    // Calculate ready to assign using effective income (use all categories for calculation)
     const totalBudgeted = categoryBudgets.reduce((sum, c) => sum + c.budgeted, 0);
     const readyToAssign = effectiveIncome - totalBudgeted;
 
@@ -121,7 +188,7 @@ export async function GET(request: NextRequest) {
       incomeMonth: effectiveIncomeMonth, // 'median' if using median, otherwise actual month
       totalBudgeted,
       readyToAssign,
-      categories: categoryBudgets,
+      categories: activeCategoryBudgets, // Return only active categories
       hasTransactions: transactionsExist,
       incomeStats: incomeStats,
       isBaselineData,

@@ -6,7 +6,8 @@ interface ReadyToAssignProps {
   totalBudgeted: number;
   incomeMonth?: string;
   currentMonth?: string;
-  onAmountChange?: (newAmount: number) => void;
+  onAmountChange?: (newAmount: number) => void; // DEPRECATED: No longer used for amount editing
+  onIncomeChange?: (newIncome: number) => void; // NEW: For editing income directly
   onAutoAssign?: () => void;
   isAutoAssigning?: boolean;
   hasAiAssigned?: boolean; // True if AI has assigned budgets at least once
@@ -23,7 +24,8 @@ export default function ReadyToAssign({
   totalBudgeted,
   incomeMonth,
   currentMonth,
-  onAmountChange,
+  onAmountChange, // DEPRECATED: No longer used
+  onIncomeChange, // NEW: For editing income
   onAutoAssign,
   isAutoAssigning = false,
   hasAiAssigned = false,
@@ -72,26 +74,35 @@ export default function ReadyToAssign({
               ? 'Ready to Assign'
               : 'Overbudgeted'}
           </p>
+          {/* Ready to Assign Amount - Not Editable, Calculated */}
           <div className="flex items-center gap-2">
             <span className="text-white/90 text-3xl font-bold">$</span>
+            <span className="text-4xl font-bold text-white tracking-tight">
+              {formatCurrency(Number.isFinite(amount) ? Number(amount.toFixed(2)) : 0).replace('$', '')}
+            </span>
+          </div>
+          {/* Income Breakdown - Income is editable */}
+          <div className="text-white/70 text-sm mt-2 flex items-center gap-1.5">
+            <span className="text-white/90">$</span>
             {isReadOnly ? (
-              <span className="text-4xl font-bold text-white tracking-tight">
-                {formatCurrency(Number.isFinite(amount) ? Number(amount.toFixed(2)) : 0).replace('$', '')}
-              </span>
+              <span className="font-medium">{income.toFixed(2)}</span>
             ) : (
               <input
                 type="number"
-                step="0.01"
-                value={Number.isFinite(amount) ? Number(amount.toFixed(2)) : 0}
-                onChange={(e) => onAmountChange?.(parseFloat(e.target.value) || 0)}
-                className="w-48 text-4xl font-bold text-white tracking-tight bg-transparent border-b border-white/30 focus:border-white/70 focus:outline-none"
-                aria-label="Ready to assign"
+                step="any"
+                min="0"
+                value={Number.isFinite(income) ? income : ''}
+                onChange={(e) => onIncomeChange?.(parseFloat(e.target.value) || 0)}
+                className="w-32 font-medium text-white/90 bg-transparent border-b border-white/30 hover:border-white/50 focus:border-white/70 focus:outline-none transition-colors"
+                aria-label="Monthly income"
+                placeholder="0.00"
               />
             )}
+            <span>{isUsingMedianIncome ? 'median income' : 'income'}</span>
+            <span>−</span>
+            <span className="font-medium">${totalBudgeted.toFixed(2)}</span>
+            <span>budgeted</span>
           </div>
-          <p className="text-white/70 text-sm mt-2">
-            {formatCurrency(income)} {isUsingMedianIncome ? 'median income' : 'income'} − {formatCurrency(totalBudgeted)} budgeted
-          </p>
           {isUsingMedianIncome && (
             <p className="text-white/60 text-xs mt-1 italic">
               Using your median monthly income for budgeting

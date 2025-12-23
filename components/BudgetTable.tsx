@@ -10,6 +10,10 @@ interface Category {
   budgeted: number;
   spent: number;
   available: number;
+  // Pre-fill suggestions from API
+  historicalAverage?: number;
+  fixedExpenseAmount?: number;
+  suggestedBudget?: number;
 }
 
 interface BudgetTableProps {
@@ -68,11 +72,33 @@ export default function BudgetTable({
 
       const data = await res.json();
       
-      // Sort categories: Budgeted desc, then Name asc
+      // Sort categories: Budgeted desc (with budgeted > 0 first), then by suggested budget, then by spent, then Name asc
       data.categories.sort((a: Category, b: Category) => {
-        if (b.budgeted !== a.budgeted) {
+        // Priority 1: Categories with budget allocated come first
+        if ((a.budgeted > 0 ? 1 : 0) !== (b.budgeted > 0 ? 1 : 0)) {
+          return (b.budgeted > 0 ? 1 : 0) - (a.budgeted > 0 ? 1 : 0);
+        }
+        
+        // Priority 2: Within budgeted categories, sort by amount desc
+        if (a.budgeted > 0 && b.budgeted > 0 && b.budgeted !== a.budgeted) {
           return b.budgeted - a.budgeted;
         }
+        
+        // Priority 3: For unbudgeted categories, sort by suggested budget desc
+        const aSuggested = a.suggestedBudget || 0;
+        const bSuggested = b.suggestedBudget || 0;
+        if (aSuggested > 0 || bSuggested > 0) {
+          if (bSuggested !== aSuggested) {
+            return bSuggested - aSuggested;
+          }
+        }
+        
+        // Priority 4: Sort by spent amount desc
+        if (b.spent !== a.spent) {
+          return b.spent - a.spent;
+        }
+        
+        // Priority 5: Alphabetically by name
         return a.name.localeCompare(b.name);
       });
 
@@ -246,14 +272,20 @@ export default function BudgetTable({
 
       {/* Category Rows */}
       <div className="divide-y divide-slate-100 dark:divide-slate-800">
-        {categories.map(category => (
+        {categories.map(category => {
+          // Ensure all numeric values are properly defined
+          const budgeted = Number(category.budgeted) || 0;
+          const spent = Number(category.spent) || 0;
+          const available = Number(category.available) || 0;
+          
+          return (
           <div
             key={category.id}
             className="px-4 md:px-6 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group"
           >
-            <div className="grid grid-cols-10 md:grid-cols-12 gap-2 md:gap-4 items-center">
+            <div className="grid grid-cols-10 md:grid-cols-12 gap-2 md:gap-4 items-start">
               {/* Category Name */}
-              <div className="col-span-4 md:col-span-5 flex items-center gap-2">
+              <div className="col-span-4 md:col-span-5 flex items-center gap-2 pt-1.5">
                 <span className="text-sm font-medium text-slate-900 dark:text-white">
                   {category.name}
                 </span>
@@ -266,11 +298,11 @@ export default function BudgetTable({
 
               {/* Budgeted Input */}
               <div className="col-span-3 md:col-span-2">
-                <div className="relative">
+                <div className="relative group/input">
                   <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
                   <input
                     type="number"
-                    value={category.budgeted || ''}
+                    value={budgeted || ''}
                     onChange={(e) => handleBudgetInput(category.id, e.target.value)}
                     placeholder="0.00"
                     disabled={isReadOnly}
@@ -280,31 +312,62 @@ export default function BudgetTable({
                         : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500'
                     }`}
                   />
+                  {/* Tooltip showing suggestion breakdown */}
+                  {!isReadOnly && (category.historicalAverage || category.fixedExpenseAmount) && budgeted > 0 && (
+                    <div className="absolute left-0 bottom-full mb-1 hidden group-hover/input:block z-10">
+                      <div className="bg-slate-900 dark:bg-slate-700 text-white text-xs px-2 py-1.5 rounded shadow-lg whitespace-nowrap">
+                        {category.fixedExpenseAmount && category.fixedExpenseAmount > 0 && (
+                          <div>Fixed expenses: ${category.fixedExpenseAmount.toFixed(2)}</div>
+                        )}
+                        {category.historicalAverage && category.historicalAverage > 0 && (
+                          <div>Avg spent: ${category.historicalAverage.toFixed(2)}/mo</div>
+                        )}
+                        {category.suggestedBudget && category.suggestedBudget > 0 && budgeted !== category.suggestedBudget && (
+                          <div className="font-semibold border-t border-slate-700 dark:border-slate-600 pt-1 mt-1">
+                            Suggested: ${category.suggestedBudget.toFixed(2)}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* Spent (read-only) */}
-              <div className="hidden md:block md:col-span-2 text-right">
+              {/* Spent (read-only) - Desktop only */}
+              <div className="hidden md:block md:col-span-2 text-right pt-1.5">
                 <span className="text-sm text-slate-600 dark:text-slate-400">
-                  {formatCurrency(category.spent)}
+                  {formatCurrency(spent)}
                 </span>
               </div>
 
               {/* Available */}
-              <div className="col-span-3 md:col-span-2 text-right">
+              <div className="col-span-3 md:col-span-2 text-right pt-1.5">
                 <span
                   className={`text-sm font-medium ${
-                    category.available >= 0
+                    available >= 0
                       ? 'text-emerald-600 dark:text-emerald-400'
                       : 'text-red-600 dark:text-red-400'
                   }`}
                 >
-                  {formatCurrency(category.available)}
+                  {formatCurrency(available)}
                 </span>
               </div>
 
               {/* Actions */}
-              <div className="hidden md:flex md:col-span-1 justify-end">
+              <div className="hidden md:flex md:col-span-1 justify-end gap-1">
+                {/* Use Suggested button - show when user has changed from suggested and there's a different suggestion */}
+                {!isReadOnly && category.suggestedBudget && category.suggestedBudget > 0 && 
+                 budgeted !== category.suggestedBudget && Math.abs(budgeted - category.suggestedBudget) > 0.01 && (
+                  <button
+                    onClick={() => handleBudgetInput(category.id, category.suggestedBudget!.toString())}
+                    className="opacity-0 group-hover:opacity-100 p-1.5 text-emerald-500 hover:text-emerald-600 dark:text-emerald-400 dark:hover:text-emerald-300 transition-all"
+                    title={`Use suggested: $${category.suggestedBudget.toFixed(2)}`}
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                  </button>
+                )}
                 {!isReadOnly && (category.isCustom || !category.hasTransactions) && (
                   <button
                     onClick={() => handleDeleteCategory(category.id)}
@@ -324,7 +387,8 @@ export default function BudgetTable({
               </div>
             </div>
           </div>
-        ))}
+        );
+        })}
       </div>
 
       {/* Add Category Button - hidden in read-only mode */}

@@ -134,6 +134,17 @@ export default function BudgetPage() {
       categories: anyData.categories,
     });
 
+    // Check if any categories have pre-filled suggested budgets (indicating unsaved changes)
+    const hasPreFilledBudgets = anyData.categories.some((cat: any) => 
+      cat.budgeted > 0 && cat.suggestedBudget > 0 && 
+      Math.abs(cat.budgeted - cat.suggestedBudget) < 0.01
+    );
+    
+    // Mark as having unsaved changes if we have pre-filled budgets
+    if (hasPreFilledBudgets && anyData.totalBudgeted > 0) {
+      setHasUnsavedChanges(true);
+    }
+
     // Only show questionnaire for current month with no budgets
     // Never show for past months (read-only) or future months (will get carryover)
     if (data && data.totalBudgeted === 0 && !questionnaireCompleted && isCurrentMonth(selectedMonth)) {
@@ -141,7 +152,7 @@ export default function BudgetPage() {
     }
     
     setIsInitialLoadComplete(true);
-  }, [questionnaireCompleted]);
+  }, [questionnaireCompleted, selectedMonth]);
 
   const handleQuestionnaireComplete = async (data: { income: number; rent?: number }) => {
     if (!budgetData || !user) return;
@@ -218,9 +229,9 @@ export default function BudgetPage() {
     setHasUnsavedChanges(true);
   }, [budgetData]);
 
-  const handleReadyToAssignChange = useCallback(async (newReadyToAssign: number) => {
+  // New handler for direct income editing
+  const handleIncomeChange = useCallback(async (newIncome: number) => {
     if (!budgetData || !user) return;
-    const newIncome = budgetData.totalBudgeted + newReadyToAssign;
     
     // Only allow manual income changes when there's no income history
     // If user has income history (median or DB), they can't manually change it here
@@ -240,6 +251,9 @@ export default function BudgetPage() {
         console.error('Failed to save income:', error);
       }
     }
+    
+    // Update budget data with new income and recalculate ready to assign
+    const newReadyToAssign = newIncome - budgetData.totalBudgeted;
     
     setBudgetData({
       ...budgetData,
@@ -622,7 +636,7 @@ export default function BudgetPage() {
                     totalBudgeted={budgetData?.totalBudgeted || 0}
                     incomeMonth={budgetData?.incomeMonth}
                     currentMonth={selectedMonth}
-                    onAmountChange={handleReadyToAssignChange}
+                    onIncomeChange={handleIncomeChange}
                     onAutoAssign={handleAutoAssign}
                     isAutoAssigning={isAutoAssigning}
                     hasAiAssigned={hasAiAssigned}
