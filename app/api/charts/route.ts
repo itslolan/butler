@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getMonthlySpendingTrend, getCategoryBreakdown, getIncomeVsExpenses } from '@/lib/db-tools';
+import { getMonthlySpendingTrend, getCategoryBreakdown, getIncomeVsExpenses, getCashFlowSankeyData } from '@/lib/db-tools';
 import { 
   createSpendingTrendChart, 
   createCategoryBreakdownChart, 
-  createIncomeVsExpensesChart 
+  createIncomeVsExpensesChart,
+  createCashFlowChart
 } from '@/lib/chart-utils';
 import { ChartConfig } from '@/lib/chart-types';
 
@@ -53,6 +54,12 @@ export async function GET(request: NextRequest) {
       case 'income-vs-expenses': {
         const data = await getIncomeVsExpenses(userId, months, monthFilter || undefined);
         chartConfig = createIncomeVsExpensesChart(data);
+        break;
+      }
+
+      case 'cash-flow': {
+        const data = await getCashFlowSankeyData(userId, months, monthFilter || undefined);
+        chartConfig = createCashFlowChart(data);
         break;
       }
 

@@ -1158,6 +1158,156 @@ export async function getIncomeVsExpenses(
 }
 
 /**
+ * Get cash flow sankey data for a user
+ * Returns nodes and links for income -> total -> expenses/savings
+ */
+export async function getCashFlowSankeyData(
+  userId: string,
+  months: number = 6,
+  specificMonth?: string
+): Promise<{ nodes: any[]; links: any[] }> {
+  let startDate: string;
+  let endDate: string | undefined;
+
+  if (specificMonth) {
+    startDate = `${specificMonth}-01`;
+    const [year, month] = specificMonth.split('-').map(Number);
+    endDate = new Date(year, month, 0).toISOString().split('T')[0];
+  } else {
+    const now = new Date();
+    const monthsAgo = new Date(now.getFullYear(), now.getMonth() - months, 1);
+    startDate = monthsAgo.toISOString().split('T')[0];
+    endDate = now.toISOString().split('T')[0];
+  }
+  
+  // Get ALL transactions
+  const data = await fetchAllTransactions(userId, {
+    startDate,
+    endDate,
+    selectFields: 'category, merchant, amount, transaction_type, date',
+    inferMissingTypesByAmountSign: true
+  });
+
+  if (!data || data.length === 0) {
+    return { nodes: [], links: [] };
+  }
+
+  // 1. Process Income
+  const incomeSources = new Map<string, number>();
+  let totalIncome = 0;
+  
+  // 2. Process Expenses
+  const expenseCategories = new Map<string, number>();
+  let totalExpenses = 0;
+
+  for (const txn of data) {
+    const amount = Number(txn.amount);
+    
+    // Determine type (income or expense)
+    let isIncome = false;
+    if (txn.transaction_type === 'income') isIncome = true;
+    else if (txn.transaction_type === 'expense') isIncome = false;
+    else if (amount > 0) isIncome = true;
+    else isIncome = false;
+
+    // Skip transfers/internal movements if we can detect them, but for now include all
+    if (txn.transaction_type === 'transfer') continue;
+
+    if (isIncome) {
+      const absAmount = Math.abs(amount);
+      totalIncome += absAmount;
+      
+      // Group by category if available (e.g. "Paycheck"), otherwise merchant
+      // If neither, "Other Income"
+      let sourceName = txn.category || txn.merchant || 'Other Income';
+      // Clean up common names
+      if (sourceName.toLowerCase().includes('payroll') || sourceName.toLowerCase().includes('salary')) {
+        sourceName = 'Paychecks';
+      } else if (sourceName.toLowerCase().includes('interest')) {
+        sourceName = 'Interest';
+      }
+      
+      incomeSources.set(sourceName, (incomeSources.get(sourceName) || 0) + absAmount);
+    } else {
+      const absAmount = Math.abs(amount);
+      totalExpenses += absAmount;
+      
+      const category = txn.category || 'Uncategorized';
+      expenseCategories.set(category, (expenseCategories.get(category) || 0) + absAmount);
+    }
+  }
+
+  // Calculate Savings
+  const savings = Math.max(0, totalIncome - totalExpenses);
+  
+  // Build Nodes and Links
+  const nodes: Array<{ name: string; color?: string; depth?: number }> = [];
+  const links: Array<{ source: number; target: number; value: number; color?: string }> = [];
+
+  // --- Level 0: Income Sources ---
+  // Sort income sources and take top N
+  const sortedIncome = Array.from(incomeSources.entries()).sort((a, b) => b[1] - a[1]);
+  const incomeNodesStartIdx = 0;
+  
+  sortedIncome.forEach(([name, val], idx) => {
+    nodes.push({ name, color: '#3b82f6', depth: 0 }); // Blue for sources
+  });
+
+  // --- Level 1: Total Income ---
+  const totalIncomeNodeIdx = nodes.length;
+  nodes.push({ name: 'Income', color: '#10b981', depth: 1 }); // Green for total income
+
+  // Links Level 0 -> Level 1
+  sortedIncome.forEach((_, idx) => {
+    links.push({
+      source: incomeNodesStartIdx + idx,
+      target: totalIncomeNodeIdx,
+      value: sortedIncome[idx][1],
+      color: '#93c5fd' // Light blue links
+    });
+  });
+
+  // --- Level 2: Expenses & Savings ---
+  const expenseNodesStartIdx = nodes.length;
+  
+  // Add Savings Node first (if > 0)
+  if (savings > 0) {
+    nodes.push({ name: 'Savings', color: '#10b981', depth: 2 }); // Green for savings
+    links.push({
+      source: totalIncomeNodeIdx,
+      target: expenseNodesStartIdx,
+      value: savings,
+      color: '#86efac' // Light green
+    });
+  }
+
+  // Add Expense Categories
+  const sortedExpenses = Array.from(expenseCategories.entries()).sort((a, b) => b[1] - a[1]);
+  // We can limit expense categories if too many, but Sankey handles them reasonably well
+  
+  // Color palette for expenses
+  const expenseColors = [
+    '#6366f1', '#8b5cf6', '#ec4899', '#f43f5e', '#f97316', '#eab308', '#84cc16', '#06b6d4', '#3b82f6'
+  ];
+
+  sortedExpenses.forEach(([name, val], idx) => {
+    const nodeIdx = nodes.length;
+    const color = expenseColors[idx % expenseColors.length];
+    
+    nodes.push({ name, color, depth: 2 });
+    
+    links.push({
+      source: totalIncomeNodeIdx,
+      target: nodeIdx,
+      value: val,
+      color: color + '80' // Semi-transparent
+    });
+  });
+
+  return { nodes, links };
+}
+
+/**
  * Get all memories for a user as plain text
  */
 export async function getAllMemories(userId: string): Promise<string> {

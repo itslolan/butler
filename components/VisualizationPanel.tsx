@@ -33,10 +33,12 @@ export default function VisualizationPanel({ userId = 'default-user', refreshTri
     spendingTrend: ChartConfig | null;
     categoryBreakdown: ChartConfig | null;
     incomeVsExpenses: ChartConfig | null;
+    cashFlow: ChartConfig | null;
   }>({
     spendingTrend: null,
     categoryBreakdown: null,
     incomeVsExpenses: null,
+    cashFlow: null,
   });
 
   const [metrics, setMetrics] = useState<{
@@ -77,26 +79,29 @@ export default function VisualizationPanel({ userId = 'default-user', refreshTri
         queryParams.append('months', dateRange.toString());
       }
 
-      const [spendingRes, categoryRes, incomeRes] = await Promise.all([
+      const [spendingRes, categoryRes, incomeRes, cashFlowRes] = await Promise.all([
         fetch(`/api/charts?${queryParams}&type=spending-trend`),
         fetch(`/api/charts?${queryParams}&type=category-breakdown`),
         fetch(`/api/charts?${queryParams}&type=income-vs-expenses`),
+        fetch(`/api/charts?${queryParams}&type=cash-flow`),
       ]);
 
-      if (!spendingRes.ok || !categoryRes.ok || !incomeRes.ok) {
+      if (!spendingRes.ok || !categoryRes.ok || !incomeRes.ok || !cashFlowRes.ok) {
         throw new Error('Failed to fetch chart data');
       }
 
-      const [spendingData, categoryData, incomeData] = await Promise.all([
+      const [spendingData, categoryData, incomeData, cashFlowData] = await Promise.all([
         spendingRes.json(),
         categoryRes.json(),
         incomeRes.json(),
+        cashFlowRes.json(),
       ]);
 
       setCharts({
         spendingTrend: spendingData,
         categoryBreakdown: categoryData,
         incomeVsExpenses: incomeData,
+        cashFlow: cashFlowData,
       });
 
       // Calculate placeholder KPIs from chart data
@@ -157,7 +162,7 @@ export default function VisualizationPanel({ userId = 'default-user', refreshTri
     );
   }
 
-  const hasData = charts.spendingTrend || charts.categoryBreakdown || charts.incomeVsExpenses;
+  const hasData = charts.spendingTrend || charts.categoryBreakdown || charts.incomeVsExpenses || charts.cashFlow;
 
   if (!hasData) {
     return (
@@ -272,6 +277,16 @@ export default function VisualizationPanel({ userId = 'default-user', refreshTri
 
       {/* Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        
+        {/* Cash Flow Sankey - Full Width */}
+        {charts.cashFlow && (
+          <div className="lg:col-span-2">
+            <ChartCard title="Cash Flow" className="h-[500px]">
+              <ChartRenderer config={charts.cashFlow} height="100%" />
+            </ChartCard>
+          </div>
+        )}
+
         {/* Spending Trend - Full Width on mobile, Half on large */}
         {charts.spendingTrend && (
           <ChartCard title="Monthly Spending Trend" className="lg:col-span-2 h-80">

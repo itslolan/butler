@@ -2,7 +2,7 @@
  * Chart configuration types for Butler visualization system
  */
 
-export type ChartType = 'line' | 'bar' | 'pie' | 'area' | 'treemap';
+export type ChartType = 'line' | 'bar' | 'pie' | 'area' | 'treemap' | 'sankey';
 
 export interface ChartDataPoint {
   label: string;      // e.g., "January 2025" or "Food & Dining"
@@ -13,11 +13,29 @@ export interface ChartDataPoint {
   group?: string;     // For grouping (e.g., "Essentials", "Discretionary")
 }
 
+export interface SankeyNode {
+  name: string;
+  value?: number; // Calculated by chart usually, but good to have
+  color?: string;
+  depth?: number; // Column index (0, 1, 2)
+}
+
+export interface SankeyLink {
+  source: number; // Index in nodes array
+  target: number; // Index in nodes array
+  value: number;
+  color?: string; // Link color (usually semi-transparent source color)
+}
+
 export interface ChartConfig {
   type: ChartType;
   title: string;
   description: string;
   data: ChartDataPoint[];
+  sankeyData?: {
+    nodes: SankeyNode[];
+    links: SankeyLink[];
+  };
   xAxisLabel?: string;
   yAxisLabel?: string;
   currency?: boolean;
@@ -30,9 +48,16 @@ export interface ChartConfig {
 export function validateChartConfig(config: any): config is ChartConfig {
   if (!config || typeof config !== 'object') return false;
   
-  if (!['line', 'bar', 'pie', 'area', 'treemap'].includes(config.type)) return false;
+  if (!['line', 'bar', 'pie', 'area', 'treemap', 'sankey'].includes(config.type)) return false;
   if (typeof config.title !== 'string' || !config.title) return false;
   if (typeof config.description !== 'string') return false;
+  
+  // For sankey, validate sankeyData
+  if (config.type === 'sankey') {
+    if (!config.sankeyData || !Array.isArray(config.sankeyData.nodes) || !Array.isArray(config.sankeyData.links)) return false;
+    return true;
+  }
+
   if (!Array.isArray(config.data) || config.data.length === 0) return false;
   
   // Validate data points

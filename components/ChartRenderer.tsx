@@ -3,6 +3,7 @@
 import { ChartConfig } from '@/lib/chart-types';
 import { formatCurrency, formatCompactCurrency, getChartColors, getIncomeExpenseColors } from '@/lib/chart-utils';
 import TreemapRenderer from './TreemapRenderer';
+import SankeyRenderer from './SankeyRenderer';
 import {
   LineChart,
   Line,
@@ -35,6 +36,11 @@ export default function ChartRenderer({ config, height = 300, className, showLeg
   // Handle treemap separately
   if (type === 'treemap') {
     return <TreemapRenderer data={data} currency={currency} height={height} showLegend={showLegend} />;
+  }
+
+  // Handle sankey separately
+  if (type === 'sankey') {
+    return <SankeyRenderer config={config} height={height} className={className} />;
   }
 
   // Custom tooltip formatter

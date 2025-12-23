@@ -314,3 +314,17 @@ export function createIncomeVsExpensesChart(
   };
 }
 
+/**
+ * Generate cash flow sankey chart config
+ */
+export function createCashFlowChart(sankeyData: { nodes: any[]; links: any[] }): ChartConfig {
+  return {
+    type: 'sankey',
+    title: 'Cash Flow',
+    description: 'Visualization of income, expenses, and savings flow',
+    data: [], // Not used for Sankey
+    sankeyData,
+    currency: true,
+  };
+}
+
