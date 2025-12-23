@@ -215,7 +215,7 @@ async function uploadCapture() {
       );
     });
 
-    alert('Upload successful! You can now view it in Butler.');
+    alert('Upload successful! You can now view it in Adphex.');
     closeOverlay();
   } catch (err) {
     console.error(err);
