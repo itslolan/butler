@@ -37,15 +37,6 @@ function formatCurrency(amount: number, currency: string = 'USD'): string {
   }).format(amount);
 }
 
-const CACHE_KEY = 'fixed-expenses-cache';
-const CACHE_DURATION_MS = 24 * 60 * 60 * 1000; // 24 hours
-
-interface CachedData {
-  data: FixedExpensesData;
-  timestamp: number;
-  userId: string;
-}
-
 export default function FixedExpensesPanel({
   userId = 'default-user',
   refreshTrigger = 0,
@@ -58,84 +49,23 @@ export default function FixedExpensesPanel({
   const [error, setError] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isFromCache, setIsFromCache] = useState(false);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [confirmingIndex, setConfirmingIndex] = useState<number | null>(null);
   
   // Track previous refreshTrigger to detect changes
   const previousRefreshTrigger = useRef(refreshTrigger);
 
-  // Load from cache
-  const loadFromCache = useCallback((): FixedExpensesData | null => {
-    try {
-      const cached = localStorage.getItem(CACHE_KEY);
-      if (!cached) return null;
-
-      const parsedCache: CachedData = JSON.parse(cached);
-      
-      // Check if cache is for the same user
-      if (parsedCache.userId !== userId) {
-        localStorage.removeItem(CACHE_KEY);
-        return null;
-      }
-
-      // Check if cache is still valid
-      const now = Date.now();
-      if (now - parsedCache.timestamp > CACHE_DURATION_MS) {
-        localStorage.removeItem(CACHE_KEY);
-        return null;
-      }
-
-      return parsedCache.data;
-    } catch (err) {
-      console.error('Error loading from cache:', err);
-      localStorage.removeItem(CACHE_KEY);
-      return null;
-    }
-  }, [userId]);
-
-  // Save to cache
-  const saveToCache = useCallback((data: FixedExpensesData) => {
-    try {
-      const cacheData: CachedData = {
-        data,
-        timestamp: Date.now(),
-        userId,
-      };
-      localStorage.setItem(CACHE_KEY, JSON.stringify(cacheData));
-    } catch (err) {
-      console.error('Error saving to cache:', err);
-    }
-  }, [userId]);
-
-  // Clear cache
-  const clearCache = useCallback(() => {
-    try {
-      localStorage.removeItem(CACHE_KEY);
-    } catch (err) {
-      console.error('Error clearing cache:', err);
-    }
-  }, []);
-
   // Fetch from API
-  const fetchData = useCallback(async (skipCache = false) => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
 
     try {
-      // Try to load from cache first (unless skipping)
-      if (!skipCache) {
-        const cachedData = loadFromCache();
-        if (cachedData) {
-          setData(cachedData);
-          setIsFromCache(true);
-          setLoading(false);
-          return;
-        }
-      }
-
       // Fetch from API
-      const response = await fetch('/api/fixed-expenses');
+      const response = await fetch(`/api/fixed-expenses?_ts=${Date.now()}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache' },
+      });
       
       if (!response.ok) {
         const contentType = response.headers.get('content-type');
@@ -155,23 +85,48 @@ export default function FixedExpensesPanel({
 
       const result = await response.json();
       setData(result);
-      setIsFromCache(false);
-      saveToCache(result);
     } catch (err: any) {
       console.error('Error fetching fixed expenses:', err);
       setError(err.message || 'Failed to load fixed expenses');
     } finally {
       setLoading(false);
     }
-  }, [loadFromCache, saveToCache]);
+  }, []);
 
   // Handle manual refresh
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
-    clearCache();
-    await fetchData(true); // Skip cache
+    // User explicitly requested a full DB-cache invalidate + recompute
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/fixed-expenses?refresh=1&_ts=${Date.now()}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache' },
+      });
+      if (!response.ok) {
+        const contentType = response.headers.get('content-type');
+        let errorMessage = 'Failed to refresh fixed expenses';
+        if (contentType && contentType.includes('application/json')) {
+          try {
+            const errorData = await response.json();
+            errorMessage = errorData.error || errorMessage;
+          } catch {
+            // ignore
+          }
+        }
+        throw new Error(errorMessage);
+      }
+      const result = await response.json();
+      setData(result);
+    } catch (err: any) {
+      console.error('Error refreshing fixed expenses:', err);
+      setError(err.message || 'Failed to refresh fixed expenses');
+    } finally {
+      setLoading(false);
+    }
     setIsRefreshing(false);
-  }, [clearCache, fetchData]);
+  }, []);
 
   // Handle confirming a "maybe" expense as fixed
   const handleConfirmFixedExpense = useCallback(async (expense: FixedExpense, index: number) => {
@@ -284,7 +239,6 @@ export default function FixedExpensesPanel({
     // If demo data is provided, use it directly and skip API calls
     if (demoData) {
       setData(demoData);
-      setIsFromCache(false);
       setLoading(false);
       return;
     }
@@ -301,15 +255,14 @@ export default function FixedExpensesPanel({
     
     if (hasRefreshTriggerChanged && refreshTrigger > 0) {
       // Clear cache and fetch fresh data when new transactions are added
-      console.log('[Fixed Expenses Panel] Refresh trigger changed - clearing cache and recalculating');
-      clearCache();
-      fetchData(true); // Skip cache
+      console.log('[Fixed Expenses Panel] Refresh trigger changed - recalculating');
+      fetchData();
       previousRefreshTrigger.current = refreshTrigger;
     } else {
-      // Normal load - use cache if available
-      fetchData(false);
+      // Normal load - always fetch fresh (no browser cache)
+      fetchData();
     }
-  }, [refreshTrigger, fetchData, clearCache, demoData, userId]);
+  }, [refreshTrigger, fetchData, demoData, userId]);
 
   // Loading skeleton - Compact
   if (loading) {
@@ -336,7 +289,7 @@ export default function FixedExpensesPanel({
       <div className="bg-white dark:bg-gray-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm p-5">
         <p className="text-red-600 dark:text-red-400 text-sm">{error}</p>
         <button 
-          onClick={() => fetchData(false)} 
+          onClick={() => fetchData()} 
           className="mt-2 text-sm text-blue-600 dark:text-blue-400 hover:underline"
         >
           Retry
@@ -383,11 +336,6 @@ export default function FixedExpensesPanel({
             <span className="text-[10px] text-slate-400 dark:text-slate-500">
               ({data.expenses.length} recurring)
             </span>
-            {isFromCache && (
-              <span className="text-[9px] px-1.5 py-0.5 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded">
-                cached
-              </span>
-            )}
           </div>
           <div className="flex items-center gap-2">
             <button

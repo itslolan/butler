@@ -113,15 +113,6 @@ function formatCurrencyCompact(amount: number, currency: string = 'USD'): string
   }).format(amount);
 }
 
-const CACHE_KEY = 'subscriptions-panel-cache';
-const CACHE_DURATION_MS = 24 * 60 * 60 * 1000; // 24 hours
-
-interface CachedData {
-  data: FixedExpensesData;
-  timestamp: number;
-  userId: string;
-}
-
 export default function SubscriptionsPanel({
   userId = 'default-user',
   refreshTrigger = 0,
@@ -132,63 +123,16 @@ export default function SubscriptionsPanel({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Load from cache
-  const loadFromCache = useCallback((): FixedExpensesData | null => {
-    try {
-      const cached = localStorage.getItem(CACHE_KEY);
-      if (!cached) return null;
-
-      const parsedCache: CachedData = JSON.parse(cached);
-      
-      if (parsedCache.userId !== userId) {
-        localStorage.removeItem(CACHE_KEY);
-        return null;
-      }
-
-      const now = Date.now();
-      if (now - parsedCache.timestamp > CACHE_DURATION_MS) {
-        localStorage.removeItem(CACHE_KEY);
-        return null;
-      }
-
-      return parsedCache.data;
-    } catch (err) {
-      console.error('Error loading from cache:', err);
-      localStorage.removeItem(CACHE_KEY);
-      return null;
-    }
-  }, [userId]);
-
-  // Save to cache
-  const saveToCache = useCallback((data: FixedExpensesData) => {
-    try {
-      const cacheData: CachedData = {
-        data,
-        timestamp: Date.now(),
-        userId,
-      };
-      localStorage.setItem(CACHE_KEY, JSON.stringify(cacheData));
-    } catch (err) {
-      console.error('Error saving to cache:', err);
-    }
-  }, [userId]);
-
   // Fetch from API
-  const fetchData = useCallback(async (skipCache = false) => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
 
     try {
-      if (!skipCache) {
-        const cachedData = loadFromCache();
-        if (cachedData) {
-          setData(cachedData);
-          setLoading(false);
-          return;
-        }
-      }
-
-      const response = await fetch('/api/fixed-expenses');
+      const response = await fetch(`/api/fixed-expenses?_ts=${Date.now()}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache' },
+      });
       
       if (!response.ok) {
         const contentType = response.headers.get('content-type');
@@ -208,14 +152,13 @@ export default function SubscriptionsPanel({
 
       const result = await response.json();
       setData(result);
-      saveToCache(result);
     } catch (err: any) {
       console.error('Error fetching subscriptions:', err);
       setError(err.message || 'Failed to load subscriptions');
     } finally {
       setLoading(false);
     }
-  }, [loadFromCache, saveToCache]);
+  }, []);
 
   useEffect(() => {
     if (demoData) {
@@ -231,7 +174,7 @@ export default function SubscriptionsPanel({
       return;
     }
 
-    fetchData(refreshTrigger > 0);
+    fetchData();
   }, [refreshTrigger, fetchData, demoData, userId]);
 
   // Filter to only show subscriptions
@@ -259,7 +202,7 @@ export default function SubscriptionsPanel({
       <div className="bg-white dark:bg-gray-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-6">
         <p className="text-red-600 dark:text-red-400 text-sm">{error}</p>
         <button 
-          onClick={() => fetchData(false)} 
+          onClick={() => fetchData()} 
           className="mt-2 text-sm text-blue-600 dark:text-blue-400 hover:underline"
         >
           Retry
