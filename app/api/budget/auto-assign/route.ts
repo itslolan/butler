@@ -385,7 +385,7 @@ function buildChatMessage(
     message += `🚨 **Overspending Detected:** ${overspentCategories.length} categor${overspentCategories.length === 1 ? 'y has' : 'ies have'} exceeded their budget this month (total deficit: ${formatCurrency(totalDeficit)}).\n\n`;
     message += `I've adjusted the budget to cover all spending that has already occurred.\n\n`;
   } else {
-    message += `I've analyzed your spending patterns over the last **${monthsAnalyzed} months** and created a zero-based budget for you.\n\n`;
+  message += `I've analyzed your spending patterns over the last **${monthsAnalyzed} months** and created a zero-based budget for you.\n\n`;
   }
   
   message += `**Income:** ${formatCurrency(income)}\n`;

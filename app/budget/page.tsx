@@ -251,19 +251,19 @@ export default function BudgetPage() {
     if (!budgetData || !user) return;
     
     // ALWAYS save user's manual income changes - their explicit choice takes priority
-    try {
-      // Save the manually adjusted income to the database
-      await fetch('/api/budget/income', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          month: selectedMonth,
-          amount: newIncome,
-        }),
-      });
-    } catch (error) {
-      console.error('Failed to save income:', error);
+      try {
+        // Save the manually adjusted income to the database
+        await fetch('/api/budget/income', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            month: selectedMonth,
+            amount: newIncome,
+          }),
+        });
+      } catch (error) {
+        console.error('Failed to save income:', error);
     }
     
     // Update budget data with new income and recalculate ready to assign

@@ -440,8 +440,8 @@ export default function LandingPage() {
           <div className="pt-8 border-t border-slate-200 dark:border-slate-800">
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 text-sm text-slate-500 dark:text-slate-400">
               <p className="text-center">
-                © 2024 Adphex. All rights reserved. Made with ❤️ for better financial health.
-              </p>
+              © 2024 Adphex. All rights reserved. Made with ❤️ for better financial health.
+            </p>
               <span className="hidden sm:inline">•</span>
               <Link href="/privacy" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
                 Privacy Policy

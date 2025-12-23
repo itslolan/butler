@@ -15,6 +15,8 @@ import {
 import { getFixedExpensesByCategory } from '@/lib/fixed-expenses';
 
 export const runtime = 'nodejs';
+export const maxDuration = 30; // 30 second timeout
+export const dynamic = 'force-dynamic'; // Don't cache, but set reasonable timeout
 
 /**
  * GET /api/budget
@@ -62,12 +64,16 @@ export async function GET(request: NextRequest) {
       await syncTransactionCategoriesToBudget(userId, transactionCategories);
     }
 
-    const [data, transactionsExist, incomeStats, categoriesWithTransactions, historicalSpending, fixedExpensesByCategory] = await Promise.all([
-      getBudgetData(userId, month),
+    // Get basic data first
+    const data = await getBudgetData(userId, month);
+    
+    // Then fetch supplementary data in parallel
+    // Reduce months for historical data to save memory
+    const [transactionsExist, incomeStats, categoriesWithTransactions, historicalSpending, fixedExpensesByCategory] = await Promise.all([
       hasTransactions(userId),
-      getMedianMonthlyIncome(userId, 12),
+      getMedianMonthlyIncome(userId, 6), // Reduced from 12 to 6 months
       getCategoriesWithTransactions(userId),
-      getHistoricalSpendingBreakdown(userId, 6),
+      getHistoricalSpendingBreakdown(userId, 3), // Reduced from 6 to 3 months
       getFixedExpensesByCategory(userId),
     ]);
     

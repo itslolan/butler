@@ -156,18 +156,18 @@ Please provide a detailed analysis with specific recommendations.`;
     const showExplain = health.status !== 'on_track';
     
     return (
-      <div className="bg-white dark:bg-gray-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm h-full flex flex-col">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
-            Budget Summary
-          </h3>
-          <button
-            onClick={() => router.push('/budget')}
-            className="text-xs font-medium text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors"
-          >
-            View Full →
-          </button>
-        </div>
+    <div className="bg-white dark:bg-gray-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm h-full flex flex-col">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
+          Budget Summary
+        </h3>
+        <button
+          onClick={() => router.push('/budget')}
+          className="text-xs font-medium text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors"
+        >
+          View Full →
+        </button>
+      </div>
 
         {/* Health Status Indicator */}
         <div className="mb-3 flex items-center justify-between gap-2">
@@ -207,42 +207,42 @@ Please provide a detailed analysis with specific recommendations.`;
           )}
         </div>
 
-        <div className="space-y-2 flex-1">
-          {topCategories.slice(0, 4).map(category => {
-            const progress = Math.min((category.spent / category.budgeted) * 100, 100);
-            const isOverBudget = category.spent > category.budgeted;
-            
-            return (
-              <div key={category.id} className="space-y-1">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="font-medium text-slate-700 dark:text-slate-200 truncate pr-2">
-                    {category.name}
+      <div className="space-y-2 flex-1">
+        {topCategories.slice(0, 4).map(category => {
+          const progress = Math.min((category.spent / category.budgeted) * 100, 100);
+          const isOverBudget = category.spent > category.budgeted;
+          
+          return (
+            <div key={category.id} className="space-y-1">
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-medium text-slate-700 dark:text-slate-200 truncate pr-2">
+                  {category.name}
+                </span>
+                <span className="text-slate-500 dark:text-slate-400 text-xs whitespace-nowrap">
+                  <span className={isOverBudget ? 'text-red-600 dark:text-red-400 font-medium' : ''}>
+                    {formatCurrency(category.spent)}
                   </span>
-                  <span className="text-slate-500 dark:text-slate-400 text-xs whitespace-nowrap">
-                    <span className={isOverBudget ? 'text-red-600 dark:text-red-400 font-medium' : ''}>
-                      {formatCurrency(category.spent)}
-                    </span>
-                    {' / '}
-                    {formatCurrency(category.budgeted)}
-                  </span>
-                </div>
-                
-                <div className="h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                  <div 
-                    className={`h-full rounded-full transition-all duration-500 ${
-                      isOverBudget 
-                        ? 'bg-red-500' 
-                        : 'bg-emerald-500'
-                    }`}
-                    style={{ width: `${progress}%` }}
-                  />
-                </div>
+                  {' / '}
+                  {formatCurrency(category.budgeted)}
+                </span>
               </div>
-            );
-          })}
-        </div>
+              
+              <div className="h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                <div 
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    isOverBudget 
+                      ? 'bg-red-500' 
+                      : 'bg-emerald-500'
+                  }`}
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+            </div>
+          );
+        })}
       </div>
-    );
+    </div>
+  );
   };
 
   // Budget CTA Panel (when user doesn't have budgets)

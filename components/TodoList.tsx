@@ -21,7 +21,7 @@ export default function TodoList({ userId, onSelectTodo, refreshTrigger = 0 }: T
     
     // Only show loading spinner for initial load, not for background refreshes
     if (showLoadingSpinner && !hasLoadedOnce) {
-      setIsLoading(true);
+    setIsLoading(true);
     } else if (hasLoadedOnce) {
       // Show subtle refresh indicator for background updates
       setIsRefreshing(true);
@@ -40,7 +40,7 @@ export default function TodoList({ userId, onSelectTodo, refreshTrigger = 0 }: T
       console.error('Error fetching todos:', err);
     } finally {
       if (showLoadingSpinner && !hasLoadedOnce) {
-        setIsLoading(false);
+      setIsLoading(false);
       }
       setIsRefreshing(false);
       setHasLoadedOnce(true);

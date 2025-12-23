@@ -146,11 +146,12 @@ async function fetchAllIncomeTransactionsInRange(
   startDate: string
 ): Promise<Array<{ date: string; amount: number }>> {
   const PAGE_SIZE = 1000;
+  const MAX_TRANSACTIONS = 5000; // Cap at 5000 transactions to prevent memory issues
   let all: Array<{ date: string; amount: number }> = [];
   let page = 0;
   let hasMore = true;
 
-  while (hasMore) {
+  while (hasMore && all.length < MAX_TRANSACTIONS) {
     const from = page * PAGE_SIZE;
     const to = from + PAGE_SIZE - 1;
 
@@ -372,12 +373,14 @@ export async function categoryHasTransactions(userId: string, categoryName: stri
  * Returns a Set of category names that have transactions
  */
 export async function getCategoriesWithTransactions(userId: string): Promise<Set<string>> {
+  // Load only unique categories, not all transaction rows
   const { data, error } = await supabase
     .from('transactions')
     .select('category')
     .eq('user_id', userId)
     .not('category', 'is', null)
-    .neq('category', '');
+    .neq('category', '')
+    .limit(1000); // Reasonable limit - most users won't have > 1000 unique categories
 
   if (error) {
     throw new Error(`Failed to get categories with transactions: ${error.message}`);
@@ -550,7 +553,8 @@ export async function getSpendingByCategory(
     .lte('date', endDate)
     // Backward-compat: older ingestion paths stored rows without transaction_type.
     // Ingestion convention: negative = debits/charges (expense-like).
-    .or('transaction_type.in.(expense,other),and(transaction_type.is.null,amount.lt.0)');
+    .or('transaction_type.in.(expense,other),and(transaction_type.is.null,amount.lt.0)')
+    .limit(10000); // Reasonable limit for one month of transactions
 
   if (error) {
     throw new Error(`Failed to get spending: ${error.message}`);
@@ -713,12 +717,14 @@ export async function getHistoricalSpendingBreakdown(
   const startDate = new Date(now.getFullYear(), now.getMonth() - months, 1);
   const startDateStr = startDate.toISOString().split('T')[0];
 
+  // Add limit to prevent memory issues with large datasets
   const { data, error } = await supabase
     .from('transactions')
     .select('date, category, amount, transaction_type')
     .eq('user_id', userId)
     .gte('date', startDateStr)
-    .or('transaction_type.in.(expense,other),and(transaction_type.is.null,amount.lt.0)');
+    .or('transaction_type.in.(expense,other),and(transaction_type.is.null,amount.lt.0)')
+    .limit(10000); // Limit to 10k transactions max
 
   if (error) {
     throw new Error(`Failed to get historical spending: ${error.message}`);

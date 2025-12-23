@@ -291,34 +291,34 @@ export default function ConnectedAccounts({ onSyncComplete, onFileUpload, isProc
   // Calculate total connected accounts
   const totalAccounts = institutions.reduce((sum, inst) => sum + inst.accounts.length, 0);
 
-  return (
+    return (
     <div className="h-full flex flex-col">
       {/* Show spinner only on first load */}
       {loading && !hasLoadedOnce ? (
         <div className="p-4 bg-white dark:bg-gray-900 rounded-xl border border-slate-200 dark:border-slate-800 min-h-[140px] flex items-center justify-center">
-          <div className="flex items-center gap-2 text-slate-500">
-            <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-            </svg>
-            Loading connected accounts...
-          </div>
+        <div className="flex items-center gap-2 text-slate-500">
+          <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+          </svg>
+          Loading connected accounts...
         </div>
+      </div>
       ) : (
         <>
-          {/* Header - only show if there are connected accounts */}
-          {institutions.length > 0 && (
-            <div className="flex items-center justify-end mb-2 shrink-0">
-              <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded-full">
-                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                </svg>
-                {totalAccounts} connected
-              </span>
-            </div>
-          )}
+      {/* Header - only show if there are connected accounts */}
+      {institutions.length > 0 && (
+        <div className="flex items-center justify-end mb-2 shrink-0">
+          <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded-full">
+            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+            </svg>
+            {totalAccounts} connected
+          </span>
+        </div>
+      )}
 
-          {/* Error Message */}
+      {/* Error Message */}
       {error && (
         <div className="p-3 mb-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-xs text-red-800 dark:text-red-200 shrink-0">
           {error}
