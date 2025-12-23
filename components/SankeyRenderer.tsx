@@ -20,40 +20,36 @@ export default function SankeyRenderer({ config, height = 400, className }: Sank
   // Find total income for percentage calculation
   const incomeNode = sankeyData.nodes.find(n => n.name === 'Income');
   const totalIncome = incomeNode?.value || 
-    // Fallback: sum of level 0 links if Income node value isn't pre-calculated/populated
     sankeyData.links.filter(l => l.target === sankeyData.nodes.findIndex(n => n.name === 'Income'))
       .reduce((sum, l) => sum + l.value, 0);
 
-  // Helper to render custom node with closure access to totalIncome
+  const nodeWidth = 12;
+
+  // Helper to render custom node
   const renderNode = (props: any) => {
     const { x, y, width, height, index, payload } = props;
     const depth = payload.depth;
     const isLeft = depth === 0;
+    const isMiddle = depth === 1;
     
-    // Calculate percentage
-    // For Income node, it's 100%
-    // For others, value / totalIncome
     const value = payload.value;
     const percent = totalIncome > 0 ? (value / totalIncome) * 100 : 0;
     const percentStr = `${percent.toFixed(1)}%`;
 
-    const textAnchor = isLeft ? 'end' : 'start';
-    const textX = isLeft ? x - 15 : x + width + 15;
+    // Position text based on node depth
+    let textAnchor: 'start' | 'end' | 'middle' = 'start';
+    let textX = x + width + 8;
     
-    // Check if node is too small to render meaningful text
-    if (height < 8) return (
-      <Layer key={`custom-node-${index}`}>
-        <Rectangle
-          x={x}
-          y={y}
-          width={width}
-          height={height}
-          fill={payload.color || '#3b82f6'}
-          fillOpacity={0.95}
-          rx={2}
-        />
-      </Layer>
-    );
+    if (isLeft) {
+      textAnchor = 'end';
+      textX = x - 8;
+    } else if (isMiddle) {
+      textAnchor = 'start';
+      textX = x + width + 8;
+    }
+    
+    // Skip text for very small nodes
+    const showText = height >= 20;
 
     return (
       <Layer key={`custom-node-${index}`}>
@@ -63,83 +59,78 @@ export default function SankeyRenderer({ config, height = 400, className }: Sank
           width={width}
           height={height}
           fill={payload.color || '#3b82f6'}
-          fillOpacity={0.95}
-          rx={2}
+          fillOpacity={1}
+          rx={1}
         />
         
-        {/* Render text with label and value/percentage */}
-        <text
-          x={textX}
-          y={y + height / 2}
-          textAnchor={textAnchor}
-          dominantBaseline="middle"
-          className="text-sm font-sans pointer-events-none"
-        >
-          {/* Node Name */}
-          <tspan x={textX} dy="-0.7em" className="fill-slate-700 dark:fill-slate-300 font-semibold">
-            {payload.name}
-          </tspan>
-          
-          {/* Value + Percentage */}
-          <tspan x={textX} dy="1.5em" className="fill-slate-900 dark:fill-slate-100 font-bold text-base">
-            {currency ? formatCompactCurrency(value) : value} ({percentStr})
-          </tspan>
-        </text>
+        {showText && (
+          <text
+            x={textX}
+            y={y + height / 2}
+            textAnchor={textAnchor}
+            dominantBaseline="middle"
+            className="pointer-events-none"
+            style={{ fontSize: '12px', fontFamily: 'system-ui, sans-serif' }}
+          >
+            <tspan 
+              x={textX} 
+              dy="-0.6em" 
+              style={{ fill: '#374151', fontWeight: 600 }}
+            >
+              {payload.name}
+            </tspan>
+            <tspan 
+              x={textX} 
+              dy="1.4em" 
+              style={{ fill: '#111827', fontWeight: 700, fontSize: '13px' }}
+            >
+              {currency ? formatCompactCurrency(value) : value} ({percentStr})
+            </tspan>
+          </text>
+        )}
       </Layer>
     );
   };
 
-  // Helper to render custom link with color from payload
+  // Helper to render filled ribbon links
   const renderLink = (props: any) => {
-    const { sourceX, sourceY, targetX, targetY, linkWidth, payload } = props;
-    const color = payload.color || '#e2e8f0';
+    const { sourceX, sourceY, sourceControlX, targetX, targetY, targetControlX, linkWidth, payload, index } = props;
+    const color = payload.color || '#94a3b8';
     
-    // Calculate curvature
-    // Recharts doesn't pass 'd' directly to custom link component in all versions, 
-    // but usually does if we don't override it? 
-    // Actually, Recharts passes 'd' if we wrap the default link, but we can't easily import DefaultLink.
-    // Let's implement a standard Sankey link path (horizontal bezier).
+    // Recharts provides sourceY/targetY as the CENTER of the link band
+    // We need to calculate top and bottom edges
+    const halfWidth = linkWidth / 2;
+    const sy0 = sourceY - halfWidth;  // Top edge at source
+    const sy1 = sourceY + halfWidth;  // Bottom edge at source
+    const ty0 = targetY - halfWidth;  // Top edge at target
+    const ty1 = targetY + halfWidth;  // Bottom edge at target
     
-    const curvature = 0.5;
-    const x0 = sourceX + props.sourceControlX; // props usually has sourceControlX?
-    // Let's rely on standard SVG path for Sankey
-    // M sourceX,sourceY C (sourceX + w*k),sourceY (targetX - w*k),targetY targetX,targetY
-    // linkWidth is the stroke width.
+    // Use control points if available, otherwise calculate midpoint
+    const scx = sourceControlX !== undefined ? sourceControlX : sourceX + (targetX - sourceX) * 0.4;
+    const tcx = targetControlX !== undefined ? targetControlX : targetX - (targetX - sourceX) * 0.4;
     
-    // Actually, let's just inspect if `d` is passed.
-    // If not, we might be safer using `stroke` prop on the Sankey component if it supports function... it doesn't.
-    // Recharts 2.x `Sankey` `link` prop function receives standard props including `d`? 
-    // Let's assume yes, or we can use a simple curve.
-    
-    // Note: Recharts calculates the path 'd' for us if we don't provide it? 
-    // If we provide a component, we must render the path.
-    // Fortunately, the props usually contain everything needed.
-    
-    // Let's try to access `d` from props.
-    // If `d` is not present, we can compute a simple cubic bezier:
-    // M sourceX,sourceY C (sourceX + (targetX-sourceX)/2),sourceY (sourceX + (targetX-sourceX)/2),targetY targetX,targetY
-    
-    const sx = sourceX;
-    const sy = sourceY + linkWidth / 2;
-    const tx = targetX;
-    const ty = targetY + linkWidth / 2;
-    const midX = (sx + tx) / 2;
-    
-    const d = `M${sx},${sy} C${midX},${sy} ${midX},${ty} ${tx},${ty}`;
+    // Create smooth filled ribbon path
+    const d = `
+      M${sourceX},${sy0}
+      C${scx},${sy0} ${tcx},${ty0} ${targetX},${ty0}
+      L${targetX},${ty1}
+      C${tcx},${ty1} ${scx},${sy1} ${sourceX},${sy1}
+      Z
+    `;
     
     return (
-      <Layer key={`custom-link-${props.index}`}>
+      <Layer key={`custom-link-${index}`}>
         <path
           d={d}
-          stroke={color}
-          strokeWidth={Math.max(1, linkWidth)}
-          fill="none"
-          strokeOpacity={0.3}
+          fill={color}
+          fillOpacity={0.35}
+          stroke="none"
+          style={{ transition: 'fill-opacity 0.15s ease-out' }}
           onMouseEnter={(e) => {
-             e.currentTarget.style.strokeOpacity = '0.6';
+            e.currentTarget.style.fillOpacity = '0.55';
           }}
           onMouseLeave={(e) => {
-             e.currentTarget.style.strokeOpacity = '0.3';
+            e.currentTarget.style.fillOpacity = '0.35';
           }}
         />
       </Layer>
@@ -147,22 +138,21 @@ export default function SankeyRenderer({ config, height = 400, className }: Sank
   };
 
   return (
-    <div className={`w-full ${className || ''} overflow-visible`} style={{ height }}>
+    <div className={`w-full h-full ${className || ''}`} style={typeof height === 'number' ? { height: `${height}px` } : { height }}>
       <ResponsiveContainer width="100%" height="100%">
         <Sankey
           data={sankeyData}
           node={renderNode}
           link={renderLink}
-          nodePadding={60}
-          nodeWidth={20}
+          nodePadding={12}
+          nodeWidth={nodeWidth}
           iterations={64}
-          margin={{ top: 50, right: 220, bottom: 50, left: 220 }}
+          margin={{ top: 10, right: 140, bottom: 10, left: 140 }}
         >
           <Tooltip 
              content={({ active, payload }) => {
                if (!active || !payload || !payload.length) return null;
                const data = payload[0];
-               // Sankey tooltip payload is a bit different
                const isLink = data.payload.source && data.payload.target;
                
                if (isLink) {
@@ -181,7 +171,6 @@ export default function SankeyRenderer({ config, height = 400, className }: Sank
                  );
                }
                
-               // Node Tooltip
                return (
                   <div className="bg-white/95 dark:bg-gray-800/95 backdrop-blur-md p-3 rounded-lg shadow-lg border border-gray-200/50 dark:border-gray-700/50 text-xs">
                      <p className="font-medium text-gray-900 dark:text-white mb-1">
@@ -199,4 +188,3 @@ export default function SankeyRenderer({ config, height = 400, className }: Sank
     </div>
   );
 }
-

@@ -41,9 +41,10 @@ export default function ChartRenderer({ config, height = 300, className, showLeg
     return <TreemapRenderer data={data} currency={currency} height={height} showLegend={showLegend} />;
   }
 
-  // Handle sankey separately
+  // Handle sankey separately - use larger default height for sankey
   if (type === 'sankey') {
-    return <SankeyRenderer config={config} height={height} className={className} />;
+    const sankeyHeight = height === 300 ? 500 : height; // Use 500 as default instead of 300
+    return <SankeyRenderer config={config} height={sankeyHeight} className={className} />;
   }
 
   // Custom tooltip formatter
