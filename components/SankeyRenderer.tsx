@@ -10,79 +10,18 @@ interface SankeyRendererProps {
   className?: string;
 }
 
-const MyCustomNode = ({ x, y, width, height, index, payload, containerWidth }: any) => {
-  const isOut = x + width + 6 > containerWidth;
-  const isIn = x < 20;
-  const isCenter = !isOut && !isIn;
-
-  // Identify depth based on x position (approximation or pass depth in payload)
-  // Our backend passes 'depth' in payload
-  const depth = payload.depth;
-  
-  // Text positioning
-  // Depth 0 (Left): Text on Left
-  // Depth 1 (Center): Text on Right (or inside/below?)
-  // Depth 2 (Right): Text on Right
-  
-  const textX = depth === 0 ? x - 6 : x + width + 6;
-  const textAnchor = depth === 0 ? 'end' : 'start';
-  
-  // Special case for center node ("Income")
-  // If it's the center node, we might want text inside or just to the right
-  
-  // Calculate percentage
-  // We need the total income to calculate percentages.
-  // The 'Income' node (depth 1) usually holds the total volume.
-  // Ideally we'd have access to the total here. 
-  // We can find the max value in the dataset (which should be Total Income) from context, 
-  // but simpler to just show what we have.
-  
-  // Actually, we can just display the value and let the user see the visual proportion.
-  // But the requirement asks for percentage "95.39%", "31.06%".
-  // We can hack this: The backend knows the totals. 
-  // Maybe we can pass percentage in the node payload from backend?
-  // Recharts calculates 'value' based on links.
-  
-  // Let's rely on the value recharts computed.
-  // To get percentage, we need the Grand Total.
-  // Since we don't have it easily here without traversing, let's look at the "Income" node.
-  // But we are rendering one node.
-  
-  // Alternative: The backend sends 'totalIncome' in the config, or we find the max value node.
-  // Let's assume the node with name "Income" is 100%.
-  
-  return (
-    <Layer key={`custom-node-${index}`}>
-      <Rectangle
-        x={x}
-        y={y}
-        width={width}
-        height={height}
-        fill={payload.color || '#8884d8'}
-        fillOpacity={0.9}
-      />
-      <text
-        x={textX}
-        y={y + height / 2}
-        textAnchor={textAnchor}
-        dominantBaseline="middle"
-        className="text-[10px] sm:text-xs font-medium fill-slate-700 dark:fill-slate-200"
-      >
-        <tspan x={textX} dy="-0.6em" fontWeight="bold">{payload.name}</tspan>
-        <tspan x={textX} dy="1.2em" fillOpacity={0.7}>
-          {formatCompactCurrency(payload.value)}
-        </tspan>
-      </text>
-    </Layer>
-  );
-};
-
 export default function SankeyRenderer({ config, height = 400, className }: SankeyRendererProps) {
   const { sankeyData, currency } = config;
 
   if (!sankeyData || !sankeyData.nodes || !sankeyData.links) {
     return <div className="flex items-center justify-center h-full">No data</div>;
   }
+
+  console.log('[Sankey] Rendering with data:', {
+    nodes: sankeyData.nodes.length,
+    links: sankeyData.links.length,
+    nodeNames: sankeyData.nodes.map(n => n.name),
+  });
 
   // Find total income for percentage calculation
   const incomeNode = sankeyData.nodes.find(n => n.name === 'Income');
@@ -93,9 +32,16 @@ export default function SankeyRenderer({ config, height = 400, className }: Sank
 
   // Helper to render custom node with closure access to totalIncome
   const renderNode = (props: any) => {
-    const { x, y, width, height, index, payload } = props;
+    const { x, y, width, height, index, payload, containerWidth, containerHeight } = props;
     const depth = payload.depth;
     const isLeft = depth === 0;
+    
+    console.log(`[Sankey Node ${index}]`, {
+      name: payload.name,
+      x, y, width, height,
+      depth,
+      containerHeight
+    });
     
     // Calculate percentage
     // For Income node, it's 100%
@@ -105,10 +51,10 @@ export default function SankeyRenderer({ config, height = 400, className }: Sank
     const percentStr = `${percent.toFixed(1)}%`;
 
     const textAnchor = isLeft ? 'end' : 'start';
-    const textX = isLeft ? x - 12 : x + width + 12;
+    const textX = isLeft ? x - 15 : x + width + 15;
     
     // Check if node is too small to render meaningful text
-    if (height < 15) return (
+    if (height < 8) return (
       <Layer key={`custom-node-${index}`}>
         <Rectangle
           x={x}
@@ -214,15 +160,16 @@ export default function SankeyRenderer({ config, height = 400, className }: Sank
   };
 
   return (
-    <div className={`w-full ${className || ''}`} style={{ height }}>
+    <div className={`w-full ${className || ''} overflow-visible`} style={{ height }}>
       <ResponsiveContainer width="100%" height="100%">
         <Sankey
           data={sankeyData}
           node={renderNode}
           link={renderLink}
-          nodePadding={30}
-          nodeWidth={15}
-          margin={{ top: 30, right: 180, bottom: 30, left: 180 }}
+          nodePadding={60}
+          nodeWidth={20}
+          iterations={64}
+          margin={{ top: 50, right: 220, bottom: 50, left: 220 }}
         >
           <Tooltip 
              content={({ active, payload }) => {

@@ -281,7 +281,7 @@ export default function VisualizationPanel({ userId = 'default-user', refreshTri
         {/* Cash Flow Sankey - Full Width */}
         {charts.cashFlow && (
           <div className="lg:col-span-2">
-            <ChartCard title="Cash Flow" className="h-[500px]">
+            <ChartCard title="Cash Flow" className="h-[600px]">
               <ChartRenderer config={charts.cashFlow} height="100%" />
             </ChartCard>
           </div>
