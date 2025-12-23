@@ -131,6 +131,9 @@ const ChatInterface = forwardRef(({
     sendSystemMessage: (content: string) => {
       setMessages(prev => [...prev, { role: 'system' as const, content }]);
     },
+    sendMessage: async (content: string) => {
+      await sendMessage(content);
+    },
     resolveTodo: (transaction: any) => {
       const content = `📝 **Action Required: Clarification Needed**
 

@@ -17,6 +17,7 @@ import {
   getAllMemories,
   upsertMemory
 } from '@/lib/db-tools';
+import { getBudgetData, analyzeBudgetHealth } from '@/lib/budget-utils';
 
 export const runtime = 'nodejs';
 
@@ -101,6 +102,15 @@ You have access to four data sources:
    - Always provide data as an array of {label, value, value2?}
    - Include descriptive title and insights in description field
 
+8. get_current_budget(): Get current month's budget with all categories and spending
+   - Returns budgeted amounts, spent amounts, and available for each category
+   - Use when user asks about their budget or wants to see budget status
+
+9. get_budget_health_analysis(): Analyze budget health and identify issues
+   - Returns detailed analysis including overspent categories, large transactions, which category broke first
+   - Use when user asks about budget problems, why they're over budget, or how to get back on track
+   - Provides data needed to explain what caused budget issues and recommend adjustments
+
 **When to Use Charts:**
 - User asks about "trends", "over time", "changes"
 - User wants to "see", "visualize", "show me a graph"
@@ -116,6 +126,21 @@ When analyzing financial data, automatically provide:
 - Month-over-month balance changes
 - Warning if expenses exceed income
 - Net worth trends when available
+
+**Budget Analysis:**
+When user asks about budget health or budget problems:
+1. Use get_budget_health_analysis() to get detailed analysis
+2. Explain the root causes:
+   - Identify which categories are overspent and by how much
+   - Determine if overspending was caused by a few large transactions or many small ones
+   - Point out the first category that went over budget (chronologically)
+   - Highlight any unusual spending patterns
+3. Provide actionable recommendations:
+   - Suggest specific spending adjustments to get back on track
+   - Recommend which categories to focus on first (highest overspend)
+   - If large transactions caused the issue, mention reviewing those specific purchases
+   - If many small transactions, suggest tracking daily spending more closely
+4. Be empathetic and constructive - focus on solutions, not blame
 
 **Response Format Guidelines:**
 
@@ -357,6 +382,64 @@ async function executeToolCall(name: string, args: any, effectiveUserId: string,
         args.months || 6,
         args.specificMonth
       );
+    } else if (name === 'get_current_budget') {
+      // Get current month budget data
+      const now = new Date();
+      const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      
+      const budgetData = await getBudgetData(effectiveUserId, currentMonth);
+      
+      // Transform to a format that's easy for the LLM to understand
+      const categories = budgetData.categories.map(cat => {
+        const budget = budgetData.budgets.find(b => b.category_id === cat.id);
+        const budgeted = budget?.budgeted_amount || 0;
+        const spent = budgetData.spending[cat.name] || 0;
+        
+        return {
+          name: cat.name,
+          budgeted,
+          spent,
+          available: budgeted - spent,
+          isOverBudget: spent > budgeted,
+        };
+      }).filter(cat => cat.budgeted > 0 || cat.spent > 0);
+      
+      const totalBudgeted = categories.reduce((sum, cat) => sum + cat.budgeted, 0);
+      const totalSpent = categories.reduce((sum, cat) => sum + cat.spent, 0);
+      
+      functionResult = {
+        month: currentMonth,
+        income: budgetData.income,
+        totalBudgeted,
+        totalSpent,
+        readyToAssign: budgetData.income - totalBudgeted,
+        categories,
+      };
+    } else if (name === 'get_budget_health_analysis') {
+      // Get detailed budget health analysis
+      const now = new Date();
+      const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      
+      const analysis = await analyzeBudgetHealth(effectiveUserId, currentMonth);
+      
+      functionResult = {
+        healthStatus: analysis.healthStatus,
+        healthLabel: analysis.healthStatus === 'on_track' ? 'On Track' : 
+                     analysis.healthStatus === 'at_risk' ? 'At Risk' : 'Off Track',
+        totalBudgeted: analysis.totalBudgeted,
+        totalSpent: analysis.totalSpent,
+        utilizationPercentage: Math.round(analysis.utilizationPercentage),
+        firstCategoryOverBudget: analysis.firstCategoryOverBudget,
+        overspentCategories: analysis.overspentCategories.map(cat => ({
+          name: cat.name,
+          budgeted: cat.budgeted,
+          spent: cat.spent,
+          overspent: cat.overspent,
+          overspentPercentage: Math.round((cat.overspent / cat.budgeted) * 100),
+          firstOverspentDate: cat.firstOverspentDate,
+          largeTransactions: cat.largeTransactions,
+        })),
+      };
     } else {
       functionResult = { error: 'Unknown function' };
     }
@@ -1014,6 +1097,34 @@ When answering questions, use these memories to provide context-aware responses.
                 specificMonth: {
                   type: SchemaType.STRING,
                   description: 'Optional: Get spending for a specific month (YYYY-MM format)',
+                },
+              },
+              required: ['reasoning'],
+            },
+          },
+          {
+            name: 'get_current_budget',
+            description: 'Get the user\'s current month budget with all categories, budgeted amounts, and spent amounts. Use this when the user asks about their budget status or wants to see how they\'re tracking against their budget.',
+            parameters: {
+              type: SchemaType.OBJECT,
+              properties: {
+                reasoning: {
+                  type: SchemaType.STRING,
+                  description: 'Explain why you are calling this function and what you plan to do with the results (max 50 words)',
+                },
+              },
+              required: ['reasoning'],
+            },
+          },
+          {
+            name: 'get_budget_health_analysis',
+            description: 'Analyze budget health and identify problem areas. Returns detailed analysis including overspent categories, large transactions that contributed to overspending, which category went over budget first, and health status. Use this when user asks about budget problems or wants to understand why their budget is off track.',
+            parameters: {
+              type: SchemaType.OBJECT,
+              properties: {
+                reasoning: {
+                  type: SchemaType.STRING,
+                  description: 'Explain why you are calling this function and what you plan to do with the results (max 50 words)',
                 },
               },
               required: ['reasoning'],

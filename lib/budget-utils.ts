@@ -800,3 +800,154 @@ export async function hasBudgets(userId: string): Promise<boolean> {
   return (count || 0) > 0;
 }
 
+/**
+ * Analyze budget health for the current month
+ * Returns detailed analysis including overspent categories, health status, and contributing transactions
+ */
+export async function analyzeBudgetHealth(userId: string, month: string): Promise<{
+  healthStatus: 'on_track' | 'at_risk' | 'off_track';
+  overspentCategories: Array<{
+    name: string;
+    budgeted: number;
+    spent: number;
+    overspent: number;
+    firstOverspentDate?: string;
+    largeTransactions: Array<{
+      date: string;
+      merchant: string;
+      amount: number;
+      description?: string;
+    }>;
+  }>;
+  totalBudgeted: number;
+  totalSpent: number;
+  utilizationPercentage: number;
+  firstCategoryOverBudget?: string;
+}> {
+  // Get budget data
+  const budgetData = await getBudgetData(userId, month);
+  
+  // Get all transactions for the month to analyze patterns
+  const startDate = `${month}-01`;
+  const endDate = `${month}-31`;
+  
+  const { data: transactions, error: txnError } = await supabase
+    .from('transactions')
+    .select('date, merchant, amount, category, description')
+    .eq('user_id', userId)
+    .gte('date', startDate)
+    .lte('date', endDate)
+    .eq('transaction_type', 'expense')
+    .order('date', { ascending: true });
+  
+  if (txnError) {
+    throw new Error(`Failed to get transactions: ${txnError.message}`);
+  }
+  
+  // Calculate category spending and identify overspent categories
+  const overspentCategories: Array<{
+    name: string;
+    budgeted: number;
+    spent: number;
+    overspent: number;
+    firstOverspentDate?: string;
+    largeTransactions: Array<{
+      date: string;
+      merchant: string;
+      amount: number;
+      description?: string;
+    }>;
+  }> = [];
+  
+  let totalBudgeted = 0;
+  let totalSpent = 0;
+  let firstCategoryOverBudget: string | undefined;
+  let earliestOverspentDate: string | undefined;
+  
+  // Build category map for quick lookup
+  const categorySpendingMap: Record<string, number> = budgetData.spending;
+  
+  for (const category of budgetData.categories) {
+    const budget = budgetData.budgets.find(b => b.category_id === category.id);
+    const budgetedAmount = budget?.budgeted_amount || 0;
+    const spentAmount = categorySpendingMap[category.name] || 0;
+    
+    totalBudgeted += budgetedAmount;
+    totalSpent += spentAmount;
+    
+    if (spentAmount > budgetedAmount && budgetedAmount > 0) {
+      const overspent = spentAmount - budgetedAmount;
+      
+      // Find transactions for this category
+      const categoryTransactions = (transactions || [])
+        .filter(t => t.category === category.name)
+        .map(t => ({
+          date: t.date,
+          merchant: t.merchant || 'Unknown',
+          amount: Math.abs(Number(t.amount)),
+          description: t.description,
+        }));
+      
+      // Find large transactions (> 20% of budget or > $100)
+      const largeThreshold = Math.max(budgetedAmount * 0.2, 100);
+      const largeTransactions = categoryTransactions
+        .filter(t => t.amount >= largeThreshold)
+        .sort((a, b) => b.amount - a.amount)
+        .slice(0, 5);
+      
+      // Find when this category first went over budget
+      let runningTotal = 0;
+      let firstOverspentDate: string | undefined;
+      for (const txn of categoryTransactions) {
+        runningTotal += txn.amount;
+        if (runningTotal > budgetedAmount && !firstOverspentDate) {
+          firstOverspentDate = txn.date;
+          
+          // Track the earliest category to go over budget
+          if (!earliestOverspentDate || txn.date < earliestOverspentDate) {
+            earliestOverspentDate = txn.date;
+            firstCategoryOverBudget = category.name;
+          }
+          break;
+        }
+      }
+      
+      overspentCategories.push({
+        name: category.name,
+        budgeted: budgetedAmount,
+        spent: spentAmount,
+        overspent,
+        firstOverspentDate,
+        largeTransactions,
+      });
+    }
+  }
+  
+  // Sort overspent categories by overspent amount (descending)
+  overspentCategories.sort((a, b) => b.overspent - a.overspent);
+  
+  // Calculate health status
+  const overspentCount = overspentCategories.length;
+  let healthStatus: 'on_track' | 'at_risk' | 'off_track';
+  
+  if (overspentCount === 0) {
+    healthStatus = 'on_track';
+  } else if (overspentCount <= 2) {
+    healthStatus = 'at_risk';
+  } else {
+    healthStatus = 'off_track';
+  }
+  
+  // Calculate utilization percentage
+  const utilizationPercentage = totalBudgeted > 0 ? (totalSpent / totalBudgeted) * 100 : 0;
+  
+  return {
+    healthStatus,
+    overspentCategories,
+    totalBudgeted,
+    totalSpent,
+    utilizationPercentage,
+    firstCategoryOverBudget,
+  };
+}
+

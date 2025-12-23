@@ -257,6 +257,8 @@ export default function Home() {
                 onSyncComplete={() => setChartRefreshKey(prev => prev + 1)}
                 onFileUpload={handleFileUpload}
                 isProcessing={isProcessing}
+                chatInterfaceRef={chatInterfaceRef}
+                onOpenMobileChat={() => setIsMobileChatOpen(true)}
               />
               
               {/* Subscriptions Panel - Shows auto-detected subscriptions from fixed expenses */}

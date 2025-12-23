@@ -9,6 +9,8 @@ interface OnboardingPanelsProps {
   onSyncComplete?: () => void;
   onFileUpload?: (files: File[]) => void;
   isProcessing?: boolean;
+  chatInterfaceRef?: React.RefObject<any>;
+  onOpenMobileChat?: () => void;
 }
 
 interface CategorySummary {
@@ -22,7 +24,9 @@ export default function OnboardingPanels({
   userId, 
   onSyncComplete,
   onFileUpload,
-  isProcessing = false
+  isProcessing = false,
+  chatInterfaceRef,
+  onOpenMobileChat,
 }: OnboardingPanelsProps) {
   const router = useRouter();
   const [hasBudgets, setHasBudgets] = useState<boolean>(false);
@@ -87,57 +91,148 @@ export default function OnboardingPanels({
     );
   }
 
-  // Budget Summary View (when user has budgets)
-  const BudgetSummaryPanel = () => (
-    <div className="bg-white dark:bg-gray-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm h-full flex flex-col">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
-          Budget Summary
-        </h3>
-        <button
-          onClick={() => router.push('/budget')}
-          className="text-xs font-medium text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors"
-        >
-          View Full →
-        </button>
-      </div>
+  // Calculate budget health status
+  const calculateHealthStatus = () => {
+    const overspentCount = topCategories.filter(cat => cat.spent > cat.budgeted).length;
+    
+    if (overspentCount === 0) {
+      return { status: 'on_track', label: 'On Track', color: 'emerald' };
+    } else if (overspentCount <= 2) {
+      return { status: 'at_risk', label: 'At Risk', color: 'amber' };
+    } else {
+      return { status: 'off_track', label: 'Off Track', color: 'red' };
+    }
+  };
 
-      <div className="space-y-2 flex-1">
-        {topCategories.slice(0, 4).map(category => {
-          const progress = Math.min((category.spent / category.budgeted) * 100, 100);
-          const isOverBudget = category.spent > category.budgeted;
+  const handleExplainBudget = () => {
+    const health = calculateHealthStatus();
+    const overspentCategories = topCategories.filter(cat => cat.spent > cat.budgeted);
+    
+    // Build the message for the chat
+    const message = `**Budget Health Analysis Requested**
+
+Current Status: **${health.label}**
+
+I need you to analyze my budget and explain:
+1. What caused my budget to be ${health.status === 'at_risk' ? 'at risk' : 'off track'}
+2. Which category broke first and why
+3. Were there big transactions or many small expenses?
+4. What adjustments should I make to get back on track?
+
+Overspent categories: ${overspentCategories.map(c => c.name).join(', ')}
+
+Please provide a detailed analysis with specific recommendations.`;
+
+    // Check if mobile
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 1024;
+    
+    if (isMobile && onOpenMobileChat) {
+      // Open mobile chat modal first
+      onOpenMobileChat();
+      // Send message after a brief delay to allow modal to mount
+      setTimeout(() => {
+        chatInterfaceRef?.current?.sendMessage?.(message);
+      }, 100);
+    } else {
+      // Desktop: send message directly
+      chatInterfaceRef?.current?.sendMessage?.(message);
+    }
+  };
+
+  // Budget Summary View (when user has budgets)
+  const BudgetSummaryPanel = () => {
+    const health = calculateHealthStatus();
+    const showExplain = health.status !== 'on_track';
+    
+    return (
+      <div className="bg-white dark:bg-gray-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm h-full flex flex-col">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
+            Budget Summary
+          </h3>
+          <button
+            onClick={() => router.push('/budget')}
+            className="text-xs font-medium text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors"
+          >
+            View Full →
+          </button>
+        </div>
+
+        {/* Health Status Indicator */}
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${
+            health.color === 'emerald' 
+              ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300'
+              : health.color === 'amber'
+              ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300'
+              : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
+          }`}>
+            {health.color === 'emerald' ? (
+              <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+              </svg>
+            ) : health.color === 'amber' ? (
+              <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+            ) : (
+              <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+              </svg>
+            )}
+            {health.label}
+          </div>
           
-          return (
-            <div key={category.id} className="space-y-1">
-              <div className="flex items-center justify-between text-sm">
-                <span className="font-medium text-slate-700 dark:text-slate-200 truncate pr-2">
-                  {category.name}
-                </span>
-                <span className="text-slate-500 dark:text-slate-400 text-xs whitespace-nowrap">
-                  <span className={isOverBudget ? 'text-red-600 dark:text-red-400 font-medium' : ''}>
-                    {formatCurrency(category.spent)}
+          {showExplain && chatInterfaceRef && (
+            <button
+              onClick={handleExplainBudget}
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              Explain
+            </button>
+          )}
+        </div>
+
+        <div className="space-y-2 flex-1">
+          {topCategories.slice(0, 4).map(category => {
+            const progress = Math.min((category.spent / category.budgeted) * 100, 100);
+            const isOverBudget = category.spent > category.budgeted;
+            
+            return (
+              <div key={category.id} className="space-y-1">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium text-slate-700 dark:text-slate-200 truncate pr-2">
+                    {category.name}
                   </span>
-                  {' / '}
-                  {formatCurrency(category.budgeted)}
-                </span>
+                  <span className="text-slate-500 dark:text-slate-400 text-xs whitespace-nowrap">
+                    <span className={isOverBudget ? 'text-red-600 dark:text-red-400 font-medium' : ''}>
+                      {formatCurrency(category.spent)}
+                    </span>
+                    {' / '}
+                    {formatCurrency(category.budgeted)}
+                  </span>
+                </div>
+                
+                <div className="h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                  <div 
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      isOverBudget 
+                        ? 'bg-red-500' 
+                        : 'bg-emerald-500'
+                    }`}
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
               </div>
-              
-              <div className="h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                <div 
-                  className={`h-full rounded-full transition-all duration-500 ${
-                    isOverBudget 
-                      ? 'bg-red-500' 
-                      : 'bg-emerald-500'
-                  }`}
-                  style={{ width: `${progress}%` }}
-                />
-              </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   // Budget CTA Panel (when user doesn't have budgets)
   const BudgetCTAPanel = () => (
