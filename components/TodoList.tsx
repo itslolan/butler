@@ -20,7 +20,10 @@ export default function TodoList({ userId, onSelectTodo, refreshTrigger = 0 }: T
     
     setIsLoading(true);
     try {
-      const res = await fetch(`/api/todos?userId=${userId}`);
+      const res = await fetch(`/api/todos?userId=${encodeURIComponent(userId)}&_ts=${Date.now()}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache' },
+      });
       if (res.ok) {
         const data = await res.json();
         setTodos(data.todos || []);
@@ -35,6 +38,16 @@ export default function TodoList({ userId, onSelectTodo, refreshTrigger = 0 }: T
 
   useEffect(() => {
     fetchTodos();
+    const interval = setInterval(fetchTodos, 5000);
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') fetchTodos();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, refreshTrigger]);
 

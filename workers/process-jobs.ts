@@ -384,7 +384,8 @@ async function processFileBuffer(opts: {
 
   const accountName = extractedData.accountName || null;
   const accountLast4 = extractedData.accountNumberLast4 || null;
-  const needsAccountSelection = isScreenshot && !accountName;
+  // Ask for account selection whenever account info cannot be extracted (images OR PDFs)
+  const needsAccountSelection = !accountName && !accountLast4;
 
   const normalizedUploadId = uploadId && uploadId.trim() !== '' ? uploadId : null;
   const batchId = normalizedUploadId || null;

@@ -646,8 +646,8 @@ Use these memories to help classify transactions. For example, if you know the u
         const accountName = extractedData.accountName || null;
         const accountLast4 = extractedData.accountNumberLast4 || null;
         
-        // For screenshots without account info, mark as pending account selection
-        const needsAccountSelection = isScreenshot && !accountName;
+        // If account info cannot be extracted (images OR PDFs), mark as pending account selection
+        const needsAccountSelection = !accountName && !accountLast4;
         
         // Get upload_id from request if provided (new upload entity)
         const uploadId = formData.get('uploadId') as string || null;

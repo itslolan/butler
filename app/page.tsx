@@ -143,13 +143,7 @@ export default function Home() {
       ]);
       setLastUploadResult(`✅ Upload queued (${files.length} file${files.length !== 1 ? 's' : ''}). You can leave and come back later.`);
       setUploadCount(prev => prev + 1);
-
-      // Send user to uploads page for progress details
-      if (uploadId) {
-        router.push(`/uploads?processingUploadId=${encodeURIComponent(uploadId)}`);
-      } else {
-        router.push('/uploads');
-      }
+      // Stay on dashboard. Users will see processing banner and TODOs here.
     } catch (error: any) {
       console.error('[dashboard] Failed to queue upload:', error);
       setProcessingSteps([
