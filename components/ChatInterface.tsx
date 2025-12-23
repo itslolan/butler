@@ -91,19 +91,40 @@ const ChatInterface = forwardRef(({
   function inferTransactionTypeFromText(text: string): 'income' | 'expense' | 'transfer' | 'other' | null {
     const t = (text || '').toLowerCase();
 
-    // Strong signals
-    if (/\b(income|salary|payroll|pay check|paycheck|bonus)\b/.test(t)) return 'income';
-    if (/\b(transfer|moved|move money|zelle|venmo|cash app|payment to|card payment)\b/.test(t)) return 'transfer';
-    if (/\b(other|unknown|not sure)\b/.test(t)) return 'other';
+    // Income signals - expanded
+    if (/\b(income|salary|payroll|pay check|paycheck|bonus|wage|earning|payment received|deposit|refund|reimbursement)\b/.test(t)) return 'income';
+    
+    // Transfer signals - expanded
+    if (/\b(transfer|moved|move money|sent money|zelle|venmo|cash app|payment to|card payment|pay.*card|paid.*card|between account)\b/.test(t)) return 'transfer';
+    
+    // Other/Unknown signals
+    if (/\b(other|unknown|not sure|don'?t know|unclear|can'?t tell)\b/.test(t)) return 'other';
 
-    // Everything else (food/dining/shopping/bills/etc.) is still an expense for our todo resolution purposes
-    if (
-      /\b(expense|food|dining|restaurant|grocery|shopping|bill|utility|rent|mortgage|insurance|subscription|travel|gas|transport)\b/.test(
-        t
-      )
-    ) {
-      return 'expense';
-    }
+    // Expense signals - much more comprehensive
+    // Food & Dining
+    if (/\b(food|dining|restaurant|grocery|groceries|meal|breakfast|lunch|dinner|coffee|cafe|eat|eating|ate|snack|drink|bar|pub)\b/.test(t)) return 'expense';
+    
+    // Shopping
+    if (/\b(shopping|shop|purchase|bought|buy|store|retail|clothes|clothing|amazon|online|order)\b/.test(t)) return 'expense';
+    
+    // Bills & Utilities
+    if (/\b(bill|utility|utilities|electric|electricity|water|gas|internet|phone|cable|subscription|rent|mortgage|insurance|premium)\b/.test(t)) return 'expense';
+    
+    // Transportation
+    if (/\b(transport|transportation|gas|fuel|uber|lyft|taxi|cab|parking|toll|car|bus|train|subway|metro|flight|airline)\b/.test(t)) return 'expense';
+    
+    // Entertainment
+    if (/\b(entertainment|movie|movies|cinema|theater|theatre|concert|game|gaming|hobby|sport|gym|fitness)\b/.test(t)) return 'expense';
+    
+    // Healthcare
+    if (/\b(health|healthcare|medical|doctor|pharmacy|medicine|hospital|clinic|dental|dentist)\b/.test(t)) return 'expense';
+    
+    // General expense indicator - catch phrases like "it's an expense", "this was an expense"
+    if (/\b(expense|spent|spending|paid|cost|charge|fee|purchase)\b/.test(t)) return 'expense';
+    
+    // If text is very short and affirmative (like "yes", "yeah", "correct", "right"), default to expense
+    // This handles cases where user just confirms it's a normal expense
+    if (/^(yes|yeah|yep|yup|correct|right|ok|okay|sure|true|that'?s right)$/i.test(t.trim())) return 'expense';
 
     return null;
   }
@@ -143,6 +164,15 @@ I need your help categorizing this transaction:
 * **Date:** ${new Date(transaction.date).toLocaleDateString()}
 * **Amount:** $${Math.abs(transaction.amount).toFixed(2)}
 * **Question:** ${transaction.clarification_question}
+
+**IMPORTANT INSTRUCTION FOR AI:**
+Once the user provides an answer about this transaction type (income, expense, transfer, or other), you MUST call the \`resolve_todo\` tool with:
+- todo_type: "transaction_clarification"
+- todo_id: "${transaction.id}"
+- action: "resolve"
+- transaction_type: the appropriate type based on the user's answer (one of: "income", "expense", "transfer", "other")
+
+Do NOT simply acknowledge the answer - you MUST call the resolve_todo tool to actually resolve this item.
 
 Please reply with the correct category or explain what this transaction is.`;
       
@@ -342,38 +372,8 @@ Successfully mapped **${result.transactions_updated} transaction${result.transac
 
     const userMessage = content.trim();
 
-    // Deterministically resolve active transaction clarification without relying on LLM tool calls.
-    if (activeClarifyTransactionId) {
-      const inferred = inferTransactionTypeFromText(userMessage);
-      if (inferred) {
-        setIsLoading(true);
-        try {
-          await resolveTransactionTodo(activeClarifyTransactionId, inferred);
-
-          setMessages(prev => [
-            ...prev,
-            { role: 'user' as const, content: userMessage },
-            {
-              role: 'system' as const,
-              content: `✅ Categorized transaction as **${inferred}**. This todo should disappear shortly.`,
-            },
-          ]);
-
-          setActiveClarifyTransactionId(null);
-          if (onTodoResolved) onTodoResolved();
-          return;
-        } catch (err: any) {
-          setMessages(prev => [
-            ...prev,
-            { role: 'user' as const, content: userMessage },
-            { role: 'system' as const, content: `❌ Failed to resolve todo: ${err.message}` },
-          ]);
-          // fall through to normal chat as a fallback
-        } finally {
-          setIsLoading(false);
-        }
-      }
-    }
+    // No client-side inference - let LLM handle it via resolve_todo tool
+    // Just track that we have an active clarification and pass it to the LLM
     setInput('');
     
     // Increment question count for demo mode
@@ -528,15 +528,22 @@ Successfully mapped **${result.transactions_updated} transaction${result.transac
                   return updated;
                 });
 
-                // Check if a transaction was categorized
+                // Check if a transaction was categorized or todo was resolved
                 const hasCategorization = toolCalls.some(
                   call => call.name === 'categorize_transaction' && call.result?.success === true
                 );
                 
-                if (hasCategorization && onTodoResolved) {
+                const hasTodoResolution = toolCalls.some(
+                  call => call.name === 'resolve_todo' && 
+                         call.result?.success === true && 
+                         (call.result?.resolved === true || call.result?.dismissed === true)
+                );
+                
+                if ((hasCategorization || hasTodoResolution) && onTodoResolved) {
+                  console.log('[ChatInterface] Todo resolved, calling onTodoResolved callback');
                   onTodoResolved();
                 }
-                if (hasCategorization) {
+                if (hasCategorization || hasTodoResolution) {
                   setActiveClarifyTransactionId(null);
                 }
                 break;

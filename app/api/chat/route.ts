@@ -67,12 +67,19 @@ You have access to four data sources:
 - Explain WHY you're calling this function and WHAT you intend to do with the results
 - Be specific about your plan (e.g., "Searching transactions from Jan-Dec 2024 to calculate total spending and identify top categories")
 
-**Transaction Clarification Optimization:**
-- When a system message includes "TRANSACTION_ID: [uuid]", use that ID directly.
+**Transaction Clarification - MANDATORY WORKFLOW:**
+- When a system message includes "TRANSACTION_ID: [uuid]", a TODO item is active and MUST be resolved
 - Do NOT search for the transaction - the ID is already provided in the context
-- This applies to todo/clarification workflows where the transaction is already identified
-- If the user provides the transaction type, call resolve_todo (todo_type=transaction_clarification, todo_id=transaction_id, action=resolve, transaction_type=...).
-- If the user has not provided the transaction type, ask a focused follow-up question and do NOT call resolve_todo yet.
+- After the user provides their answer about the transaction type:
+  1. Determine the transaction type from their response (income, expense, transfer, or other)
+  2. **YOU MUST IMMEDIATELY call resolve_todo** with:
+     - todo_type: "transaction_clarification"
+     - todo_id: [the transaction UUID from the system message]
+     - action: "resolve"
+     - transaction_type: [determined from user's answer]
+  3. Do NOT just acknowledge - the resolve_todo tool call is REQUIRED
+- If the user's answer is unclear, ask ONE focused follow-up question, then call resolve_todo with their clarified answer
+- CRITICAL: Every active transaction clarification MUST end with a resolve_todo call
 
 **Available Tools:**
 
@@ -84,13 +91,16 @@ You have access to four data sources:
    
 3. get_all_metadata(): Retrieve the full metadata text blob
 
-4. categorize_transaction(transaction_id, transaction_type): Categorize a transaction as income, expense, transfer, or other
-   - Use when user clarifies the type of a transaction
-
-4b. resolve_todo(todo_type, action, todo_id, ...): Resolve or dismiss a TODO item
-   - Use for TODO workflows (transaction clarification + account selection)
+4. resolve_todo(todo_type, action, todo_id, ...): **PRIMARY TOOL** for resolving TODO items
+   - **REQUIRED for transaction clarifications**: When a TRANSACTION_ID is in context and user answers, call this
+   - **REQUIRED for account selections**: When user chooses an account for uploaded documents
+   - Use action="resolve" with required fields (transaction_type for clarifications, account_id for selections)
    - Use action="dismiss" when user wants to skip/dismiss the item
-   - Only call when all required fields are available
+   - You MUST call this tool - do not just acknowledge the user's answer
+
+4b. categorize_transaction(transaction_id, transaction_type): Legacy tool for direct categorization
+   - Only use if NOT in a TODO workflow (no active TRANSACTION_ID in system message)
+   - For standalone categorization requests outside of TODO items
 
 5. get_account_snapshots(accountName?, startDate?, endDate?): Get monthly balance snapshots
 
@@ -729,7 +739,7 @@ When answering questions, use these memories to provide context-aware responses.
           {
             name: 'resolve_todo',
             description:
-              'Resolve or dismiss a TODO item. Only call when the user has provided all required information. Use action="dismiss" to dismiss.',
+              'REQUIRED: Resolve or dismiss a TODO item. For transaction clarifications, you MUST call this after the user answers. For account selections, call after user chooses an account. Use action="resolve" with required fields, or action="dismiss" to skip.',
             parameters: {
               type: SchemaType.OBJECT,
               properties: {
