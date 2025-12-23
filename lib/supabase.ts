@@ -41,7 +41,7 @@ export interface Upload {
   id?: string;
   user_id: string;
   upload_name: string;
-  source_type: 'manual_upload' | 'plaid_sync' | 'api';
+  source_type: 'manual_upload' | 'plaid_sync' | 'api' | 'extension_capture';
   status: 'processing' | 'completed' | 'failed';
   uploaded_at?: Date | string;
   created_at?: Date | string;

@@ -1,0 +1,107 @@
+/* Overlay Styles */
+#adphex-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 2147483647; /* Max z-index */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: #333;
+}
+
+#adphex-card {
+  background: white;
+  padding: 24px;
+  border-radius: 12px;
+  width: 400px;
+  max-width: 90%;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  text-align: center;
+}
+
+#adphex-title {
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: #111827;
+}
+
+#adphex-description {
+  font-size: 14px;
+  color: #6B7280;
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+
+.adphex-btn {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: none;
+  margin: 0 5px;
+}
+
+.adphex-btn-primary {
+  background-color: #2563EB;
+  color: white;
+}
+
+.adphex-btn-primary:hover {
+  background-color: #1D4ED8;
+}
+
+.adphex-btn-secondary {
+  background-color: #F3F4F6;
+  color: #374151;
+}
+
+.adphex-btn-secondary:hover {
+  background-color: #E5E7EB;
+}
+
+#adphex-preview-container {
+  max-height: 300px;
+  overflow-y: auto;
+  margin: 20px 0;
+  border: 1px solid #E5E7EB;
+  border-radius: 8px;
+  background: #F9FAFB;
+}
+
+#adphex-preview-img {
+  width: 100%;
+  display: block;
+}
+
+#adphex-progress {
+  margin: 20px 0;
+  height: 4px;
+  background: #E5E7EB;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+#adphex-progress-bar {
+  height: 100%;
+  background: #2563EB;
+  width: 0%;
+  transition: width 0.3s ease;
+}
+
+#adphex-status {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #6B7280;
+}
+
