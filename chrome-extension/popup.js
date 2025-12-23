@@ -1,4 +1,4 @@
-const APP_URL = 'http://localhost:3000';
+const APP_URL = 'https://adphex.com';
 const AUTH_CHECK_URL = `${APP_URL}/api/user/me`;
 
 document.addEventListener('DOMContentLoaded', async () => {

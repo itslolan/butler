@@ -1,4 +1,4 @@
-const APP_URL = 'http://localhost:3000';
+const APP_URL = 'https://adphex.com';
 const UPLOAD_URL = `${APP_URL}/api/upload`;
 const AUTH_CHECK_URL = `${APP_URL}/api/user/me`;
 

@@ -97,9 +97,9 @@ export async function GET(request: NextRequest) {
         name: category.name,
         isCustom: category.is_custom,
         hasTransactions: categoriesWithTransactions.has(category.name),
-        budgeted,
-        spent,
-        available: budgeted - spent,
+        budgeted: Number(budgeted), // Ensure number
+        spent: Number(spent),       // Ensure number
+        available: Number(budgeted) - Number(spent),
       };
     });
 

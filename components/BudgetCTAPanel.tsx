@@ -44,7 +44,7 @@ export default function BudgetCTAPanel({ userId }: BudgetCTAPanelProps) {
                 id: c.id,
                 name: c.name,
                 budgeted: c.budgeted,
-                spent: c.spent
+                spent: c.spent // spent is already provided in the API response
               }));
             
             setTopCategories(sorted);
