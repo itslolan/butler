@@ -165,12 +165,13 @@ export default function BudgetPage() {
 
     // Only show questionnaire for current month with no budgets
     // Never show for past months (read-only) or future months (will get carryover)
-    if (data && data.totalBudgeted === 0 && !questionnaireCompleted && isCurrentMonth(selectedMonth)) {
+    // Compare selectedMonth directly with currentMonth to avoid function dependency
+    if (data && data.totalBudgeted === 0 && !questionnaireCompleted && selectedMonth === currentMonth) {
       setShowQuestionnaire(true);
     }
     
     setIsInitialLoadComplete(true);
-  }, [questionnaireCompleted, selectedMonth, isCurrentMonth]);
+  }, [questionnaireCompleted, selectedMonth, currentMonth]);
 
   const handleQuestionnaireComplete = async (data: { income: number; rent?: number }) => {
     if (!budgetData || !user) return;

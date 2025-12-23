@@ -24,6 +24,9 @@ export const dynamic = 'force-dynamic'; // Don't cache, but set reasonable timeo
  * Query params: userId, month (YYYY-MM)
  */
 export async function GET(request: NextRequest) {
+  const startTime = Date.now();
+  console.log('[Budget API] Request started');
+  
   try {
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId');
@@ -210,6 +213,9 @@ export async function GET(request: NextRequest) {
     const totalBudgeted = categoryBudgets.reduce((sum, c) => sum + c.budgeted, 0);
     const readyToAssign = effectiveIncome - totalBudgeted;
 
+    const duration = Date.now() - startTime;
+    console.log(`[Budget API] Request completed in ${duration}ms, returned ${activeCategoryBudgets.length} categories`);
+    
     return NextResponse.json({
       month,
       income: effectiveIncome,
@@ -225,7 +231,8 @@ export async function GET(request: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error('Error getting budget data:', error);
+    const duration = Date.now() - startTime;
+    console.error(`[Budget API] Error after ${duration}ms:`, error);
     return NextResponse.json(
       { error: error.message || 'Failed to get budget data' },
       { status: 500 }
