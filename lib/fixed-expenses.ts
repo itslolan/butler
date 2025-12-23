@@ -95,9 +95,9 @@ function createFixedExpense(
  */
 async function fetchAllExpenseTransactions(
   userId: string
-): Promise<Array<{ merchant: string; amount: number; date: string; description: string | null; transaction_type: string }>> {
+): Promise<Array<{ merchant: string; amount: number; date: string; description: string | null; category: string | null; transaction_type: string }>> {
   const PAGE_SIZE = 1000;
-  let allData: Array<{ merchant: string; amount: number; date: string; description: string | null; transaction_type: string }> = [];
+  let allData: Array<{ merchant: string; amount: number; date: string; description: string | null; category: string | null; transaction_type: string }> = [];
   let page = 0;
   let hasMore = true;
 
@@ -107,7 +107,7 @@ async function fetchAllExpenseTransactions(
 
     const { data, error } = await supabase
       .from('transactions')
-      .select('merchant, amount, date, description, transaction_type')
+      .select('merchant, amount, date, description, category, transaction_type')
       .eq('user_id', userId)
       .in('transaction_type', ['expense', 'other'])
       .order('date', { ascending: true })
@@ -132,8 +132,118 @@ async function fetchAllExpenseTransactions(
   return allData;
 }
 
+function monthKeyUTC(d: string | Date): string {
+  const date = new Date(d);
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function hasAtLeastThreeMonthsOfData(
+  txns: Array<{ date: string }>
+): boolean {
+  const months = new Set(txns.map(t => monthKeyUTC(t.date)));
+  return months.size >= 3;
+}
+
+function isLikelyFixedCategory(category: string | null, merchant: string, description: string | null): boolean {
+  const c = (category || '').toLowerCase();
+  const text = `${merchant} ${description || ''}`.toLowerCase();
+
+  // Strong category-based signals
+  const fixedCategorySignals = [
+    'rent',
+    'mortgage',
+    'utilities',
+    'utility',
+    'electric',
+    'gas',
+    'water',
+    'internet',
+    'phone',
+    'mobile',
+    'cable',
+    'insurance',
+    'loan',
+    'student loan',
+    'car payment',
+    'auto loan',
+    'hoa',
+    'property',
+    'tax',
+    'childcare',
+    'daycare',
+  ];
+
+  if (c) {
+    for (const s of fixedCategorySignals) {
+      if (c.includes(s)) return true;
+    }
+  }
+
+  // If category is missing/unhelpful, use conservative keyword hints
+  if (!c || c === 'other' || c === 'uncategorized') {
+    if (/\b(rent|lease|mortgage|hoa)\b/.test(text)) return true;
+    if (/\b(electric|gas|water|sewer|trash|utility|utilities)\b/.test(text)) return true;
+    if (/\b(insurance|policy)\b/.test(text)) return true;
+    if (/\b(internet|wifi|broadband|cable)\b/.test(text)) return true;
+    if (/\b(phone|mobile|wireless)\b/.test(text)) return true;
+    if (/\b(loan|lending|servicing)\b/.test(text)) return true;
+  }
+
+  return false;
+}
+
+function approximateFixedExpensesFromCategories(
+  txns: Array<{ merchant: string; amount: number; date: string; description: string | null; category: string | null }>
+): FixedExpense[] {
+  const eligible = txns.filter(t => isLikelyFixedCategory(t.category, t.merchant, t.description));
+  if (eligible.length === 0) return [];
+
+  // Group by merchant name (keep as-is; user has little data so avoid aggressive normalization)
+  const groups = new Map<string, typeof eligible>();
+  for (const t of eligible) {
+    const key = (t.merchant || '').trim();
+    if (!key) continue;
+    const existing = groups.get(key);
+    if (existing) existing.push(t);
+    else groups.set(key, [t]);
+  }
+
+  const results: FixedExpense[] = [];
+  for (const [merchantName, items] of groups.entries()) {
+    const months = new Set(items.map(i => monthKeyUTC(i.date)));
+    const amounts = items.map(i => Math.abs(Number(i.amount))).filter(a => Number.isFinite(a));
+    if (amounts.length === 0) continue;
+
+    const sortedAmounts = [...amounts].sort((a, b) => a - b);
+    const medianAmt = sortedAmounts[Math.floor(sortedAmounts.length / 2)] || 0;
+
+    const days = items.map(i => new Date(i.date).getUTCDate()).filter(n => Number.isFinite(n));
+    const avgDay = days.length > 0 ? Math.round(days.reduce((a, b) => a + b, 0) / days.length) : 1;
+
+    const last = items.reduce(
+      (max, t) => (new Date(t.date).getTime() > new Date(max.date).getTime() ? t : max),
+      items[0]
+    );
+
+    results.push({
+      merchant_name: merchantName,
+      median_amount: Math.round(medianAmt * 100) / 100,
+      occurrence_count: items.length,
+      months_tracked: months.size,
+      avg_day_of_month: avgDay,
+      last_occurrence_date: new Date(last.date).toISOString().split('T')[0],
+      is_maybe: true, // short-history approximation
+      _classification_source: 'rule_fallback',
+      _combined_score: 0.55,
+    });
+  }
+
+  results.sort((a, b) => (b.median_amount || 0) - (a.median_amount || 0));
+  return results;
+}
+
 function buildSubscriptionCandidates(
-  txns: Array<{ merchant: string; amount: number; date: string; description: string | null; transaction_type: string }>
+  txns: Array<{ merchant: string; amount: number; date: string; description: string | null; category: string | null; transaction_type: string }>
 ): FixedExpense[] {
   // Look at recent transactions only (catch new subscriptions)
   const cutoff = new Date();
@@ -219,6 +329,13 @@ export async function calculateFixedExpenses(userId: string): Promise<FixedExpen
       return [];
     }
 
+    // Special logic for users with <3 months of data:
+    // - Use category-based approximation instead of cadence-based merchant summaries
+    // As soon as the user has >=3 unique months, we switch to the usual (more accurate) approach below.
+    if (!hasAtLeastThreeMonthsOfData(transactions)) {
+      return approximateFixedExpensesFromCategories(transactions);
+    }
+
     // 2. Create merchant summaries (these enforce >=3 txns and >=3 unique months)
     const summaries = createMerchantSummaries(transactions);
     stats.total_merchants = summaries.length;
@@ -280,7 +397,9 @@ export async function recalculateFixedExpensesCache(userId: string): Promise<{
 }> {
   const transactions = await fetchAllExpenseTransactions(userId);
 
-  // Calculate fixed expenses (>=3 months eligible)
+  // Calculate fixed expenses:
+  // - If user has <3 months overall, we use category-based approximation
+  // - Else we use the usual cadence + LLM approach
   const expenses = await calculateFixedExpenses(userId);
 
   // Deterministic recent candidates (<3 months)
