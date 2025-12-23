@@ -294,6 +294,14 @@ Please confirm which existing account this belongs to, or create a new one.`;
         throw new Error(result.error || 'Failed to assign account');
       }
 
+      // Remove the AccountSelector from the message by clearing accountSelection data
+      // This provides immediate visual feedback that the todo has been resolved
+      setMessages(prev => prev.map(msg => 
+        msg.accountSelection?.documentIds?.some(id => documentIds.includes(id))
+          ? { ...msg, accountSelection: undefined }
+          : msg
+      ));
+
       // Send success message
       setMessages(prev => [...prev, { 
         role: 'system' as const, 
@@ -302,7 +310,8 @@ Please confirm which existing account this belongs to, or create a new one.`;
 Successfully mapped **${result.transactions_updated} transaction${result.transactions_updated !== 1 ? 's' : ''}** to **${result.account.display_name}**${result.account_created ? ' (new account created)' : ''}.`
       }]);
 
-      // Trigger refresh
+      // Trigger todo list refresh immediately after successful assignment
+      // This ensures the todo is removed from the list
       if (onTodoResolved) {
         onTodoResolved();
       }
