@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { ChartConfig } from '@/lib/chart-types';
 import { formatCurrency, formatCompactCurrency, getChartColors, getIncomeExpenseColors } from '@/lib/chart-utils';
 import TreemapRenderer from './TreemapRenderer';
@@ -31,6 +32,8 @@ interface ChartRendererProps {
 }
 
 export default function ChartRenderer({ config, height = 300, className, showLegend = false }: ChartRendererProps) {
+  const [showAllCategories, setShowAllCategories] = useState(false);
+  const INITIAL_CATEGORY_LIMIT = 6;
   const { type, data, xAxisLabel, yAxisLabel, currency, colors } = config;
 
   // Handle treemap separately
@@ -120,14 +123,11 @@ export default function ChartRenderer({ config, height = 300, className, showLeg
     const total = chartData.reduce((sum, item) => sum + item.value, 0);
     const chartHeight = typeof height === 'number' ? height : 300;
     
-    // Calculate percentages
-    // const dataWithPercentages = chartData.map(item => ({
-    //   ...item,
-    //   percentage: ((item.value / total) * 100).toFixed(1)
-    // }));
+    const visibleData = showAllCategories ? chartData : chartData.slice(0, INITIAL_CATEGORY_LIMIT);
+    const hasMore = chartData.length > INITIAL_CATEGORY_LIMIT;
 
     return (
-      <div className={`w-full flex flex-col md:flex-row items-center gap-6 ${className || ''}`}>
+      <div className={`w-full flex flex-col md:flex-row items-start md:items-center gap-6 ${className || ''}`}>
         {/* Chart Section */}
         <div className="relative w-full md:w-1/2 flex-shrink-0" style={{ height: chartHeight }}>
           <ResponsiveContainer width="100%" height="100%">
@@ -164,27 +164,53 @@ export default function ChartRenderer({ config, height = 300, className, showLeg
         </div>
 
         {/* Legend Section - Grid */}
-        <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-4 content-center">
-          {chartData.map((entry, index) => {
-             const percentage = ((entry.value / total) * 100).toFixed(1);
-             return (
-               <div key={`legend-${index}`} className="flex items-start gap-3 text-sm">
-                  <div 
-                     className="w-3 h-3 rounded-full mt-1.5 flex-shrink-0" 
-                     style={{ backgroundColor: chartColors[index % chartColors.length] }}
-                  />
-                  <div className="flex flex-col min-w-0">
-                     <span className="font-medium text-gray-700 dark:text-gray-300 truncate" title={entry.name}>
-                       {entry.name}
-                     </span>
-                     <span className="text-gray-900 dark:text-white font-semibold text-xs mt-0.5">
-                       {currency ? formatCurrency(entry.value, typeof currency === 'string' ? currency : 'USD') : entry.value.toLocaleString()} 
-                       <span className="text-gray-500 font-normal ml-1">({percentage}%)</span>
-                     </span>
-                  </div>
-               </div>
-             );
-          })}
+        <div className="w-full flex flex-col min-w-0">
+          <div 
+            className={`w-full grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-4 content-start transition-all duration-300 ${
+              showAllCategories ? 'max-h-[300px] overflow-y-auto pr-2' : ''
+            }`}
+          >
+            {visibleData.map((entry, index) => {
+               // Calculate original index to maintain consistent colors when filtered
+               const originalIndex = chartData.findIndex(item => item.name === entry.name);
+               const percentage = ((entry.value / total) * 100).toFixed(1);
+               return (
+                 <div key={`legend-${index}`} className="flex items-start gap-3 text-sm">
+                    <div 
+                       className="w-3 h-3 rounded-full mt-1.5 flex-shrink-0" 
+                       style={{ backgroundColor: chartColors[originalIndex % chartColors.length] }}
+                    />
+                    <div className="flex flex-col min-w-0">
+                       <span className="font-medium text-gray-700 dark:text-gray-300 truncate" title={entry.name}>
+                         {entry.name}
+                       </span>
+                       <span className="text-gray-900 dark:text-white font-semibold text-xs mt-0.5">
+                         {currency ? formatCurrency(entry.value, typeof currency === 'string' ? currency : 'USD') : entry.value.toLocaleString()} 
+                         <span className="text-gray-500 font-normal ml-1">({percentage}%)</span>
+                       </span>
+                    </div>
+                 </div>
+               );
+            })}
+          </div>
+
+          {hasMore && !showAllCategories && (
+            <button
+              onClick={() => setShowAllCategories(true)}
+              className="mt-4 text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 flex items-center gap-1 transition-colors self-start"
+            >
+              <span>+ Show all categories</span>
+            </button>
+          )}
+
+          {hasMore && showAllCategories && (
+            <button
+              onClick={() => setShowAllCategories(false)}
+              className="mt-4 text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 flex items-center gap-1 transition-colors self-start"
+            >
+              <span>Show less</span>
+            </button>
+          )}
         </div>
       </div>
     );

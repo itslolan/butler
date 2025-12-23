@@ -106,6 +106,20 @@ export default function SankeyRenderer({ config, height = 400, className }: Sank
 
     const textAnchor = isLeft ? 'end' : 'start';
     const textX = isLeft ? x - 10 : x + width + 10;
+    
+    // Check if node is too small to render meaningful text
+    if (height < 10) return (
+      <Layer key={`custom-node-${index}`}>
+        <Rectangle
+          x={x}
+          y={y}
+          width={width}
+          height={height}
+          fill={payload.color || '#3b82f6'}
+          fillOpacity={1}
+        />
+      </Layer>
+    );
 
     return (
       <Layer key={`custom-node-${index}`}>
@@ -204,7 +218,7 @@ export default function SankeyRenderer({ config, height = 400, className }: Sank
           data={sankeyData}
           node={renderNode}
           link={renderLink}
-          nodePadding={20}
+          nodePadding={10}
           margin={{ top: 20, right: 160, bottom: 20, left: 160 }}
         >
           <Tooltip 

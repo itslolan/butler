@@ -1283,14 +1283,23 @@ export async function getCashFlowSankeyData(
 
   // Add Expense Categories
   const sortedExpenses = Array.from(expenseCategories.entries()).sort((a, b) => b[1] - a[1]);
-  // We can limit expense categories if too many, but Sankey handles them reasonably well
+  
+  // Limit to top 15 expenses to prevent UI overcrowding, group rest into "Other Expenses"
+  const MAX_EXPENSE_NODES = 15;
+  let expensesToShow = sortedExpenses;
+  let otherExpensesTotal = 0;
+
+  if (sortedExpenses.length > MAX_EXPENSE_NODES) {
+    expensesToShow = sortedExpenses.slice(0, MAX_EXPENSE_NODES);
+    otherExpensesTotal = sortedExpenses.slice(MAX_EXPENSE_NODES).reduce((sum, item) => sum + item[1], 0);
+  }
   
   // Color palette for expenses
   const expenseColors = [
     '#6366f1', '#8b5cf6', '#ec4899', '#f43f5e', '#f97316', '#eab308', '#84cc16', '#06b6d4', '#3b82f6'
   ];
 
-  sortedExpenses.forEach(([name, val], idx) => {
+  expensesToShow.forEach(([name, val], idx) => {
     const nodeIdx = nodes.length;
     const color = expenseColors[idx % expenseColors.length];
     
@@ -1303,6 +1312,19 @@ export async function getCashFlowSankeyData(
       color: color + '80' // Semi-transparent
     });
   });
+
+  // Add "Other Expenses" node if needed
+  if (otherExpensesTotal > 0) {
+    const nodeIdx = nodes.length;
+    nodes.push({ name: 'Other Expenses', color: '#94a3b8', depth: 2 }); // Slate-400 for Other
+    
+    links.push({
+      source: totalIncomeNodeIdx,
+      target: nodeIdx,
+      value: otherExpensesTotal,
+      color: '#cbd5e1' // Slate-300 semi-transparent
+    });
+  }
 
   return { nodes, links };
 }
