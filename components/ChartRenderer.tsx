@@ -138,8 +138,8 @@ export default function ChartRenderer({ config, height = 300, className, showLeg
                 nameKey="name"
                 cx="50%"
                 cy="50%"
-                outerRadius={100}
-                innerRadius={60}
+                outerRadius={140}
+                innerRadius={85}
                 paddingAngle={2}
               >
                 {chartData.map((_, index) => (
@@ -156,10 +156,10 @@ export default function ChartRenderer({ config, height = 300, className, showLeg
           
           {/* Center Text */}
           <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-            <span className="text-2xl font-bold text-gray-900 dark:text-white">
+            <span className="text-3xl font-bold text-gray-900 dark:text-white">
               {currency ? formatCompactCurrency(total, typeof currency === 'string' ? currency : 'USD') : total.toLocaleString()}
             </span>
-            <span className="text-sm text-gray-500 font-medium mt-1">Total</span>
+            <span className="text-base text-gray-500 font-medium mt-1">Total</span>
           </div>
         </div>
 

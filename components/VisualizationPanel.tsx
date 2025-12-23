@@ -294,17 +294,6 @@ export default function VisualizationPanel({ userId = 'default-user', refreshTri
           </ChartCard>
         )}
 
-        {/* Fixed Expenses Panel - Full Width, below spending trend */}
-        <div className="lg:col-span-2">
-          <FixedExpensesPanel 
-            userId={userId} 
-            refreshTrigger={refreshTrigger}
-            maxItemsToShow={5}
-            currency={metrics?.currency || 'USD'}
-            demoData={fixedExpensesDemoData}
-          />
-        </div>
-
         {/* Income vs Expenses - Half Width */}
         {charts.incomeVsExpenses && (
           <ChartCard title="Income vs Expenses" className="h-80">
@@ -312,11 +301,20 @@ export default function VisualizationPanel({ userId = 'default-user', refreshTri
           </ChartCard>
         )}
 
+        {/* Fixed Expenses Panel - Half Width, side by side with Income vs Expenses */}
+        <FixedExpensesPanel 
+          userId={userId} 
+          refreshTrigger={refreshTrigger}
+          maxItemsToShow={5}
+          currency={metrics?.currency || 'USD'}
+          demoData={fixedExpensesDemoData}
+        />
+
         {/* Category Breakdown - Full Width */}
         {charts.categoryBreakdown && (
           <div className="lg:col-span-2">
-            <ChartCard title="Category Breakdown" className="min-h-[400px]">
-              <ChartRenderer config={charts.categoryBreakdown} height={300} showLegend={true} />
+            <ChartCard title="Category Breakdown" className="min-h-[450px]">
+              <ChartRenderer config={charts.categoryBreakdown} height={380} showLegend={true} />
             </ChartCard>
           </div>
         )}
