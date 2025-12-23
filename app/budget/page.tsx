@@ -170,7 +170,7 @@ export default function BudgetPage() {
     }
     
     setIsInitialLoadComplete(true);
-  }, [questionnaireCompleted, selectedMonth]);
+  }, [questionnaireCompleted, selectedMonth, isCurrentMonth]);
 
   const handleQuestionnaireComplete = async (data: { income: number; rent?: number }) => {
     if (!budgetData || !user) return;
@@ -499,7 +499,7 @@ export default function BudgetPage() {
     if (isFutureMonth(selectedMonth)) {
       handleBudgetCarryover(selectedMonth);
     }
-  }, [selectedMonth]);
+  }, [selectedMonth, isFutureMonth, handleBudgetCarryover]);
 
   if (loading) {
     return null;

@@ -173,7 +173,7 @@ export default function Home() {
       // Clear steps after a short delay so toast doesn't linger forever
       setTimeout(() => setProcessingSteps([]), 5000);
     }
-  }, [user, router]);
+  }, [user]);
 
   const buildClarificationMessage = (result: any) => {
     const unclarified = result.unclarifiedTransactions || [];

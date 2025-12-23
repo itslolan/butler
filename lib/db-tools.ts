@@ -356,8 +356,9 @@ export async function getUnclarifiedTransactions(
     .from('transactions')
     .select('*')
     .eq('user_id', userId)
-    .eq('needs_clarification', true)  // Changed from .is() to .eq()
-    .eq('is_dismissed', false);
+    .eq('needs_clarification', true)
+    // Use .or() to match both NULL and false for is_dismissed (handles pre-migration data)
+    .or('is_dismissed.is.null,is_dismissed.eq.false');
 
   if (documentId) {
     query = query.eq('document_id', documentId);
@@ -1778,7 +1779,8 @@ export async function getDocumentsPendingAccountSelection(
     .select('id, file_name, batch_id, metadata')
     .eq('user_id', userId)
     .eq('pending_account_selection', true)
-    .eq('is_dismissed', false)
+    // Use .or() to match both NULL and false for is_dismissed (handles pre-migration data)
+    .or('is_dismissed.is.null,is_dismissed.eq.false')
     .order('uploaded_at', { ascending: false });
 
   if (error) {

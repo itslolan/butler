@@ -21,7 +21,7 @@ export default function PrivacyPolicyPage() {
           {/* Introduction */}
           <section>
           <p className="text-slate-700 dark:text-slate-300 leading-relaxed">
-            Adphex ("we," "our," or "us") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our financial management application.
+            Adphex (&quot;we,&quot; &quot;our,&quot; or &quot;us&quot;) is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our financial management application.
           </p>
           </section>
 
@@ -90,7 +90,7 @@ export default function PrivacyPolicyPage() {
               3. AI-Powered Features
             </h2>
             <p className="text-slate-700 dark:text-slate-300 leading-relaxed">
-              We use artificial intelligence to analyze your financial data and provide personalized insights, recommendations, and automated categorization. Your financial data may be processed by third-party AI services (such as Google's Gemini) to power these features. We do not use your data to train AI models, and all processing is done in accordance with strict confidentiality standards.
+              We use artificial intelligence to analyze your financial data and provide personalized insights, recommendations, and automated categorization. Your financial data may be processed by third-party AI services (such as Google&apos;s Gemini) to power these features. We do not use your data to train AI models, and all processing is done in accordance with strict confidentiality standards.
             </p>
           </section>
 
@@ -141,7 +141,7 @@ export default function PrivacyPolicyPage() {
               6.1 Plaid
             </h3>
             <p className="text-slate-700 dark:text-slate-300 leading-relaxed mb-4">
-              We use Plaid to connect to your bank accounts. Plaid's services are governed by their own Privacy Policy. When you connect your accounts, you authorize Plaid to access and share your financial data with us. Learn more at{' '}
+              We use Plaid to connect to your bank accounts. Plaid&apos;s services are governed by their own Privacy Policy. When you connect your accounts, you authorize Plaid to access and share your financial data with us. Learn more at{' '}
               <a href="https://plaid.com/legal" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">
                 plaid.com/legal
               </a>.
@@ -190,7 +190,7 @@ export default function PrivacyPolicyPage() {
           {/* Children's Privacy */}
           <section>
             <h2 className="text-2xl font-semibold text-slate-900 dark:text-white mb-4">
-              9. Children's Privacy
+              9. Children&apos;s Privacy
             </h2>
             <p className="text-slate-700 dark:text-slate-300 leading-relaxed">
               Our service is not intended for individuals under the age of 18. We do not knowingly collect personal information from children. If you believe we have collected information from a child, please contact us immediately.
@@ -213,7 +213,7 @@ export default function PrivacyPolicyPage() {
               11. Changes to This Privacy Policy
             </h2>
             <p className="text-slate-700 dark:text-slate-300 leading-relaxed">
-              We may update this Privacy Policy from time to time. We will notify you of any changes by posting the new Privacy Policy on this page and updating the "Last updated" date. We encourage you to review this Privacy Policy periodically for any changes.
+              We may update this Privacy Policy from time to time. We will notify you of any changes by posting the new Privacy Policy on this page and updating the &quot;Last updated&quot; date. We encourage you to review this Privacy Policy periodically for any changes.
             </p>
           </section>
 
