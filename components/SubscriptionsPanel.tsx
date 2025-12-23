@@ -11,12 +11,14 @@ interface Subscription {
   avg_day_of_month: number;
   last_occurrence_date: string;
   is_maybe?: boolean;
+  is_subscription?: boolean;
   merchant_key?: string;
 }
 
 interface FixedExpensesData {
   total: number;
   expenses: Subscription[];
+  subscription_candidates?: Subscription[];
   calculated_at: string;
   from_cache: boolean;
 }
@@ -28,72 +30,7 @@ interface SubscriptionsPanelProps {
   demoData?: FixedExpensesData | null;
 }
 
-// Keywords that identify subscription services (vs utilities, rent, etc.)
-const SUBSCRIPTION_KEYWORDS = [
-  // Streaming
-  'netflix', 'hulu', 'disney', 'hbo', 'max', 'paramount', 'peacock', 'apple tv',
-  'amazon prime', 'prime video', 'spotify', 'apple music', 'youtube', 'tidal',
-  'audible', 'kindle', 'crunchyroll', 'funimation',
-  // Software/Productivity
-  'adobe', 'creative cloud', 'microsoft 365', 'office 365', 'google one',
-  'dropbox', 'icloud', 'notion', 'evernote', 'todoist', 'asana', 'trello',
-  'slack', 'zoom', 'canva', 'figma', 'github', 'gitlab',
-  // Security
-  'nordvpn', 'expressvpn', 'surfshark', 'vpn', '1password', 'lastpass',
-  'dashlane', 'bitwarden', 'norton', 'mcafee', 'avast',
-  // Health/Fitness
-  'planet fitness', 'la fitness', 'gold gym', 'peloton', 'strava',
-  'headspace', 'calm', 'noom', 'weight watchers', 'myfitnesspal',
-  'duolingo', 'babbel', 'rosetta',
-  // Gaming
-  'xbox', 'playstation', 'nintendo', 'steam', 'ea play', 'ubisoft',
-  'game pass', 'ps plus', 'psn',
-  // AI Services
-  'chatgpt', 'openai', 'claude', 'anthropic', 'midjourney', 'copilot',
-  // Finance/Budgeting
-  'ynab', 'mint', 'personal capital', 'quicken',
-  // News/Media
-  'new york times', 'washington post', 'wall street', 'wsj', 'medium',
-  'substack', 'patreon',
-  // Cloud Storage
-  'backblaze', 'carbonite', 'crashplan',
-  // Other subscriptions
-  'apple', 'itunes', 'app store', 'google play',
-  'membership', 'subscription', 'premium', 'plus', 'pro',
-];
-
-// Keywords that indicate NOT a subscription (utilities, bills, etc.)
-const NON_SUBSCRIPTION_KEYWORDS = [
-  'electric', 'gas', 'water', 'sewer', 'trash', 'utility', 'utilities',
-  'rent', 'mortgage', 'insurance', 'loan', 'payment',
-  'phone', 'mobile', 'cellular', 'verizon', 'at&t', 'att', 't-mobile', 'tmobile',
-  'internet', 'cable', 'comcast', 'xfinity', 'spectrum', 'cox',
-  'car', 'auto', 'vehicle',
-];
-
-/**
- * Determines if a fixed expense is likely a subscription service
- */
-function isSubscription(merchantName: string): boolean {
-  const normalizedName = merchantName.toLowerCase();
-  
-  // First check if it's explicitly NOT a subscription
-  for (const keyword of NON_SUBSCRIPTION_KEYWORDS) {
-    if (normalizedName.includes(keyword)) {
-      return false;
-    }
-  }
-  
-  // Then check if it matches subscription keywords
-  for (const keyword of SUBSCRIPTION_KEYWORDS) {
-    if (normalizedName.includes(keyword)) {
-      return true;
-    }
-  }
-  
-  // Default to false - we only want to show things we're confident are subscriptions
-  return false;
-}
+// Subscription detection is now LLM-backed (API returns `is_subscription`).
 
 function formatCurrency(amount: number, currency: string = 'USD'): string {
   return new Intl.NumberFormat('en-US', {
@@ -178,7 +115,9 @@ export default function SubscriptionsPanel({
   }, [refreshTrigger, fetchData, demoData, userId]);
 
   // Filter to only show subscriptions
-  const subscriptions = data?.expenses?.filter(exp => isSubscription(exp.merchant_name)) || [];
+  const fixedSubscriptions = (data?.expenses || []).filter(exp => !!exp.is_subscription);
+  const candidateSubscriptions = (data?.subscription_candidates || []).filter(exp => !!exp.is_subscription);
+  const subscriptions = [...candidateSubscriptions, ...fixedSubscriptions];
   const totalSubscriptions = subscriptions.reduce((sum, sub) => sum + sub.median_amount, 0);
   const yearlyTotal = totalSubscriptions * 12;
 

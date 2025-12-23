@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
-import { calculateFixedExpenses, getCachedFixedExpenses, cacheFixedExpenses } from '@/lib/fixed-expenses';
+import { getCachedFixedExpenses, cacheFixedExpenses, getCachedSubscriptionCandidates, cacheSubscriptionCandidates, recalculateFixedExpensesCache } from '@/lib/fixed-expenses';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -38,8 +38,9 @@ export async function GET(request: NextRequest) {
     if (!refresh) {
       const cached = await getCachedFixedExpenses(userId);
       if (cached) {
+        const candidates = await getCachedSubscriptionCandidates(userId);
         return NextResponse.json(
-          cached,
+          { ...cached, subscription_candidates: candidates },
           {
             headers: {
               'Content-Type': 'application/json',
@@ -54,14 +55,16 @@ export async function GET(request: NextRequest) {
     }
 
     // Refresh path (or cache miss): recalculate and rewrite DB cache
-    const expenses = await calculateFixedExpenses(userId);
-    await cacheFixedExpenses(userId, expenses);
-    const total = expenses.reduce((sum, exp) => sum + exp.median_amount, 0);
+    const recalculated = await recalculateFixedExpensesCache(userId);
+    await cacheFixedExpenses(userId, recalculated.expenses);
+    await cacheSubscriptionCandidates(userId, recalculated.subscription_candidates || []);
+    const total = recalculated.expenses.reduce((sum, exp) => sum + exp.median_amount, 0);
 
     return NextResponse.json(
       {
         total: Math.round(total * 100) / 100,
-        expenses,
+        expenses: recalculated.expenses,
+        subscription_candidates: recalculated.subscription_candidates,
         calculated_at: new Date().toISOString(),
         from_cache: false,
       },

@@ -1,6 +1,8 @@
 import { supabase } from '@/lib/supabase';
 import { createMerchantSummaries, MerchantSummary } from './merchant-summarizer';
 import { classifyAllMerchantsWithLLM, LLMClassification } from './llm-fixed-expense-classifier';
+import { matchSubscriptionPattern } from './subscription-merchant-patterns';
+import { tagSubscriptionsWithLLM } from './llm-subscription-tagger';
 import { getAllMemories } from './db-tools';
 
 export interface FixedExpense {
@@ -11,6 +13,7 @@ export interface FixedExpense {
   avg_day_of_month: number;
   last_occurrence_date: string;
   is_maybe?: boolean; // True if this is a "maybe" classification that needs user confirmation
+  is_subscription?: boolean; // True if subscription service (LLM tag)
   merchant_key?: string; // Normalized merchant key for memory storage
   // Internal fields for tracking (not shown in UI)
   _classification_source?: 'rule' | 'llm' | 'llm_maybe' | 'rule_fallback';
@@ -20,6 +23,7 @@ export interface FixedExpense {
 export interface FixedExpensesResponse {
   total: number;
   expenses: FixedExpense[];
+  subscription_candidates?: FixedExpense[]; // short-history subscriptions (optional)
   calculated_at: string;
   from_cache: boolean;
 }
@@ -128,6 +132,66 @@ async function fetchAllExpenseTransactions(
   return allData;
 }
 
+function buildSubscriptionCandidates(
+  txns: Array<{ merchant: string; amount: number; date: string; description: string | null; transaction_type: string }>
+): FixedExpense[] {
+  // Look at recent transactions only (catch new subscriptions)
+  const cutoff = new Date();
+  cutoff.setUTCDate(cutoff.getUTCDate() - 45);
+
+  const recent = txns.filter(t => new Date(t.date).getTime() >= cutoff.getTime());
+
+  // Group by merchant string (keep it simple; normalize can over-group for billing)
+  type Txn = (typeof recent)[number];
+  const groups = new Map<string, Txn[]>();
+  for (const t of recent) {
+    const key = (t.merchant || '').trim();
+    if (!key) continue;
+
+    const text = `${t.merchant} ${t.description || ''}`.toLowerCase();
+    const matched = matchSubscriptionPattern(text);
+    if (!matched) continue;
+
+    const existing = groups.get(key);
+    if (existing) existing.push(t);
+    else groups.set(key, [t]);
+  }
+
+  const candidates: FixedExpense[] = [];
+  for (const [merchantName, items] of groups.entries()) {
+    // Require at least 1 occurrence (by definition), but prefer >=2 to reduce noise
+    const occurrence = items.length;
+    if (occurrence < 1) continue;
+
+    const amounts = items.map(i => Math.abs(Number(i.amount)));
+    const medianAmt = amounts.sort((a, b) => a - b)[Math.floor(amounts.length / 2)] || 0;
+
+    const last = items.reduce(
+      (max, t) => (new Date(t.date).getTime() > new Date(max.date).getTime() ? t : max),
+      items[0]
+    );
+    const lastDate = new Date(last.date).toISOString().split('T')[0];
+    const avgDay = new Date(last.date).getUTCDate();
+
+    candidates.push({
+      merchant_name: merchantName,
+      median_amount: Math.round(medianAmt * 100) / 100,
+      occurrence_count: occurrence,
+      months_tracked: 1,
+      avg_day_of_month: avgDay,
+      last_occurrence_date: lastDate,
+      is_maybe: true,
+      is_subscription: true,
+      _classification_source: 'rule_fallback',
+      _combined_score: 0.5,
+    });
+  }
+
+  // Sort by amount
+  candidates.sort((a, b) => (b.median_amount || 0) - (a.median_amount || 0));
+  return candidates;
+}
+
 /**
  * Calculate fixed expenses using LLM-powered classification
  * 
@@ -155,7 +219,7 @@ export async function calculateFixedExpenses(userId: string): Promise<FixedExpen
       return [];
     }
 
-    // 2. Create merchant summaries
+    // 2. Create merchant summaries (these enforce >=3 txns and >=3 unique months)
     const summaries = createMerchantSummaries(transactions);
     stats.total_merchants = summaries.length;
 
@@ -210,6 +274,45 @@ export async function calculateFixedExpenses(userId: string): Promise<FixedExpen
   }
 }
 
+export async function recalculateFixedExpensesCache(userId: string): Promise<{
+  expenses: FixedExpense[];
+  subscription_candidates: FixedExpense[];
+}> {
+  const transactions = await fetchAllExpenseTransactions(userId);
+
+  // Calculate fixed expenses (>=3 months eligible)
+  const expenses = await calculateFixedExpenses(userId);
+
+  // Deterministic recent candidates (<3 months)
+  const candidates = buildSubscriptionCandidates(transactions);
+
+  // Tag subscriptions via LLM across BOTH lists
+  const tagInputs = [...expenses, ...candidates].map(e => ({
+    merchant_name: e.merchant_name,
+    samples: [],
+  }));
+
+  const tags = await tagSubscriptionsWithLLM(tagInputs);
+  const tagMap = new Map<string, boolean>();
+  const confMap = new Map<string, number>();
+  for (const t of tags) {
+    tagMap.set(t.merchant_name, t.is_subscription);
+    confMap.set(t.merchant_name, t.confidence);
+  }
+
+  const taggedExpenses = expenses.map(e => ({
+    ...e,
+    is_subscription: tagMap.get(e.merchant_name) || false,
+  }));
+
+  // Keep only candidates that LLM agrees are subscriptions with reasonable confidence
+  const taggedCandidates = candidates
+    .map(c => ({ ...c, is_subscription: tagMap.get(c.merchant_name) || false }))
+    .filter(c => c.is_subscription && (confMap.get(c.merchant_name) ?? 0.5) >= 0.6);
+
+  return { expenses: taggedExpenses, subscription_candidates: taggedCandidates };
+}
+
 /**
  * Get cached fixed expenses
  * Note: Caching is currently disabled per user preference
@@ -219,6 +322,7 @@ export async function getCachedFixedExpenses(userId: string): Promise<FixedExpen
     .from('fixed_expenses_cache')
     .select('*')
     .eq('user_id', userId)
+    .eq('kind', 'fixed_expense')
     .order('median_amount', { ascending: false });
 
   if (error) {
@@ -241,10 +345,34 @@ export async function getCachedFixedExpenses(userId: string): Promise<FixedExpen
       months_tracked: exp.months_tracked,
       avg_day_of_month: exp.avg_day_of_month,
       last_occurrence_date: exp.last_occurrence_date,
+      is_maybe: !!(exp as any).is_maybe,
+      is_subscription: !!(exp as any).is_subscription,
     })),
     calculated_at: data[0]?.calculated_at || new Date().toISOString(),
     from_cache: true,
   };
+}
+
+export async function getCachedSubscriptionCandidates(userId: string): Promise<FixedExpense[]> {
+  const { data, error } = await supabase
+    .from('fixed_expenses_cache')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('kind', 'subscription_candidate')
+    .order('median_amount', { ascending: false });
+
+  if (error || !data) return [];
+
+  return data.map(exp => ({
+    merchant_name: exp.merchant_name,
+    median_amount: Number(exp.median_amount),
+    occurrence_count: exp.occurrence_count,
+    months_tracked: exp.months_tracked,
+    avg_day_of_month: exp.avg_day_of_month,
+    last_occurrence_date: exp.last_occurrence_date,
+    is_maybe: true,
+    is_subscription: !!(exp as any).is_subscription,
+  }));
 }
 
 /**
@@ -265,12 +393,15 @@ export async function cacheFixedExpenses(userId: string, expenses: FixedExpense[
   // Insert new cache entries
   const cacheEntries = expenses.map(exp => ({
     user_id: userId,
+    kind: 'fixed_expense',
     merchant_name: exp.merchant_name,
     median_amount: exp.median_amount,
     occurrence_count: exp.occurrence_count,
     months_tracked: exp.months_tracked,
     avg_day_of_month: exp.avg_day_of_month,
     last_occurrence_date: exp.last_occurrence_date,
+    is_subscription: exp.is_subscription || false,
+    is_maybe: exp.is_maybe || false,
     calculated_at: new Date().toISOString(),
   }));
 
@@ -283,15 +414,37 @@ export async function cacheFixedExpenses(userId: string, expenses: FixedExpense[
   }
 }
 
+export async function cacheSubscriptionCandidates(userId: string, candidates: FixedExpense[]): Promise<void> {
+  if (!candidates || candidates.length === 0) return;
+
+  const entries = candidates.map(exp => ({
+    user_id: userId,
+    kind: 'subscription_candidate',
+    merchant_name: exp.merchant_name,
+    median_amount: exp.median_amount,
+    occurrence_count: exp.occurrence_count,
+    months_tracked: exp.months_tracked,
+    avg_day_of_month: exp.avg_day_of_month,
+    last_occurrence_date: exp.last_occurrence_date,
+    is_subscription: exp.is_subscription || false,
+    is_maybe: true,
+    calculated_at: new Date().toISOString(),
+  }));
+
+  const { error } = await supabase.from('fixed_expenses_cache').insert(entries);
+  if (error) console.error('Error caching subscription candidates:', error);
+}
+
 /**
  * Invalidate and recalculate fixed expenses cache
  * Note: Caching is currently disabled per user preference
  */
 export async function refreshFixedExpensesCache(userId: string): Promise<void> {
   try {
-    const expenses = await calculateFixedExpenses(userId);
+    const { expenses, subscription_candidates } = await recalculateFixedExpensesCache(userId);
     await cacheFixedExpenses(userId, expenses);
-    console.log(`[Fixed Expenses] Refreshed cache for user ${userId}: ${expenses.length} fixed expenses found`);
+    await cacheSubscriptionCandidates(userId, subscription_candidates);
+    console.log(`[Fixed Expenses] Refreshed cache for user ${userId}: ${expenses.length} fixed expenses, ${subscription_candidates.length} subscription candidates`);
   } catch (error: any) {
     console.error(`[Fixed Expenses] Error refreshing cache for user ${userId}:`, error.message);
   }
