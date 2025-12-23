@@ -14,11 +14,19 @@ export default function TodoList({ userId, onSelectTodo, refreshTrigger = 0 }: T
   const [todos, setTodos] = useState<TodoItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const fetchTodos = async () => {
+  const fetchTodos = async (showLoadingSpinner = true) => {
     if (!userId) return;
     
-    setIsLoading(true);
+    // Only show loading spinner for initial load, not for background refreshes
+    if (showLoadingSpinner && !hasLoadedOnce) {
+      setIsLoading(true);
+    } else if (hasLoadedOnce) {
+      // Show subtle refresh indicator for background updates
+      setIsRefreshing(true);
+    }
+    
     try {
       const res = await fetch(`/api/todos?userId=${encodeURIComponent(userId)}&_ts=${Date.now()}`, {
         cache: 'no-store',
@@ -31,16 +39,24 @@ export default function TodoList({ userId, onSelectTodo, refreshTrigger = 0 }: T
     } catch (err) {
       console.error('Error fetching todos:', err);
     } finally {
-      setIsLoading(false);
+      if (showLoadingSpinner && !hasLoadedOnce) {
+        setIsLoading(false);
+      }
+      setIsRefreshing(false);
       setHasLoadedOnce(true);
     }
   };
 
   useEffect(() => {
-    fetchTodos();
-    const interval = setInterval(fetchTodos, 5000);
+    fetchTodos(true); // Initial load with spinner
+    
+    // Reduce polling frequency to 30 seconds (less disruptive)
+    const interval = setInterval(() => fetchTodos(false), 30000);
+    
     const onVisibility = () => {
-      if (document.visibilityState === 'visible') fetchTodos();
+      if (document.visibilityState === 'visible') {
+        fetchTodos(false); // Background refresh without spinner
+      }
     };
     document.addEventListener('visibilitychange', onVisibility);
 
@@ -116,6 +132,14 @@ export default function TodoList({ userId, onSelectTodo, refreshTrigger = 0 }: T
               </p>
             </div>
           </div>
+          
+          {/* Subtle refresh indicator */}
+          {isRefreshing && (
+            <div className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+              <div className="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-pulse"></div>
+              <span className="text-[10px]">Updating...</span>
+            </div>
+          )}
         </div>
 
         {isLoading ? (
