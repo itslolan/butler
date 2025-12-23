@@ -47,16 +47,27 @@ export default function OnboardingPanels({
           if (data.totalBudgeted > 0) {
             setHasBudgets(true);
             
-            const sorted = data.categories
+            // Filter categories with budget
+            const categoriesWithBudget = data.categories
               .filter((c: any) => c.budgeted > 0)
-              .sort((a: any, b: any) => b.budgeted - a.budgeted)
-              .slice(0, 5)
               .map((c: any) => ({
                 id: c.id,
                 name: c.name,
                 budgeted: c.budgeted,
-                spent: c.spent // spent is already provided in the API response
+                spent: c.spent
               }));
+            
+            // Separate overspent and non-overspent categories
+            const overspent = categoriesWithBudget
+              .filter((c: any) => c.spent > c.budgeted)
+              .sort((a: any, b: any) => b.spent - a.spent); // Sort by spent (highest first)
+            
+            const notOverspent = categoriesWithBudget
+              .filter((c: any) => c.spent <= c.budgeted)
+              .sort((a: any, b: any) => b.budgeted - a.budgeted); // Sort by budgeted (highest first)
+            
+            // Concatenate: overspent first, then others
+            const sorted = [...overspent, ...notOverspent].slice(0, 5);
             
             setTopCategories(sorted);
           } else {

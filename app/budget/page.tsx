@@ -180,9 +180,8 @@ export default function BudgetPage() {
       setRentOverride(data.rent);
     }
     
-    // Only save user-entered income if there's no income history
-    // Income history (median or DB income) always takes precedence
-    if (!hasIncomeHistory && data.income > 0) {
+    // ALWAYS save user-entered income - user's explicit choice takes priority
+    if (data.income > 0) {
       try {
         // Save the user-provided income to the database
         await fetch('/api/budget/income', {
@@ -199,13 +198,13 @@ export default function BudgetPage() {
       }
     }
     
-    // If user has income history, keep the current income (median or DB), otherwise use user-entered
-    const effectiveIncome = hasIncomeHistory ? budgetData.income : data.income;
+    // Use the user-entered income (their explicit choice overrides median/history)
+    const effectiveIncome = data.income;
     
     setBudgetData({
       ...budgetData,
       income: effectiveIncome,
-      incomeMonth: hasIncomeHistory ? budgetData.incomeMonth : selectedMonth,
+      incomeMonth: selectedMonth,
       readyToAssign: effectiveIncome - budgetData.totalBudgeted,
     });
     setQuestionnaireCompleted(true);
@@ -251,23 +250,20 @@ export default function BudgetPage() {
   const handleIncomeChange = useCallback(async (newIncome: number) => {
     if (!budgetData || !user) return;
     
-    // Only allow manual income changes when there's no income history
-    // If user has income history (median or DB), they can't manually change it here
-    if (!hasIncomeHistory) {
-      try {
-        // Save the manually adjusted income to the database
-        await fetch('/api/budget/income', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userId: user.id,
-            month: selectedMonth,
-            amount: newIncome,
-          }),
-        });
-      } catch (error) {
-        console.error('Failed to save income:', error);
-      }
+    // ALWAYS save user's manual income changes - their explicit choice takes priority
+    try {
+      // Save the manually adjusted income to the database
+      await fetch('/api/budget/income', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          month: selectedMonth,
+          amount: newIncome,
+        }),
+      });
+    } catch (error) {
+      console.error('Failed to save income:', error);
     }
     
     // Update budget data with new income and recalculate ready to assign
@@ -279,7 +275,7 @@ export default function BudgetPage() {
       incomeMonth: selectedMonth,
       readyToAssign: newReadyToAssign,
     });
-  }, [budgetData, selectedMonth, hasIncomeHistory, user]);
+  }, [budgetData, selectedMonth, user]);
 
   const handleSave = async () => {
     if (!budgetData || !user) return;
