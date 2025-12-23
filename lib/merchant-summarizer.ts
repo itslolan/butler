@@ -41,7 +41,7 @@ function dateToString(date: string | Date): string {
  * Strips common variations like store numbers, locations, etc.
  * Also normalizes common categories (rent, utilities, etc.) to a standard name
  */
-function normalizeMerchantName(merchant: string): string {
+export function normalizeMerchantName(merchant: string): string {
   let normalized = merchant
     .toLowerCase()
     .replace(/\s+/g, ' ')
@@ -62,6 +62,87 @@ function normalizeMerchantName(merchant: string): string {
   }
   
   return normalized;
+}
+
+/**
+ * Create a merchant summary for a single merchant group.
+ * This is useful for incremental updates where you already know the merchant_key.
+ *
+ * Returns null if the group does not meet minimum eligibility (>=3 txns and >=3 unique months).
+ */
+export function createMerchantSummaryForGroup(
+  merchantKey: string,
+  txns: TransactionForSummary[]
+): MerchantSummary | null {
+  if (!txns || txns.length === 0) return null;
+
+  // Sort by date
+  const sortedTxns = [...txns].sort((a, b) =>
+    new Date(a.date).getTime() - new Date(b.date).getTime()
+  );
+
+  // Need at least 3 transactions
+  if (sortedTxns.length < 3) return null;
+
+  // Calculate unique months using UTC to avoid timezone issues
+  const uniqueMonths = new Set(
+    sortedTxns.map(t => {
+      const d = new Date(t.date);
+      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+    })
+  );
+
+  // Need at least 3 unique months
+  if (uniqueMonths.size < 3) return null;
+
+  // Calculate intervals between transactions (in days)
+  const intervals: number[] = [];
+  for (let i = 1; i < sortedTxns.length; i++) {
+    const days =
+      (new Date(sortedTxns[i].date).getTime() - new Date(sortedTxns[i - 1].date).getTime()) /
+      (1000 * 60 * 60 * 24);
+    intervals.push(days);
+  }
+
+  // Extract data for stats (use UTC to avoid timezone issues)
+  const amounts = sortedTxns.map(t => Math.abs(Number(t.amount)));
+  const daysOfMonth = sortedTxns.map(t => new Date(t.date).getUTCDate());
+  const descriptions = sortedTxns.map(t => t.description || t.merchant);
+
+  // Calculate stats
+  const medianInterval = median(intervals);
+  const intervalCV = coefficientOfVariation(intervals);
+  const dayConcentration = calculateDayConcentration(daysOfMonth);
+  const amountMean = amounts.reduce((a, b) => a + b, 0) / amounts.length;
+  const amountRstd = coefficientOfVariation(amounts);
+  const flags = extractFlags(sortedTxns[0].merchant, descriptions);
+
+  // Pick sample transactions
+  const samples = pickSampleTransactions(
+    sortedTxns.map(t => ({
+      date: dateToString(t.date),
+      amount: Math.abs(Number(t.amount)),
+      description: t.description || t.merchant,
+    }))
+  );
+
+  return {
+    merchant_key: merchantKey,
+    original_name: sortedTxns[sortedTxns.length - 1].merchant, // Most recent name
+    sample_transactions: samples,
+    stats: {
+      count: sortedTxns.length,
+      median_interval_days: Math.round(medianInterval),
+      interval_cv: Math.round(intervalCV * 100) / 100,
+      day_concentration: dayConcentration,
+      amount_mean: Math.round(amountMean * 100) / 100,
+      amount_rstd: Math.round(amountRstd * 100) / 100,
+      flags,
+    },
+    first_date: dateToString(sortedTxns[0].date),
+    last_date: dateToString(sortedTxns[sortedTxns.length - 1].date),
+    unique_months: uniqueMonths.size,
+  };
 }
 
 /**
@@ -189,76 +270,8 @@ export function createMerchantSummaries(transactions: TransactionForSummary[]): 
   
   // Create summary for each merchant group
   for (const [merchantKey, txns] of merchantGroups) {
-    // Sort by date
-    const sortedTxns = [...txns].sort((a, b) => 
-      new Date(a.date).getTime() - new Date(b.date).getTime()
-    );
-    
-    // Need at least 3 transactions
-    if (sortedTxns.length < 3) {
-      continue;
-    }
-    
-    // Calculate unique months using UTC to avoid timezone issues
-    const uniqueMonths = new Set(sortedTxns.map(t => {
-      const d = new Date(t.date);
-      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-    }));
-    
-    // Need at least 3 unique months
-    if (uniqueMonths.size < 3) {
-      continue;
-    }
-    
-    // Calculate intervals between transactions (in days)
-    const intervals: number[] = [];
-    for (let i = 1; i < sortedTxns.length; i++) {
-      const days = (new Date(sortedTxns[i].date).getTime() - new Date(sortedTxns[i-1].date).getTime()) 
-        / (1000 * 60 * 60 * 24);
-      intervals.push(days);
-    }
-    
-    // Extract data for stats (use UTC to avoid timezone issues)
-    const amounts = sortedTxns.map(t => Math.abs(Number(t.amount)));
-    const daysOfMonth = sortedTxns.map(t => new Date(t.date).getUTCDate());
-    const descriptions = sortedTxns.map(t => t.description || t.merchant);
-    
-    // Calculate stats
-    const medianInterval = median(intervals);
-    const intervalCV = coefficientOfVariation(intervals);
-    const dayConcentration = calculateDayConcentration(daysOfMonth);
-    const amountMean = amounts.reduce((a, b) => a + b, 0) / amounts.length;
-    const amountRstd = coefficientOfVariation(amounts);
-    const flags = extractFlags(sortedTxns[0].merchant, descriptions);
-    
-    // Pick sample transactions
-    const samples = pickSampleTransactions(
-      sortedTxns.map(t => ({
-        date: dateToString(t.date),
-        amount: Math.abs(Number(t.amount)),
-        description: t.description || t.merchant
-      }))
-    );
-    
-    const summary = {
-      merchant_key: merchantKey,
-      original_name: sortedTxns[sortedTxns.length - 1].merchant, // Most recent name
-      sample_transactions: samples,
-      stats: {
-        count: sortedTxns.length,
-        median_interval_days: Math.round(medianInterval),
-        interval_cv: Math.round(intervalCV * 100) / 100,
-        day_concentration: dayConcentration,
-        amount_mean: Math.round(amountMean * 100) / 100,
-        amount_rstd: Math.round(amountRstd * 100) / 100,
-        flags
-      },
-      first_date: dateToString(sortedTxns[0].date),
-      last_date: dateToString(sortedTxns[sortedTxns.length - 1].date),
-      unique_months: uniqueMonths.size
-    };
-    
-    summaries.push(summary);
+    const summary = createMerchantSummaryForGroup(merchantKey, txns);
+    if (summary) summaries.push(summary);
   }
   
   return summaries;
