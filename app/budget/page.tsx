@@ -456,35 +456,6 @@ export default function BudgetPage() {
     setRefreshKey(prev => prev + 1);
   };
 
-  // Handle budget carryover for future months
-  const handleBudgetCarryover = async (targetMonth: string) => {
-    if (!user) return;
-    
-    try {
-      const res = await fetch('/api/budget/carryover', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          targetMonth,
-        }),
-      });
-      
-      if (!res.ok) {
-        console.error('Failed to carry over budgets');
-        return;
-      }
-      
-      const data = await res.json();
-      if (data.copied) {
-        // Trigger a refresh to show the copied budgets
-        setRefreshKey(prev => prev + 1);
-      }
-    } catch (error) {
-      console.error('Error carrying over budgets:', error);
-    }
-  };
-
   // Reset states when month changes
   useEffect(() => {
     setRentOverride(null);
@@ -497,10 +468,35 @@ export default function BudgetPage() {
     setQuestionnaireCompleted(false);
     
     // Trigger budget carryover for future months
-    if (isFutureMonth(selectedMonth)) {
-      handleBudgetCarryover(selectedMonth);
+    // Compare selectedMonth directly to avoid function dependency
+    if (selectedMonth > currentMonth && user) {
+      (async () => {
+        try {
+          const res = await fetch('/api/budget/carryover', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userId: user.id,
+              targetMonth: selectedMonth,
+            }),
+          });
+          
+          if (!res.ok) {
+            console.error('Failed to carry over budgets');
+            return;
+          }
+          
+          const data = await res.json();
+          if (data.copied) {
+            // Trigger a refresh to show the copied budgets
+            setRefreshKey(prev => prev + 1);
+          }
+        } catch (error) {
+          console.error('Error carrying over budgets:', error);
+        }
+      })();
     }
-  }, [selectedMonth, isFutureMonth, handleBudgetCarryover]);
+  }, [selectedMonth, currentMonth, user]);
 
   if (loading) {
     return null;
