@@ -17,12 +17,6 @@ export default function SankeyRenderer({ config, height = 400, className }: Sank
     return <div className="flex items-center justify-center h-full">No data</div>;
   }
 
-  console.log('[Sankey] Rendering with data:', {
-    nodes: sankeyData.nodes.length,
-    links: sankeyData.links.length,
-    nodeNames: sankeyData.nodes.map(n => n.name),
-  });
-
   // Find total income for percentage calculation
   const incomeNode = sankeyData.nodes.find(n => n.name === 'Income');
   const totalIncome = incomeNode?.value || 
@@ -32,16 +26,9 @@ export default function SankeyRenderer({ config, height = 400, className }: Sank
 
   // Helper to render custom node with closure access to totalIncome
   const renderNode = (props: any) => {
-    const { x, y, width, height, index, payload, containerWidth, containerHeight } = props;
+    const { x, y, width, height, index, payload } = props;
     const depth = payload.depth;
     const isLeft = depth === 0;
-    
-    console.log(`[Sankey Node ${index}]`, {
-      name: payload.name,
-      x, y, width, height,
-      depth,
-      containerHeight
-    });
     
     // Calculate percentage
     // For Income node, it's 100%

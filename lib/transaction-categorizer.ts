@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getAllMemories, upsertMemory } from '@/lib/db-tools';
+import { getBudgetCategories, syncTransactionCategoriesToBudget } from '@/lib/budget-utils';
 
 const GEMINI_MODEL = 'gemini-2.0-flash';
 
@@ -114,17 +115,29 @@ export async function categorizeTransactions(
   }
 
   try {
-    // Get user memories for context
-    let memoriesText = '';
-    try {
-      memoriesText = await getAllMemories(userId);
-    } catch (e) {
-      console.warn('Could not fetch memories for categorization');
-    }
+    // Get user memories AND budget categories for context
+    const [memoriesText, budgetCategories] = await Promise.all([
+      getAllMemories(userId).catch(() => ''),
+      getBudgetCategories(userId),
+    ]);
+    
+    // Build system prompt with budget category guidance
+    let systemPrompt = CATEGORIZATION_PROMPT;
+    
+    if (budgetCategories.length > 0) {
+      const categoryNames = budgetCategories.map(c => c.name);
+      systemPrompt += `\n\n**User's Budget Categories:**
+${categoryNames.join(', ')}
 
-    const systemPrompt = memoriesText
-      ? `${CATEGORIZATION_PROMPT}\n\n**User Context/Memories:**\n${memoriesText}\n\nUse these memories to help classify transactions accurately.`
-      : CATEGORIZATION_PROMPT;
+PREFER using these categories when applicable, but create new ones if needed.`;
+    }
+    
+    if (memoriesText) {
+      systemPrompt += `\n\n**User Context/Memories:**
+${memoriesText}
+
+Use these memories to help classify transactions accurately.`;
+    }
 
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({
@@ -168,6 +181,12 @@ export async function categorizeTransactions(
         suggestedActions: llmResult?.suggestedActions || null,
       };
     });
+
+    // Sync new categories to budget
+    const newCategories = categorizedTransactions
+      .map(t => t.category)
+      .filter((c): c is string => !!c);
+    await syncTransactionCategoriesToBudget(userId, newCategories);
 
     return {
       transactions: categorizedTransactions,

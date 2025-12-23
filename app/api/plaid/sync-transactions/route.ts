@@ -6,6 +6,7 @@ import { categorizeTransactions, monitorTransactionPatterns } from '@/lib/transa
 import { searchTransactions, findAccountByPlaidId, findAccountsByLast4, getOrCreateAccount } from '@/lib/db-tools';
 import { deduplicateTransactionsSimple } from '@/lib/deduplication-test';
 import { refreshFixedExpensesCache } from '@/lib/fixed-expenses';
+import { syncTransactionCategoriesToBudget } from '@/lib/budget-utils';
 
 export const runtime = 'nodejs';
 
@@ -533,6 +534,16 @@ export async function POST(request: NextRequest) {
     if (totalAdded > 0 || totalModified > 0) {
       refreshFixedExpensesCache(userId).catch(err => {
         console.error('[plaid/sync-transactions] Error refreshing fixed expenses cache:', err);
+      });
+    }
+
+    // Sync all transaction categories to budget (safety net)
+    if (allInsertedTransactions.length > 0) {
+      const allCategories = allInsertedTransactions
+        .map(t => t.category)
+        .filter((c): c is string => !!c);
+      await syncTransactionCategoriesToBudget(userId, allCategories).catch(err => {
+        console.error('[plaid/sync-transactions] Error syncing categories to budget:', err);
       });
     }
 

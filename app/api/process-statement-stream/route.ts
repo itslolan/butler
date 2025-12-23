@@ -6,6 +6,7 @@ import { calculateMonthlySnapshots } from '@/lib/snapshot-calculator';
 import { generateSuggestedActions } from '@/lib/action-generator';
 import { v4 as uuidv4 } from 'uuid';
 import { refreshFixedExpensesCache } from '@/lib/fixed-expenses';
+import { getBudgetCategories, syncTransactionCategoriesToBudget } from '@/lib/budget-utils';
 
 export const runtime = 'nodejs';
 
@@ -119,6 +120,46 @@ Examples:
 Extract all transactions visible in the document. Categorize them logically (Food, Travel, Utilities, Entertainment, Shopping, etc.).
 For amounts, use positive numbers for credits/deposits and negative numbers for debits/charges.
 Always return valid JSON.`;
+
+/**
+ * Build system prompt with user context and budget categories
+ */
+async function buildSystemPrompt(userId: string): Promise<string> {
+  const [memoriesText, budgetCategories] = await Promise.all([
+    getAllMemories(userId).catch(() => ''),
+    getBudgetCategories(userId),
+  ]);
+  
+  let prompt = BASE_SYSTEM_PROMPT;
+  
+  // Add budget category guidance
+  if (budgetCategories.length > 0) {
+    const categoryNames = budgetCategories.map(c => c.name);
+    prompt += `\n\n**Existing Budget Categories:**
+The user has these budget categories set up:
+${categoryNames.join(', ')}
+
+**IMPORTANT**: When categorizing transactions, PREFER using these existing categories when applicable. However, you are FREE to create new categories if:
+- The transaction doesn't fit any existing category
+- A more specific category would be more accurate
+- The merchant/transaction type requires a distinct category
+
+Examples:
+- If existing categories include "Groceries", use that instead of creating "Food Shopping"
+- If existing categories include "Dining Out", use that instead of "Restaurants" or "Food & Dining"
+- But if you see gym membership and there's no "Fitness" or "Health" category, create one`;
+  }
+  
+  // Add user memories/context
+  if (memoriesText) {
+    prompt += `\n\n**User Context/Memories:**
+${memoriesText}
+
+Use these memories to help classify transactions. For example, if you know the user receives a salary of a certain amount from a specific merchant, classify similar transactions accordingly.`;
+  }
+  
+  return prompt;
+}
 
 /**
  * Monitor transaction patterns and update memories when patterns change
@@ -288,28 +329,13 @@ export async function POST(request: NextRequest) {
         const file = formData.get('file') as File;
         const userId = (formData.get('userId') as string) || 'default-user';
 
-        // Retrieve user memories to inject into system prompt
-        let memoriesText = '';
-        try {
-          memoriesText = await getAllMemories(userId);
-        } catch (error: any) {
-          console.error('[process-statement] Error retrieving memories:', error.message);
-        }
-
-        // Build system prompt with memories
-        const SYSTEM_PROMPT = memoriesText
-          ? `${BASE_SYSTEM_PROMPT}
-
-**User Context/Memories:**
-${memoriesText}
-
-Use these memories to help classify transactions. For example, if you know the user receives a salary of a certain amount from a specific merchant, classify similar transactions accordingly.`
-          : BASE_SYSTEM_PROMPT;
+        // Build system prompt with memories and budget categories
+        const systemPrompt = await buildSystemPrompt(userId);
 
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
         const model = genAI.getGenerativeModel({
           model: GEMINI_MODEL,
-          systemInstruction: SYSTEM_PROMPT,
+          systemInstruction: systemPrompt,
           generationConfig: {
             responseMimeType: 'application/json',
           },
@@ -707,6 +733,12 @@ Use these memories to help classify transactions. For example, if you know the u
           }));
 
           await insertTransactions(transactions);
+          
+          // Sync new categories to budget
+          const newCategories = extractedData.transactions
+            .map((t: any) => t.category)
+            .filter((c: any): c is string => !!c);
+          await syncTransactionCategoriesToBudget(userId, newCategories);
           
           // Count transactions needing clarification
           const unclarifiedCount = transactions.filter(t => t.needs_clarification).length;

@@ -298,6 +298,44 @@ export async function addCustomCategory(userId: string, name: string): Promise<B
 }
 
 /**
+ * Sync new transaction categories to budget_categories table
+ * Ensures budget categories stay in sync with transaction categories
+ */
+export async function syncTransactionCategoriesToBudget(
+  userId: string,
+  transactionCategories: string[]
+): Promise<void> {
+  if (transactionCategories.length === 0) return;
+  
+  // Get existing budget categories
+  const existingCategories = await getBudgetCategories(userId);
+  const existingNames = new Set(existingCategories.map(c => c.name));
+  
+  // Find new categories that don't exist in budget
+  const newCategories = transactionCategories.filter(cat => cat && !existingNames.has(cat));
+  
+  if (newCategories.length === 0) return;
+  
+  // Insert new categories
+  const maxOrder = existingCategories.reduce((max, c) => Math.max(max, c.display_order || 0), 0);
+  const categoryRecords = newCategories.map((name, idx) => ({
+    user_id: userId,
+    name,
+    is_custom: false,
+    display_order: maxOrder + idx + 1,
+  }));
+  
+  const { error } = await supabase.from('budget_categories').insert(categoryRecords);
+  
+  if (error) {
+    // Ignore duplicate key errors (category already exists)
+    if (error.code !== '23505') {
+      console.error('[syncTransactionCategoriesToBudget] Error:', error);
+    }
+  }
+}
+
+/**
  * Check if a category has transactions
  */
 export async function categoryHasTransactions(userId: string, categoryName: string): Promise<boolean> {
