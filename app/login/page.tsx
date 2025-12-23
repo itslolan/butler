@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase-client';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -214,6 +215,16 @@ export default function LoginPage() {
             >
               {isSignUp ? 'Sign In' : 'Sign Up'}
             </button>
+          </div>
+
+          {/* Privacy Policy Link */}
+          <div className="text-center text-xs text-slate-500 dark:text-slate-500 pt-2">
+            <Link
+              href="/privacy"
+              className="text-blue-600 dark:text-blue-400 hover:underline"
+            >
+              Privacy Policy
+            </Link>
           </div>
         </div>
       </div>

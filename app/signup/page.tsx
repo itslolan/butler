@@ -226,6 +226,17 @@ export default function SignupPage() {
               Sign In
             </Link>
           </div>
+
+          {/* Privacy Policy Link */}
+          <div className="text-center text-xs text-slate-500 dark:text-slate-500 pt-2">
+            By signing up, you agree to our{' '}
+            <Link
+              href="/privacy"
+              className="text-blue-600 dark:text-blue-400 hover:underline"
+            >
+              Privacy Policy
+            </Link>
+          </div>
         </div>
       </div>
     </div>
