@@ -4,7 +4,10 @@ import {
   getBudgetCategories, 
   getHistoricalSpendingBreakdown,
   getIncomeForMonth,
-  findLastMonthWithIncome
+  findLastMonthWithIncome,
+  getBudgetData,
+  getSpendingByCategory,
+  getBudgetsForMonth
 } from '@/lib/budget-utils';
 import { getFixedExpensesByCategory } from '@/lib/fixed-expenses';
 
@@ -44,11 +47,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get categories, historical spending, and fixed expenses
-    const [categories, historicalData, fixedExpensesByCategory] = await Promise.all([
+    // Get categories, historical spending, fixed expenses, and current spending
+    const [categories, historicalData, fixedExpensesByCategory, currentBudgets, currentSpending] = await Promise.all([
       getBudgetCategories(userId),
       getHistoricalSpendingBreakdown(userId, 6),
       getFixedExpensesByCategory(userId),
+      getBudgetsForMonth(userId, month),
+      getSpendingByCategory(userId, month),
     ]);
 
     if (categories.length === 0) {
@@ -57,6 +62,32 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    // Identify overspent categories (spent > budgeted)
+    const overspentCategories: Array<{
+      name: string;
+      budgeted: number;
+      spent: number;
+      deficit: number;
+    }> = [];
+
+    for (const category of categories) {
+      const budget = currentBudgets.find(b => b.category_id === category.id);
+      const budgeted = budget?.budgeted_amount || 0;
+      const spent = currentSpending[category.name] || 0;
+
+      if (spent > budgeted) {
+        overspentCategories.push({
+          name: category.name,
+          budgeted,
+          spent,
+          deficit: spent - budgeted,
+        });
+      }
+    }
+
+    // Sort overspent categories by deficit (largest first)
+    overspentCategories.sort((a, b) => b.deficit - a.deficit);
 
     // Get the income to work with
     let budgetIncome = income;
@@ -93,7 +124,11 @@ export async function POST(request: NextRequest) {
     });
 
     // Retry loop for budget allocation
-    let aiResponse: { allocations: Record<string, number>; explanation: string } | null = null;
+    let aiResponse: { 
+      allocations: Record<string, number>; 
+      explanation: string;
+      reallocations?: Array<{from: string; to: string; amount: number; reason?: string}>;
+    } | null = null;
     let lastTotalAssigned = 0;
     let attempts = 0;
     let notZeroBased = false;
@@ -112,7 +147,9 @@ export async function POST(request: NextRequest) {
         existingAllocations,
         isReassign,
         userSetBudgets,
-        fixedExpensesByCategory
+        fixedExpensesByCategory,
+        overspentCategories,
+        currentSpending
       );
 
       try {
@@ -186,7 +223,9 @@ export async function POST(request: NextRequest) {
       assignedCategories,
       aiResponse.explanation,
       historicalData.totalMonths,
-      notZeroBased
+      notZeroBased,
+      overspentCategories,
+      aiResponse.reallocations
     );
 
     return NextResponse.json({
@@ -199,6 +238,8 @@ export async function POST(request: NextRequest) {
       income: budgetIncome,
       notZeroBased, // Flag to indicate if we couldn't achieve zero-based budgeting
       attempts,
+      reallocations: aiResponse.reallocations || [],
+      overspentCategories,
     });
 
   } catch (error: any) {
@@ -220,7 +261,9 @@ function buildPrompt(
   existingAllocations?: Record<string, number> | null,
   isReassign?: boolean,
   userSetBudgets?: Record<string, number>,
-  fixedExpensesByCategory?: Record<string, number>
+  fixedExpensesByCategory?: Record<string, number>,
+  overspentCategories?: Array<{name: string; budgeted: number; spent: number; deficit: number}>,
+  currentSpending?: Record<string, number>
 ): string {
   const retryWarning = previousTotal !== null 
     ? `\n\n**⚠️ CORRECTION NEEDED:** Your previous attempt allocated $${previousTotal.toFixed(2)}, but the income is $${budgetIncome.toFixed(2)} (difference: $${Math.abs(previousTotal - budgetIncome).toFixed(2)}). You MUST adjust allocations to make the total EXACTLY EQUAL TO the income.\n`
@@ -248,6 +291,23 @@ ${Object.entries(fixedExpensesByCategory)
 You may allocate MORE than these minimums for discretionary spending in these categories, but never LESS.\n`
     : '';
 
+  const overspentInstruction = overspentCategories && overspentCategories.length > 0
+    ? `\n\n**🚨 CRITICAL: OVERSPENT CATEGORIES THIS MONTH**
+The following categories have ALREADY BEEN SPENT and are OVER their current budget:
+${overspentCategories
+  .map(cat => `- ${cat.name}: Already spent $${cat.spent.toFixed(2)} (was budgeted $${cat.budgeted.toFixed(2)}, deficit: $${cat.deficit.toFixed(2)})`)
+  .join('\n')}
+
+**REQUIRED ACTION:** You MUST allocate AT LEAST the already-spent amount to each of these categories. The money is already spent, so the budget must cover it.
+
+**Strategy for covering deficits:**
+1. First priority: Use available "Ready to Assign" funds (unallocated income)
+2. If insufficient: Reallocate from other categories that have surplus (budgeted > spent + 10% buffer)
+3. Document any reallocation moves you make
+
+Total deficit to cover: $${overspentCategories.reduce((sum, cat) => sum + cat.deficit, 0).toFixed(2)}\n`
+    : '';
+
   const reassignInstruction = isReassign && existingAllocations
     ? `\n\n**🔄 RE-ASSIGNMENT REQUEST:** The user has already assigned budgets but the total doesn't equal the income. Here are the current allocations:\n${Object.entries(existingAllocations)
         .filter(([, amount]) => amount > 0)
@@ -256,12 +316,15 @@ You may allocate MORE than these minimums for discretionary spending in these ca
         .join('\n')}\n\nPlease RE-DISTRIBUTE the amounts so that the total equals EXACTLY $${budgetIncome.toFixed(2)} (zero-based budgeting). Try to maintain the user's priorities by keeping larger categories relatively larger, but adjust as needed to reach the target.\n`
     : '';
 
-  const taskDescription = isReassign 
+  const hasOverspending = overspentCategories && overspentCategories.length > 0;
+  const taskDescription = hasOverspending
+    ? `First cover the overspent categories (already spent money must be budgeted), then allocate remaining income across other categories to equal EXACTLY $${budgetIncome.toFixed(2)}`
+    : isReassign 
     ? `Re-distribute the existing budget allocations to make the total equal EXACTLY $${budgetIncome.toFixed(2)}`
     : `Allocate income across the budget categories to equal EXACTLY $${budgetIncome.toFixed(2)}`;
 
   return `You are a financial advisor helping create a zero-based budget.
-${retryWarning}${rentInstruction}${userSetInstruction}${fixedExpensesInstruction}${reassignInstruction}
+${retryWarning}${rentInstruction}${userSetInstruction}${fixedExpensesInstruction}${overspentInstruction}${reassignInstruction}
 **Available Income to Budget:** $${budgetIncome.toFixed(2)}
 
 **Budget Categories:** ${categoryNames.join(', ')}
@@ -292,9 +355,13 @@ The SUM of all allocations MUST EQUAL EXACTLY $${budgetIncome.toFixed(2)}. Every
     "Category Name": 123.45,
     ...
   },
-  "explanation": "A 2-3 sentence explanation of the budgeting strategy used and any notable adjustments made${isReassign ? ' during re-assignment' : ' from historical spending'}."
+  "explanation": "A 2-3 sentence explanation of the budgeting strategy used${hasOverspending ? ', including how you covered the overspent categories and where funds were reallocated from' : ' and any notable adjustments made'}${isReassign ? ' during re-assignment' : ' from historical spending'}.",
+  "reallocations": [
+    ${hasOverspending ? '{"from": "Category with surplus", "to": "Overspent category", "amount": 50.00, "reason": "Brief reason"}' : ''}
+  ]
 }
 
+${hasOverspending ? 'IMPORTANT: In the "reallocations" array, document ANY funds you moved from surplus categories to cover overspent categories.' : ''}
 Return ONLY valid JSON. Do not wrap in code blocks.`;
 }
 
@@ -304,12 +371,22 @@ function buildChatMessage(
   categories: Array<{ name: string; amount: number }>,
   explanation: string,
   monthsAnalyzed: number,
-  notZeroBased: boolean
+  notZeroBased: boolean,
+  overspentCategories?: Array<{name: string; budgeted: number; spent: number; deficit: number}>,
+  reallocations?: Array<{from: string; to: string; amount: number; reason?: string}>
 ): string {
   const formatCurrency = (n: number) => `$${n.toFixed(2)}`;
 
   let message = `🤖 **AI Budget Assignment Complete**\n\n`;
-  message += `I've analyzed your spending patterns over the last **${monthsAnalyzed} months** and created a zero-based budget for you.\n\n`;
+  
+  // Add overspending alert if applicable
+  if (overspentCategories && overspentCategories.length > 0) {
+    const totalDeficit = overspentCategories.reduce((sum, cat) => sum + cat.deficit, 0);
+    message += `🚨 **Overspending Detected:** ${overspentCategories.length} categor${overspentCategories.length === 1 ? 'y has' : 'ies have'} exceeded their budget this month (total deficit: ${formatCurrency(totalDeficit)}).\n\n`;
+    message += `I've adjusted the budget to cover all spending that has already occurred.\n\n`;
+  } else {
+    message += `I've analyzed your spending patterns over the last **${monthsAnalyzed} months** and created a zero-based budget for you.\n\n`;
+  }
   
   message += `**Income:** ${formatCurrency(income)}\n`;
   message += `**Total Budgeted:** ${formatCurrency(totalAssigned)}\n`;
@@ -317,6 +394,20 @@ function buildChatMessage(
   if (notZeroBased) {
     const difference = Math.abs(totalAssigned - income);
     message += `\n⚠️ *Note: The allocated amounts are off by ${formatCurrency(difference)}. You may want to manually adjust some categories to achieve perfect zero-based budgeting (Ready to Assign = $0).*\n`;
+  }
+
+  // Show reallocations if any were made
+  if (reallocations && reallocations.length > 0) {
+    message += `\n**💰 Fund Reallocations Made:**\n`;
+    message += `To cover overspending, I moved funds from categories with surplus:\n`;
+    for (const realloc of reallocations) {
+      message += `• ${formatCurrency(realloc.amount)} from **${realloc.from}** → **${realloc.to}**`;
+      if (realloc.reason) {
+        message += ` (${realloc.reason})`;
+      }
+      message += `\n`;
+    }
+    message += `\n`;
   }
   
   message += `\n**Budget Allocations:**\n`;

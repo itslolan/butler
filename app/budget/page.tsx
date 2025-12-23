@@ -19,6 +19,24 @@ export default function BudgetPage() {
   const chatInterfaceRef = useRef<any>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
+  // Listen for budget updates from chat
+  useEffect(() => {
+    const handleBudgetUpdate = (event: CustomEvent) => {
+      // Refresh budget data when chat makes changes
+      setRefreshKey(prev => prev + 1);
+      
+      // Show a toast notification
+      setSaveMessage({ type: 'success', text: 'Budget updated from chat' });
+      setTimeout(() => setSaveMessage(null), 3000);
+    };
+
+    window.addEventListener('budgetUpdated', handleBudgetUpdate as EventListener);
+    
+    return () => {
+      window.removeEventListener('budgetUpdated', handleBudgetUpdate as EventListener);
+    };
+  }, []);
+
   // Get current month in YYYY-MM format
   const getCurrentMonth = () => {
     const now = new Date();

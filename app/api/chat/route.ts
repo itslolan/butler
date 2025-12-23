@@ -17,7 +17,7 @@ import {
   getAllMemories,
   upsertMemory
 } from '@/lib/db-tools';
-import { getBudgetData, analyzeBudgetHealth } from '@/lib/budget-utils';
+import { getBudgetData, analyzeBudgetHealth, adjustBudgetAllocations } from '@/lib/budget-utils';
 
 export const runtime = 'nodejs';
 
@@ -111,6 +111,11 @@ You have access to four data sources:
    - Use when user asks about budget problems, why they're over budget, or how to get back on track
    - Provides data needed to explain what caused budget issues and recommend adjustments
 
+10. adjust_budget_allocations(adjustments): Modify budget allocations based on user requests
+   - Use when user wants to move funds between categories, increase/decrease budgets, or reallocate
+   - Saves changes immediately to database and updates the budget UI automatically
+   - Validates that total doesn't exceed income before saving
+
 **When to Use Charts:**
 - User asks about "trends", "over time", "changes"
 - User wants to "see", "visualize", "show me a graph"
@@ -141,6 +146,16 @@ When user asks about budget health or budget problems:
    - If large transactions caused the issue, mention reviewing those specific purchases
    - If many small transactions, suggest tracking daily spending more closely
 4. Be empathetic and constructive - focus on solutions, not blame
+
+**Budget Adjustments:**
+When user requests budget changes (e.g., "Move $100 from Entertainment to Groceries"):
+1. First use get_current_budget() to see current allocations
+2. Understand exactly what the user wants (be specific about amounts and categories)
+3. Calculate new allocations ensuring total doesn't exceed income
+4. Use adjust_budget_allocations() to apply the changes
+5. Confirm what was changed and show the new "Ready to Assign" amount
+6. If total would exceed income, explain the constraint and suggest alternatives
+7. The budget UI will automatically update when you make changes
 
 **Response Format Guidelines:**
 
@@ -440,6 +455,18 @@ async function executeToolCall(name: string, args: any, effectiveUserId: string,
           largeTransactions: cat.largeTransactions,
         })),
       };
+    } else if (name === 'adjust_budget_allocations') {
+      // Adjust budget allocations based on user's conversational request
+      const now = new Date();
+      const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      
+      const result = await adjustBudgetAllocations(
+        effectiveUserId,
+        currentMonth,
+        args.adjustments || []
+      );
+      
+      functionResult = result;
     } else {
       functionResult = { error: 'Unknown function' };
     }
@@ -1128,6 +1155,38 @@ When answering questions, use these memories to provide context-aware responses.
                 },
               },
               required: ['reasoning'],
+            },
+          },
+          {
+            name: 'adjust_budget_allocations',
+            description: 'Adjust budget allocations for one or more categories based on user\'s request. Use this when user wants to move funds between categories, increase/decrease specific budgets, or reallocate their budget. The adjustments will be saved immediately to the database.',
+            parameters: {
+              type: SchemaType.OBJECT,
+              properties: {
+                reasoning: {
+                  type: SchemaType.STRING,
+                  description: 'Explain why you are calling this function and what you plan to do with the results (max 50 words)',
+                },
+                adjustments: {
+                  type: SchemaType.ARRAY,
+                  description: 'Array of budget adjustments to make',
+                  items: {
+                    type: SchemaType.OBJECT,
+                    properties: {
+                      categoryName: {
+                        type: SchemaType.STRING,
+                        description: 'The exact name of the category to adjust (e.g., "Food & Dining", "Transportation")',
+                      },
+                      newAmount: {
+                        type: SchemaType.NUMBER,
+                        description: 'The new budget amount for this category',
+                      },
+                    },
+                    required: ['categoryName', 'newAmount'],
+                  },
+                },
+              },
+              required: ['reasoning', 'adjustments'],
             },
           },
         ],

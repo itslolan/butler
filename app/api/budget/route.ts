@@ -173,10 +173,32 @@ export async function GET(request: NextRequest) {
       return a.name.localeCompare(b.name);
     });
 
-    // Determine effective income: prefer median, then month-specific, then 0
+    // Determine effective income with proper priority:
+    // 1. User-provided income (highest priority - user's explicit choice)
+    // 2. Other income from transactions (salary deposits, etc.)
+    // 3. Median income (calculated from history)
+    // 4. Zero (fallback)
     const medianIncome = incomeStats?.medianMonthlyIncome || 0;
-    const effectiveIncome = medianIncome > 0 ? medianIncome : data.income;
-    const effectiveIncomeMonth = medianIncome > 0 ? 'median' : data.incomeMonth;
+    let effectiveIncome = 0;
+    let effectiveIncomeMonth = month;
+    let incomeSource = 'none';
+    
+    if (data.hasUserProvidedIncome && data.userProvidedIncome && data.userProvidedIncome > 0) {
+      // User has explicitly set income - this takes highest priority
+      effectiveIncome = data.userProvidedIncome;
+      effectiveIncomeMonth = month;
+      incomeSource = 'user_entered';
+    } else if (data.income > 0) {
+      // User has income from transactions (deposits, salary, etc.)
+      effectiveIncome = data.income;
+      effectiveIncomeMonth = data.incomeMonth;
+      incomeSource = 'transactions';
+    } else if (medianIncome > 0) {
+      // Fall back to median income calculated from history
+      effectiveIncome = medianIncome;
+      effectiveIncomeMonth = 'median';
+      incomeSource = 'median';
+    }
 
     // Calculate ready to assign using effective income (use all categories for calculation)
     const totalBudgeted = categoryBudgets.reduce((sum, c) => sum + c.budgeted, 0);
@@ -186,6 +208,7 @@ export async function GET(request: NextRequest) {
       month,
       income: effectiveIncome,
       incomeMonth: effectiveIncomeMonth, // 'median' if using median, otherwise actual month
+      incomeSource, // 'user_entered', 'transactions', 'median', or 'none'
       totalBudgeted,
       readyToAssign,
       categories: activeCategoryBudgets, // Return only active categories

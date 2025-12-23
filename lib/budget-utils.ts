@@ -592,6 +592,33 @@ export async function getIncomeForMonth(userId: string, month: string): Promise<
 }
 
 /**
+ * Get user-provided income specifically (manually entered via budget UI)
+ * Returns 0 if no user-provided income exists for the month
+ */
+export async function getUserProvidedIncome(userId: string, month: string): Promise<number> {
+  const date = `${month}-01`;
+  
+  const { data, error } = await supabase
+    .from('transactions')
+    .select('amount')
+    .eq('user_id', userId)
+    .eq('date', date)
+    .eq('transaction_type', 'income')
+    .eq('merchant', 'User Provided Income')
+    .single();
+
+  if (error) {
+    // PGRST116 is "not found" error, which means no user-provided income
+    if (error.code === 'PGRST116') {
+      return 0;
+    }
+    throw new Error(`Failed to get user-provided income: ${error.message}`);
+  }
+
+  return Math.abs(Number(data?.amount || 0));
+}
+
+/**
  * Save user-provided income as a transaction for a specific month
  * This is used when users manually enter their income via the questionnaire
  */
@@ -744,6 +771,8 @@ export async function getBudgetData(userId: string, month: string): Promise<{
   income: number;
   incomeMonth: string; // The month the income is from (may differ from requested month)
   isInitialized: boolean;
+  userProvidedIncome?: number; // User-entered income (if exists)
+  hasUserProvidedIncome: boolean; // Whether user has manually set income
 }> {
   // Check if categories exist
   let categories = await getBudgetCategories(userId);
@@ -755,18 +784,20 @@ export async function getBudgetData(userId: string, month: string): Promise<{
     isInitialized = true;
   }
 
-  // Get budgets, spending, and income in parallel
-  const [budgets, spending, income] = await Promise.all([
+  // Get budgets, spending, income, and user-provided income in parallel
+  const [budgets, spending, income, userProvidedIncome] = await Promise.all([
     getBudgetsForMonth(userId, month),
     getSpendingByCategory(userId, month),
     getIncomeForMonth(userId, month),
+    getUserProvidedIncome(userId, month),
   ]);
 
   // If no income in requested month, find the last month with income
   let incomeMonth = month;
   let finalIncome = income;
+  const hasUserProvidedIncome = userProvidedIncome > 0;
 
-  if (income === 0) {
+  if (income === 0 && !hasUserProvidedIncome) {
     const lastIncomeMonth = await findLastMonthWithIncome(userId);
     if (lastIncomeMonth) {
       incomeMonth = lastIncomeMonth;
@@ -781,6 +812,8 @@ export async function getBudgetData(userId: string, month: string): Promise<{
     income: finalIncome,
     incomeMonth,
     isInitialized,
+    userProvidedIncome,
+    hasUserProvidedIncome,
   };
 }
 
@@ -798,6 +831,116 @@ export async function hasBudgets(userId: string): Promise<boolean> {
   }
 
   return (count || 0) > 0;
+}
+
+/**
+ * Adjust budget allocations for specific categories
+ * Used by chat LLM to make conversational budget changes
+ */
+export async function adjustBudgetAllocations(
+  userId: string,
+  month: string,
+  adjustments: Array<{ categoryName: string; newAmount: number }>
+): Promise<{
+  success: boolean;
+  updatedCategories: Array<{ name: string; oldAmount: number; newAmount: number }>;
+  newTotalBudgeted: number;
+  newReadyToAssign: number;
+  error?: string;
+}> {
+  try {
+    // Get current budget data to validate
+    const budgetData = await getBudgetData(userId, month);
+    const categories = budgetData.categories;
+    
+    // Find category IDs for the adjustments
+    const updates: Array<{ categoryId: string; categoryName: string; oldAmount: number; newAmount: number }> = [];
+    
+    for (const adjustment of adjustments) {
+      const category = categories.find(
+        c => c.name.toLowerCase() === adjustment.categoryName.toLowerCase()
+      );
+      
+      if (!category) {
+        return {
+          success: false,
+          updatedCategories: [],
+          newTotalBudgeted: 0,
+          newReadyToAssign: 0,
+          error: `Category "${adjustment.categoryName}" not found`,
+        };
+      }
+      
+      const currentBudget = budgetData.budgets.find(b => b.category_id === category.id);
+      const oldAmount = currentBudget?.budgeted_amount || 0;
+      
+      updates.push({
+        categoryId: category.id!,
+        categoryName: category.name,
+        oldAmount,
+        newAmount: adjustment.newAmount,
+      });
+    }
+    
+    // Calculate new total
+    let newTotalBudgeted = 0;
+    for (const category of categories) {
+      const update = updates.find(u => u.categoryId === category.id);
+      if (update) {
+        newTotalBudgeted += update.newAmount;
+      } else {
+        const currentBudget = budgetData.budgets.find(b => b.category_id === category.id);
+        newTotalBudgeted += currentBudget?.budgeted_amount || 0;
+      }
+    }
+    
+    // Validate total doesn't exceed income
+    if (newTotalBudgeted > budgetData.income) {
+      return {
+        success: false,
+        updatedCategories: [],
+        newTotalBudgeted: 0,
+        newReadyToAssign: 0,
+        error: `Total budget ($${newTotalBudgeted.toFixed(2)}) would exceed income ($${budgetData.income.toFixed(2)})`,
+      };
+    }
+    
+    // Save the updates
+    for (const update of updates) {
+      await supabase
+        .from('budgets')
+        .upsert({
+          user_id: userId,
+          category_id: update.categoryId,
+          month,
+          budgeted_amount: update.newAmount,
+          updated_at: new Date().toISOString(),
+        }, {
+          onConflict: 'user_id,category_id,month',
+        });
+    }
+    
+    const newReadyToAssign = budgetData.income - newTotalBudgeted;
+    
+    return {
+      success: true,
+      updatedCategories: updates.map(u => ({
+        name: u.categoryName,
+        oldAmount: u.oldAmount,
+        newAmount: u.newAmount,
+      })),
+      newTotalBudgeted,
+      newReadyToAssign,
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      updatedCategories: [],
+      newTotalBudgeted: 0,
+      newReadyToAssign: 0,
+      error: error.message,
+    };
+  }
 }
 
 /**

@@ -492,6 +492,15 @@ Successfully mapped **${result.transactions_updated} transaction${result.transac
                     };
                     return updated;
                   });
+                  
+                  // Dispatch event if budget was adjusted
+                  if (currentToolCall.name === 'adjust_budget_allocations' && 
+                      event.data.result?.success === true) {
+                    const budgetUpdateEvent = new CustomEvent('budgetUpdated', {
+                      detail: event.data.result
+                    });
+                    window.dispatchEvent(budgetUpdateEvent);
+                  }
                 }
                 currentToolCall = null;
                 break;
