@@ -109,39 +109,77 @@ export default function ChartRenderer({ config, height = 300, className, showLeg
   };
 
   // Pie legends rendered by Recharts are overlay-positioned, which can look cramped in chat.
-  // When showLegend is enabled, render the legend as normal DOM below the chart so the card grows naturally.
+  // When showLegend is enabled, render the legend as normal DOM below or beside the chart.
   if (type === 'pie' && showLegend) {
-    const chartHeight = typeof height === 'number' ? height : 280;
+    const total = chartData.reduce((sum, item) => sum + item.value, 0);
+    const chartHeight = typeof height === 'number' ? height : 300;
+    
+    // Calculate percentages
+    // const dataWithPercentages = chartData.map(item => ({
+    //   ...item,
+    //   percentage: ((item.value / total) * 100).toFixed(1)
+    // }));
 
     return (
-      <div className={`w-full ${className || ''}`}>
-        <div className="w-full" style={{ height: chartHeight }}>
+      <div className={`w-full flex flex-col md:flex-row items-center gap-6 ${className || ''}`}>
+        {/* Chart Section */}
+        <div className="relative w-full md:w-1/2 flex-shrink-0" style={{ height: chartHeight }}>
           <ResponsiveContainer width="100%" height="100%">
-            <PieChart margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
+            <PieChart>
               <Pie
                 data={chartData}
                 dataKey="value"
                 nameKey="name"
                 cx="50%"
                 cy="50%"
-                outerRadius="85%"
-                innerRadius={0}
+                outerRadius={100}
+                innerRadius={60}
                 paddingAngle={2}
               >
                 {chartData.map((_, index) => (
                   <Cell
                     key={`cell-${index}`}
                     fill={chartColors[index % chartColors.length]}
-                    stroke="#fff"
-                    strokeWidth={2}
+                    strokeWidth={0}
                   />
                 ))}
               </Pie>
               <Tooltip content={<CustomTooltip />} />
             </PieChart>
           </ResponsiveContainer>
+          
+          {/* Center Text */}
+          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+            <span className="text-2xl font-bold text-gray-900 dark:text-white">
+              {currency ? formatCompactCurrency(total, typeof currency === 'string' ? currency : 'USD') : total.toLocaleString()}
+            </span>
+            <span className="text-sm text-gray-500 font-medium mt-1">Total</span>
+          </div>
         </div>
-        {renderPieLegendFromData()}
+
+        {/* Legend Section - Grid */}
+        <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-4 content-center">
+          {chartData.map((entry, index) => {
+             const percentage = ((entry.value / total) * 100).toFixed(1);
+             return (
+               <div key={`legend-${index}`} className="flex items-start gap-3 text-sm">
+                  <div 
+                     className="w-3 h-3 rounded-full mt-1.5 flex-shrink-0" 
+                     style={{ backgroundColor: chartColors[index % chartColors.length] }}
+                  />
+                  <div className="flex flex-col min-w-0">
+                     <span className="font-medium text-gray-700 dark:text-gray-300 truncate" title={entry.name}>
+                       {entry.name}
+                     </span>
+                     <span className="text-gray-900 dark:text-white font-semibold text-xs mt-0.5">
+                       {currency ? formatCurrency(entry.value, typeof currency === 'string' ? currency : 'USD') : entry.value.toLocaleString()} 
+                       <span className="text-gray-500 font-normal ml-1">({percentage}%)</span>
+                     </span>
+                  </div>
+               </div>
+             );
+          })}
+        </div>
       </div>
     );
   }

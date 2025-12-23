@@ -5,8 +5,7 @@
   "description": "Capture full page screenshots for Adphex import.",
   "permissions": [
     "activeTab",
-    "scripting",
-    "storage"
+    "scripting"
   ],
   "host_permissions": [
     "https://adphex.com/*"

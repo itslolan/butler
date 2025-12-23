@@ -273,62 +273,19 @@ const GROUP_COLORS = {
  * Generate category breakdown pie chart config
  */
 export function createCategoryBreakdownChart(categoryData: CategoryData[]): ChartConfig {
-  // Group categories by Essentials vs Discretionary
-  const grouped: Record<string, CategoryData[]> = {
-    'Essentials': [],
-    'Discretionary': [],
-  };
-
-  categoryData.forEach(cat => {
-    // Use database spend_classification if available, otherwise fall back to hardcoded mapping
-    let group: 'Essentials' | 'Discretionary';
-    
-    if (cat.spend_classification === 'essential') {
-      group = 'Essentials';
-    } else if (cat.spend_classification === 'discretionary') {
-      group = 'Discretionary';
-    } else {
-      // Fallback to hardcoded mapping for backwards compatibility
-      group = CATEGORY_GROUPS_FALLBACK[cat.category] || 'Discretionary';
-    }
-    
-    grouped[group].push(cat);
-  });
-
-  // Create hierarchical data structure
-  const hierarchicalData: ChartDataPoint[] = [];
-
-  Object.entries(grouped).forEach(([groupName, categories]) => {
-    if (categories.length === 0) return;
-
-    const groupTotal = categories.reduce((sum, cat) => sum + cat.total, 0);
-    const groupColor = GROUP_COLORS[groupName as keyof typeof GROUP_COLORS];
-    
-    // Sort categories by amount (largest first)
-    const sortedCategories = [...categories].sort((a, b) => b.total - a.total);
-    
-    // Create children with varying shades
-    const children = sortedCategories.map((cat, idx) => ({
-      label: cat.category,
-      value: cat.total,
-      group: groupName,
-      color: groupColor.shades[idx % groupColor.shades.length],
-    }));
-
-    hierarchicalData.push({
-      label: groupName,
-      value: groupTotal,
-      group: groupName,
-      color: groupColor.main,
-      children,
-    });
-  });
+  // Sort categories by amount (largest first)
+  const sortedCategories = [...categoryData].sort((a, b) => b.total - a.total);
+  
+  const data = sortedCategories.map(cat => ({
+    label: cat.category,
+    value: cat.total,
+  }));
 
   return {
-    type: 'treemap',
+    type: 'pie',
     title: 'Spending by Category',
-    description: `Breakdown of expenses: Essentials vs Discretionary`,
-    data: hierarchicalData,
+    description: `Breakdown of expenses by category`,
+    data,
     currency: true,
   };
 }
