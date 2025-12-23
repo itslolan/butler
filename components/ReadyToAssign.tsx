@@ -93,7 +93,7 @@ export default function ReadyToAssign({
                 min="0"
                 value={Number.isFinite(income) ? income : ''}
                 onChange={(e) => onIncomeChange?.(parseFloat(e.target.value) || 0)}
-                className="w-32 font-medium text-white/90 bg-transparent border-b border-white/30 hover:border-white/50 focus:border-white/70 focus:outline-none transition-colors"
+                className="w-20 font-medium text-white/90 bg-transparent border-b border-white/30 hover:border-white/50 focus:border-white/70 focus:outline-none transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 aria-label="Monthly income"
                 placeholder="0.00"
               />

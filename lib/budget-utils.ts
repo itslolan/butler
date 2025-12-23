@@ -201,6 +201,8 @@ export async function getMedianMonthlyIncome(
     return { medianMonthlyIncome: 0, monthsIncluded: 0 };
   }
 
+  // Group transactions by month and sum them up
+  // This ensures bi-weekly/weekly salaries are properly aggregated into monthly totals
   const monthlyTotals = new Map<string, number>();
   for (const txn of txns) {
     const d = new Date(txn.date);
@@ -210,6 +212,13 @@ export async function getMedianMonthlyIncome(
   }
 
   const totals = Array.from(monthlyTotals.values()).filter(v => Number.isFinite(v) && v >= 0);
+  
+  // Debug logging to verify monthly aggregation
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[getMedianMonthlyIncome] Monthly income totals:', Object.fromEntries(monthlyTotals));
+    console.log('[getMedianMonthlyIncome] Median of monthly totals:', median(totals));
+  }
+  
   return {
     medianMonthlyIncome: median(totals),
     monthsIncluded: totals.length,

@@ -313,23 +313,23 @@ export default function BudgetTable({
                     }`}
                   />
                   {/* Tooltip showing suggestion breakdown */}
-                  {!isReadOnly && (category.historicalAverage || category.fixedExpenseAmount) && budgeted > 0 && (
+                  {(!isReadOnly && (category.historicalAverage || category.fixedExpenseAmount) && budgeted > 0) ? (
                     <div className="absolute left-0 bottom-full mb-1 hidden group-hover/input:block z-10">
                       <div className="bg-slate-900 dark:bg-slate-700 text-white text-xs px-2 py-1.5 rounded shadow-lg whitespace-nowrap">
-                        {category.fixedExpenseAmount && category.fixedExpenseAmount > 0 && (
+                        {(category.fixedExpenseAmount && category.fixedExpenseAmount > 0) ? (
                           <div>Fixed expenses: ${category.fixedExpenseAmount.toFixed(2)}</div>
-                        )}
-                        {category.historicalAverage && category.historicalAverage > 0 && (
+                        ) : null}
+                        {(category.historicalAverage && category.historicalAverage > 0) ? (
                           <div>Avg spent: ${category.historicalAverage.toFixed(2)}/mo</div>
-                        )}
-                        {category.suggestedBudget && category.suggestedBudget > 0 && budgeted !== category.suggestedBudget && (
+                        ) : null}
+                        {(category.suggestedBudget && category.suggestedBudget > 0 && budgeted !== category.suggestedBudget) ? (
                           <div className="font-semibold border-t border-slate-700 dark:border-slate-600 pt-1 mt-1">
                             Suggested: ${category.suggestedBudget.toFixed(2)}
                           </div>
-                        )}
+                        ) : null}
                       </div>
                     </div>
-                  )}
+                  ) : null}
                 </div>
               </div>
 
@@ -356,8 +356,8 @@ export default function BudgetTable({
               {/* Actions */}
               <div className="hidden md:flex md:col-span-1 justify-end gap-1">
                 {/* Use Suggested button - show when user has changed from suggested and there's a different suggestion */}
-                {!isReadOnly && category.suggestedBudget && category.suggestedBudget > 0 && 
-                 budgeted !== category.suggestedBudget && Math.abs(budgeted - category.suggestedBudget) > 0.01 && (
+                {(!isReadOnly && category.suggestedBudget && category.suggestedBudget > 0 && 
+                 budgeted !== category.suggestedBudget && Math.abs(budgeted - category.suggestedBudget) > 0.01) ? (
                   <button
                     onClick={() => handleBudgetInput(category.id, category.suggestedBudget!.toString())}
                     className="opacity-0 group-hover:opacity-100 p-1.5 text-emerald-500 hover:text-emerald-600 dark:text-emerald-400 dark:hover:text-emerald-300 transition-all"
@@ -367,8 +367,8 @@ export default function BudgetTable({
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                     </svg>
                   </button>
-                )}
-                {!isReadOnly && (category.isCustom || !category.hasTransactions) && (
+                ) : null}
+                {(!isReadOnly && (category.isCustom || !category.hasTransactions)) ? (
                   <button
                     onClick={() => handleDeleteCategory(category.id)}
                     disabled={deletingCategory === category.id}
@@ -383,7 +383,7 @@ export default function BudgetTable({
                       </svg>
                     )}
                   </button>
-                )}
+                ) : null}
               </div>
             </div>
           </div>
