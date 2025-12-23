@@ -92,13 +92,14 @@ export default function TodoButton({ userId, onSelectTodo, refreshTrigger = 0 }:
     e.stopPropagation(); // Prevent triggering handleSelect
     
     try {
-      const res = await fetch('/api/todos/dismiss', {
+      const res = await fetch('/api/todos/resolve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId,
           todoId: todo.id,
           todoType: todo.type,
+          action: 'dismiss',
         }),
       });
 

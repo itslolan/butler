@@ -85,6 +85,46 @@ const ChatInterface = forwardRef(({
 
   // State for account selection loading
   const [isAssigningAccount, setIsAssigningAccount] = useState(false);
+  // Track active transaction clarification so we can deterministically resolve todos
+  const [activeClarifyTransactionId, setActiveClarifyTransactionId] = useState<string | null>(null);
+
+  function inferTransactionTypeFromText(text: string): 'income' | 'expense' | 'transfer' | 'other' | null {
+    const t = (text || '').toLowerCase();
+
+    // Strong signals
+    if (/\b(income|salary|payroll|pay check|paycheck|bonus)\b/.test(t)) return 'income';
+    if (/\b(transfer|moved|move money|zelle|venmo|cash app|payment to|card payment)\b/.test(t)) return 'transfer';
+    if (/\b(other|unknown|not sure)\b/.test(t)) return 'other';
+
+    // Everything else (food/dining/shopping/bills/etc.) is still an expense for our todo resolution purposes
+    if (
+      /\b(expense|food|dining|restaurant|grocery|shopping|bill|utility|rent|mortgage|insurance|subscription|travel|gas|transport)\b/.test(
+        t
+      )
+    ) {
+      return 'expense';
+    }
+
+    return null;
+  }
+
+  async function resolveTransactionTodo(transactionId: string, transactionType: 'income' | 'expense' | 'transfer' | 'other') {
+    const response = await fetch('/api/clarify-transaction', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        transaction_id: transactionId,
+        transaction_type: transactionType,
+      }),
+    });
+
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(result.error || 'Failed to categorize transaction');
+    }
+
+    return result;
+  }
 
   // Expose methods to parent component
   useImperativeHandle(ref, () => ({
@@ -119,6 +159,7 @@ Please reply with the correct category or explain what this transaction is.`;
         : genericActions;
       
       setMessages(prev => [...prev, { role: 'system' as const, content, suggestedActions }]);
+      setActiveClarifyTransactionId(transaction.id);
     },
     // Show account selection for screenshots
     showAccountSelection: async (data: {
@@ -288,6 +329,39 @@ Successfully mapped **${result.transactions_updated} transaction${result.transac
     }
 
     const userMessage = content.trim();
+
+    // Deterministically resolve active transaction clarification without relying on LLM tool calls.
+    if (activeClarifyTransactionId) {
+      const inferred = inferTransactionTypeFromText(userMessage);
+      if (inferred) {
+        setIsLoading(true);
+        try {
+          await resolveTransactionTodo(activeClarifyTransactionId, inferred);
+
+          setMessages(prev => [
+            ...prev,
+            { role: 'user' as const, content: userMessage },
+            {
+              role: 'system' as const,
+              content: `✅ Categorized transaction as **${inferred}**. This todo should disappear shortly.`,
+            },
+          ]);
+
+          setActiveClarifyTransactionId(null);
+          if (onTodoResolved) onTodoResolved();
+          return;
+        } catch (err: any) {
+          setMessages(prev => [
+            ...prev,
+            { role: 'user' as const, content: userMessage },
+            { role: 'system' as const, content: `❌ Failed to resolve todo: ${err.message}` },
+          ]);
+          // fall through to normal chat as a fallback
+        } finally {
+          setIsLoading(false);
+        }
+      }
+    }
     setInput('');
     
     // Increment question count for demo mode
@@ -440,6 +514,9 @@ Successfully mapped **${result.transactions_updated} transaction${result.transac
                 
                 if (hasCategorization && onTodoResolved) {
                   onTodoResolved();
+                }
+                if (hasCategorization) {
+                  setActiveClarifyTransactionId(null);
                 }
                 break;
 

@@ -55,13 +55,14 @@ export default function TodoList({ userId, onSelectTodo, refreshTrigger = 0 }: T
     e.stopPropagation(); // Prevent triggering onSelectTodo
     
     try {
-      const res = await fetch('/api/todos/dismiss', {
+      const res = await fetch('/api/todos/resolve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId,
           todoId: todo.id,
           todoType: todo.type,
+          action: 'dismiss',
         }),
       });
 

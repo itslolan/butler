@@ -58,7 +58,8 @@ You have access to four data sources:
 - Use metadata text ONLY when structured queries don't provide enough context or for general summaries
 - When filtering data, be flexible with date ranges and partial string matches
 - If you need to calculate aggregates (totals, averages), retrieve the relevant transactions and compute them
-- Use categorize_transaction tool when user clarifies a transaction type
+- For TODO workflows, use resolve_todo to resolve or dismiss the TODO item.
+- Only call resolve_todo once the user has provided everything required for the resolution.
 
 **Tool Reasoning:**
 - When calling any function, ALWAYS include a "reasoning" parameter (max 50 words)
@@ -66,10 +67,11 @@ You have access to four data sources:
 - Be specific about your plan (e.g., "Searching transactions from Jan-Dec 2024 to calculate total spending and identify top categories")
 
 **Transaction Clarification Optimization:**
-- When a system message includes "TRANSACTION_ID: [uuid]", use that ID directly with categorize_transaction
+- When a system message includes "TRANSACTION_ID: [uuid]", use that ID directly.
 - Do NOT search for the transaction - the ID is already provided in the context
 - This applies to todo/clarification workflows where the transaction is already identified
-- Simply extract the transaction_id from the message and call categorize_transaction immediately
+- If the user provides the transaction type, call resolve_todo (todo_type=transaction_clarification, todo_id=transaction_id, action=resolve, transaction_type=...).
+- If the user has not provided the transaction type, ask a focused follow-up question and do NOT call resolve_todo yet.
 
 **Available Tools:**
 
@@ -83,6 +85,11 @@ You have access to four data sources:
 
 4. categorize_transaction(transaction_id, transaction_type): Categorize a transaction as income, expense, transfer, or other
    - Use when user clarifies the type of a transaction
+
+4b. resolve_todo(todo_type, action, todo_id, ...): Resolve or dismiss a TODO item
+   - Use for TODO workflows (transaction clarification + account selection)
+   - Use action="dismiss" when user wants to skip/dismiss the item
+   - Only call when all required fields are available
 
 5. get_account_snapshots(accountName?, startDate?, endDate?): Get monthly balance snapshots
 
@@ -218,6 +225,54 @@ async function executeToolCall(name: string, args: any, effectiveUserId: string,
       } catch (fetchError: any) {
         console.error('[chat API] categorize_transaction fetch error:', fetchError.message);
         functionResult = { 
+          error: `Fetch failed: ${fetchError.message}`,
+          error_type: fetchError.name,
+        };
+      }
+    } else if (name === 'resolve_todo') {
+      // Unified TODO resolver (resolve or dismiss)
+      let fullApiUrl: string;
+
+      if (requestUrl) {
+        const url = new URL(requestUrl);
+        fullApiUrl = `${url.protocol}//${url.host}/api/todos/resolve`;
+      } else {
+        const baseUrl =
+          process.env.NEXT_PUBLIC_SITE_URL ||
+          process.env.NEXT_PUBLIC_BASE_URL ||
+          'http://localhost:3000';
+        fullApiUrl = `${baseUrl}/api/todos/resolve`;
+      }
+
+      try {
+        const response = await fetch(fullApiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: effectiveUserId,
+            todoType: args.todo_type,
+            todoId: args.todo_id,
+            action: args.action,
+            transaction_type: args.transaction_type,
+            document_ids: args.document_ids,
+            account_id: args.account_id,
+            new_account: args.new_account,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('[chat API] resolve_todo failed:', response.status, errorText);
+          functionResult = {
+            error: `API error: ${response.status} ${response.statusText}`,
+            details: errorText,
+          };
+        } else {
+          functionResult = await response.json();
+        }
+      } catch (fetchError: any) {
+        console.error('[chat API] resolve_todo fetch error:', fetchError.message);
+        functionResult = {
           error: `Fetch failed: ${fetchError.message}`,
           error_type: fetchError.name,
         };
@@ -559,6 +614,57 @@ When answering questions, use these memories to provide context-aware responses.
                 },
               },
               required: ['reasoning', 'transaction_id', 'transaction_type'],
+            },
+          },
+          {
+            name: 'resolve_todo',
+            description:
+              'Resolve or dismiss a TODO item. Only call when the user has provided all required information. Use action="dismiss" to dismiss.',
+            parameters: {
+              type: SchemaType.OBJECT,
+              properties: {
+                reasoning: {
+                  type: SchemaType.STRING,
+                  description: 'Explain why you are calling this function (max 50 words)',
+                },
+                todo_type: {
+                  type: SchemaType.STRING,
+                  description: 'transaction_clarification or account_selection',
+                },
+                action: {
+                  type: SchemaType.STRING,
+                  description: 'resolve or dismiss',
+                },
+                todo_id: {
+                  type: SchemaType.STRING,
+                  description:
+                    'For transaction_clarification: transaction UUID. For account_selection: todo id like "account-selection-{documentId}" or document UUID.',
+                },
+                transaction_type: {
+                  type: SchemaType.STRING,
+                  description: 'Required when resolving transaction_clarification: income, expense, transfer, or other',
+                },
+                document_ids: {
+                  type: SchemaType.ARRAY,
+                  items: { type: SchemaType.STRING },
+                  description: 'Optional for account_selection: list of document UUIDs to assign/dismiss',
+                },
+                account_id: {
+                  type: SchemaType.STRING,
+                  description: 'Required when resolving account_selection with an existing account',
+                },
+                new_account: {
+                  type: SchemaType.OBJECT,
+                  description: 'Required when resolving account_selection by creating a new account',
+                  properties: {
+                    display_name: { type: SchemaType.STRING },
+                    last4: { type: SchemaType.STRING },
+                    account_type: { type: SchemaType.STRING },
+                    issuer: { type: SchemaType.STRING },
+                  },
+                },
+              },
+              required: ['reasoning', 'todo_type', 'action', 'todo_id'],
             },
           },
           {
