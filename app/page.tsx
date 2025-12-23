@@ -3,7 +3,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import FileUpload from '@/components/FileUpload';
 import ChatInterface from '@/components/ChatInterface';
 import VisualizationPanel from '@/components/VisualizationPanel';
 import AuthGuard from '@/components/AuthGuard';
@@ -28,6 +27,20 @@ export default function Home() {
   const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
   const [processingUploadsCount, setProcessingUploadsCount] = useState(0);
   const chatInterfaceRef = useRef<any>(null);
+  
+  // Date range controls for visualization
+  const [dateRange, setDateRange] = useState<number | null>(6);
+  const [selectedMonth, setSelectedMonth] = useState<string>('all');
+  
+  // Generate last 12 months for dropdown
+  const monthOptions = Array.from({ length: 12 }, (_, i) => {
+    const d = new Date();
+    d.setMonth(d.getMonth() - i);
+    return {
+      value: d.toISOString().slice(0, 7), // YYYY-MM
+      label: d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+    };
+  });
 
   useEffect(() => {
     if (!user?.id) {
@@ -244,6 +257,57 @@ export default function Home() {
           {/* Left Column: Visualization & Data (65%) - Full width on mobile */}
           <div className="col-span-12 lg:col-span-8 flex flex-col h-full lg:border-r border-slate-200 dark:border-slate-800 overflow-y-auto bg-slate-50/50 dark:bg-black/5 p-4 lg:p-6 pb-20 lg:pb-6">
             <div className="max-w-5xl w-full mx-auto space-y-4 lg:space-y-6">
+              {/* Date Range Controls */}
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Dashboard</h2>
+                
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                  {/* Month Dropdown */}
+                  <select
+                    value={selectedMonth}
+                    onChange={(e) => {
+                      setSelectedMonth(e.target.value);
+                      // When a specific month is selected, clear the date range
+                      if (e.target.value !== 'all') {
+                        setDateRange(null);
+                      } else {
+                        // When "All Time" is selected, default to 6M
+                        setDateRange(6);
+                      }
+                    }}
+                    className="px-3 py-1.5 text-xs font-medium bg-white dark:bg-gray-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-700 dark:text-slate-300 cursor-pointer"
+                  >
+                    <option value="all">All Time</option>
+                    {monthOptions.map((month) => (
+                      <option key={month.value} value={month.value}>
+                        {month.label}
+                      </option>
+                    ))}
+                  </select>
+
+                  {/* Date Range Selector */}
+                  <div className="inline-flex bg-white dark:bg-gray-900 rounded-lg p-1 border border-slate-200 dark:border-slate-800 shadow-sm">
+                    {[3, 6, 12].map((months) => (
+                      <button
+                        key={months}
+                        onClick={() => {
+                          setDateRange(months);
+                          // When a date range is selected, clear the month filter
+                          setSelectedMonth('all');
+                        }}
+                        className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                          dateRange === months && selectedMonth === 'all'
+                            ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-sm'
+                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+                        }`}
+                      >
+                        {months}M
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              
               {/* Todo List - Prominent placement above charts */}
               <TodoList 
                 userId={user?.id || 'default-user'} 
@@ -268,46 +332,18 @@ export default function Home() {
                 currency="USD"
               />
               
-              <VisualizationPanel key={chartRefreshKey} userId={user?.id || 'default-user'} />
+              <VisualizationPanel 
+                key={chartRefreshKey} 
+                userId={user?.id || 'default-user'}
+                dateRange={dateRange}
+                selectedMonth={selectedMonth}
+              />
             </div>
           </div>
 
-          {/* Right Column: Actions & Chat (35%) - Hidden on mobile */}
+          {/* Right Column: Chat (35%) - Hidden on mobile */}
           <div className="hidden lg:flex col-span-12 lg:col-span-4 flex-col min-h-0 bg-white dark:bg-gray-900">
-            {/* Upload Section - Fixed at top */}
-            <div className="p-4 border-b border-slate-100 dark:border-slate-800 shrink-0">
-              <FileUpload onFileUpload={handleFileUpload} isProcessing={isProcessing} />
-              
-              {/* Toast-style Processing Status */}
-              {(processingSteps.length > 0 || lastUploadResult) && (
-                <div className="mt-3 space-y-2">
-                  {processingSteps.length > 0 && (
-                    <div className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-800 rounded-lg text-sm">
-                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-600 border-t-transparent"></div>
-                      <div className="flex-1 font-medium text-blue-900 dark:text-blue-100 truncate">
-                        {processingSteps[processingSteps.length - 1].message}
-                      </div>
-                      <span className="text-xs text-blue-700 dark:text-blue-300 font-mono">
-                        {Math.round((processingSteps.filter(s => s.status === 'complete').length / processingSteps.length) * 100)}%
-                      </span>
-                    </div>
-                  )}
-                  
-                  {lastUploadResult && (
-                    <div className={`flex items-center gap-2 p-3 rounded-lg text-sm font-medium border ${
-                      lastUploadResult.startsWith('✅') 
-                        ? 'bg-green-50 dark:bg-green-900/10 border-green-100 dark:border-green-800 text-green-800 dark:text-green-200'
-                        : 'bg-red-50 dark:bg-red-900/10 border-red-100 dark:border-red-800 text-red-800 dark:text-red-200'
-                    }`}>
-                      <span>{lastUploadResult.startsWith('✅') ? '✓' : '!'}</span>
-                      <span className="truncate">{lastUploadResult.replace(/^[✅❌]\s*/, '')}</span>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Chat Interface - Fills remaining space */}
+            {/* Chat Interface - Fills full space */}
             <div className="flex-1 min-h-0 overflow-hidden">
               <ChatInterface 
                 ref={chatInterfaceRef} 

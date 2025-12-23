@@ -26,9 +26,17 @@ interface VisualizationPanelProps {
   userId?: string;
   refreshTrigger?: number;
   fixedExpensesDemoData?: FixedExpensesData | null;
+  dateRange?: number | null;
+  selectedMonth?: string;
 }
 
-export default function VisualizationPanel({ userId = 'default-user', refreshTrigger = 0, fixedExpensesDemoData = null }: VisualizationPanelProps) {
+export default function VisualizationPanel({ 
+  userId = 'default-user', 
+  refreshTrigger = 0, 
+  fixedExpensesDemoData = null,
+  dateRange: externalDateRange,
+  selectedMonth: externalSelectedMonth 
+}: VisualizationPanelProps) {
   const [charts, setCharts] = useState<{
     spendingTrend: ChartConfig | null;
     categoryBreakdown: ChartConfig | null;
@@ -50,8 +58,13 @@ export default function VisualizationPanel({ userId = 'default-user', refreshTri
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [dateRange, setDateRange] = useState<number | null>(6);
-  const [selectedMonth, setSelectedMonth] = useState<string>('all');
+  
+  // Use external state if provided, otherwise use internal state
+  const [internalDateRange, setInternalDateRange] = useState<number | null>(6);
+  const [internalSelectedMonth, setInternalSelectedMonth] = useState<string>('all');
+  
+  const dateRange = externalDateRange !== undefined ? externalDateRange : internalDateRange;
+  const selectedMonth = externalSelectedMonth !== undefined ? externalSelectedMonth : internalSelectedMonth;
 
   // Generate last 12 months for dropdown
   const monthOptions = Array.from({ length: 12 }, (_, i) => {
@@ -205,53 +218,6 @@ export default function VisualizationPanel({ userId = 'default-user', refreshTri
 
   return (
     <div className="space-y-6">
-      {/* Header Controls Row */}
-      <div className="flex flex-col sm:flex-row justify-end items-start sm:items-center gap-3 mb-2">
-        
-        {/* Month Dropdown */}
-        <select
-          value={selectedMonth}
-          onChange={(e) => {
-            setSelectedMonth(e.target.value);
-            // When a specific month is selected, clear the date range
-            if (e.target.value !== 'all') {
-              setDateRange(null);
-            } else {
-              // When "All Time" is selected, default to 6M
-              setDateRange(6);
-            }
-          }}
-          className="px-3 py-1.5 text-xs font-medium bg-white dark:bg-gray-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-700 dark:text-slate-300 cursor-pointer"
-        >
-          <option value="all">All Time</option>
-          {monthOptions.map((month) => (
-            <option key={month.value} value={month.value}>
-              {month.label}
-            </option>
-          ))}
-        </select>
-
-        {/* Date Range Selector */}
-        <div className="inline-flex bg-white dark:bg-gray-900 rounded-lg p-1 border border-slate-200 dark:border-slate-800 shadow-sm">
-          {[3, 6, 12].map((months) => (
-            <button
-              key={months}
-              onClick={() => {
-                setDateRange(months);
-                // When a date range is selected, clear the month filter
-                setSelectedMonth('all');
-              }}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
-                dateRange === months && selectedMonth === 'all'
-                  ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-sm'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
-              }`}
-            >
-              {months}M
-            </button>
-          ))}
-        </div>
-      </div>
 
       {/* KPI Summary Row */}
       {metrics && (
