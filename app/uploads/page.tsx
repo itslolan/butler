@@ -14,6 +14,9 @@ export default function UploadsPage() {
   const [jobStatusByUploadId, setJobStatusByUploadId] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [uploadToDelete, setUploadToDelete] = useState<UploadWithStats | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const processingUploads = useMemo(
     () => uploads.filter(u => u.status === 'processing'),
@@ -104,6 +107,44 @@ export default function UploadsPage() {
 
   const handleUploadClick = (uploadId: string) => {
     router.push(`/uploads/${uploadId}`);
+  };
+
+  const handleDeleteClick = (uploadId: string) => {
+    const upload = uploads.find(u => u.id === uploadId);
+    if (upload) {
+      setUploadToDelete(upload);
+      setDeleteModalOpen(true);
+    }
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!uploadToDelete || !user?.id) return;
+
+    setDeleting(true);
+    try {
+      const response = await fetch(`/api/uploads/${uploadToDelete.id}?userId=${user.id}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete upload');
+      }
+
+      // Remove from local state
+      setUploads(prev => prev.filter(u => u.id !== uploadToDelete.id));
+      setDeleteModalOpen(false);
+      setUploadToDelete(null);
+    } catch (err: any) {
+      console.error('Error deleting upload:', err);
+      alert('Failed to delete upload: ' + (err.message || 'Unknown error'));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteModalOpen(false);
+    setUploadToDelete(null);
   };
 
   return (
@@ -278,12 +319,71 @@ export default function UploadsPage() {
                     key={upload.id}
                     upload={upload}
                     onClick={() => handleUploadClick(upload.id!)}
+                    onDelete={handleDeleteClick}
                   />
                 ))}
               </div>
             </>
           )}
         </main>
+
+        {/* Delete Confirmation Modal */}
+        {deleteModalOpen && uploadToDelete && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl max-w-md w-full p-6">
+              <div className="flex items-start gap-4 mb-4">
+                <div className="flex-shrink-0 w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                  <svg className="w-6 h-6 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2">
+                    Delete Upload?
+                  </h3>
+                  <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                    Are you sure you want to delete <strong>{uploadToDelete.upload_name}</strong>? This will permanently delete:
+                  </p>
+                  <ul className="text-sm text-slate-600 dark:text-slate-400 space-y-1 mb-4">
+                    <li>• {uploadToDelete.document_count} document{uploadToDelete.document_count !== 1 ? 's' : ''}</li>
+                    <li>• {uploadToDelete.total_transactions} transaction{uploadToDelete.total_transactions !== 1 ? 's' : ''}</li>
+                    <li>• All associated files from storage</li>
+                  </ul>
+                  <p className="text-sm font-medium text-red-600 dark:text-red-400">
+                    This action cannot be undone.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={handleDeleteCancel}
+                  disabled={deleting}
+                  className="px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDeleteConfirm}
+                  disabled={deleting}
+                  className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
+                >
+                  {deleting ? (
+                    <>
+                      <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      Deleting...
+                    </>
+                  ) : (
+                    'Delete Upload'
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </AuthGuard>
   );

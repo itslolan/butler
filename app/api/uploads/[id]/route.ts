@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUploadDetails, deleteUpload } from '@/lib/db-tools';
+import { logFromRequest } from '@/lib/audit-logger';
 
 export const dynamic = 'force-dynamic';
 
@@ -52,6 +53,13 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     }
 
     const result = await deleteUpload(id, userId);
+
+    // Log the deletion event
+    logFromRequest(request, userId, 'upload.deleted', {
+      upload_id: id,
+      deleted_documents: result.deletedDocuments,
+      deleted_transactions: result.deletedTransactions,
+    });
 
     return NextResponse.json({
       success: true,

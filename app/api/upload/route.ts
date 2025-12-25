@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import { supabase } from '@/lib/supabase';
 import { createUpload, generateUploadName, createProcessingJob, updateUploadStatus } from '@/lib/db-tools';
+import { logFromRequest } from '@/lib/audit-logger';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -87,6 +88,14 @@ export async function POST(request: NextRequest) {
       }
       throw innerErr;
     }
+
+    // Log the upload creation event
+    logFromRequest(request, userId, 'upload.created', {
+      upload_name: uploadName,
+      file_count: files.length,
+      upload_id: upload.id,
+      source_type: sourceType,
+    });
 
     return NextResponse.json({
       uploadId: upload.id,

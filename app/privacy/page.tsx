@@ -2,6 +2,9 @@
 
 import Link from 'next/link';
 
+// Check if Plaid feature is enabled
+const isPlaidEnabled = process.env.NEXT_PUBLIC_PLAID_ENABLED === 'true';
+
 export default function PrivacyPolicyPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 dark:from-gray-900 dark:via-slate-900 dark:to-gray-900 py-12 px-4 sm:px-6 lg:px-8">
@@ -44,15 +47,24 @@ export default function PrivacyPolicyPage() {
             <h3 className="text-xl font-medium text-slate-800 dark:text-slate-200 mb-3 mt-6">
               1.2 Information from Third-Party Services
             </h3>
-            <p className="text-slate-700 dark:text-slate-300 leading-relaxed mb-3">
-              When you connect your bank accounts through Plaid:
-            </p>
-            <ul className="list-disc list-inside space-y-2 text-slate-700 dark:text-slate-300 ml-4">
-              <li>Account balances and transaction history</li>
-              <li>Account and routing numbers</li>
-              <li>Account holder names and contact information</li>
-              <li>Institution names and account types</li>
-            </ul>
+            {isPlaidEnabled && (
+              <>
+                <p className="text-slate-700 dark:text-slate-300 leading-relaxed mb-3">
+                  When you connect your bank accounts through Plaid:
+                </p>
+                <ul className="list-disc list-inside space-y-2 text-slate-700 dark:text-slate-300 ml-4">
+                  <li>Account balances and transaction history</li>
+                  <li>Account and routing numbers</li>
+                  <li>Account holder names and contact information</li>
+                  <li>Institution names and account types</li>
+                </ul>
+              </>
+            )}
+            {!isPlaidEnabled && (
+              <p className="text-slate-700 dark:text-slate-300 leading-relaxed mb-3">
+                Currently, we support manual upload of bank statements and financial documents.
+              </p>
+            )}
 
             <h3 className="text-xl font-medium text-slate-800 dark:text-slate-200 mb-3 mt-6">
               1.3 Automatically Collected Information
@@ -76,7 +88,7 @@ export default function PrivacyPolicyPage() {
               <li>Provide and maintain our financial management services</li>
               <li>Process and categorize your transactions</li>
               <li>Generate budget insights and recommendations using AI</li>
-              <li>Sync your bank account data through Plaid</li>
+              {isPlaidEnabled && <li>Sync your bank account data through Plaid</li>}
               <li>Improve and personalize your experience</li>
               <li>Send you important notifications and updates</li>
               <li>Detect and prevent fraud or unauthorized access</li>
@@ -103,7 +115,7 @@ export default function PrivacyPolicyPage() {
               We may share your information with:
             </p>
             <ul className="list-disc list-inside space-y-2 text-slate-700 dark:text-slate-300 ml-4">
-              <li><strong>Service Providers:</strong> Third-party companies that help us operate our service (e.g., Plaid for banking connections, Supabase for data storage, AI services for insights)</li>
+              <li><strong>Service Providers:</strong> Third-party companies that help us operate our service (e.g., {isPlaidEnabled && 'Plaid for banking connections, '}Supabase for data storage, AI services for insights)</li>
               <li><strong>Legal Requirements:</strong> When required by law, regulation, or legal process</li>
               <li><strong>Business Transfers:</strong> In connection with a merger, sale, or acquisition of all or a portion of our business</li>
               <li><strong>With Your Consent:</strong> When you explicitly authorize us to share your information</li>
@@ -137,18 +149,22 @@ export default function PrivacyPolicyPage() {
             <h2 className="text-2xl font-semibold text-slate-900 dark:text-white mb-4">
               6. Third-Party Services
             </h2>
-            <h3 className="text-xl font-medium text-slate-800 dark:text-slate-200 mb-3">
-              6.1 Plaid
-            </h3>
-            <p className="text-slate-700 dark:text-slate-300 leading-relaxed mb-4">
-              We use Plaid to connect to your bank accounts. Plaid&apos;s services are governed by their own Privacy Policy. When you connect your accounts, you authorize Plaid to access and share your financial data with us. Learn more at{' '}
-              <a href="https://plaid.com/legal" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">
-                plaid.com/legal
-              </a>.
-            </p>
+            {isPlaidEnabled && (
+              <>
+                <h3 className="text-xl font-medium text-slate-800 dark:text-slate-200 mb-3">
+                  6.1 Plaid
+                </h3>
+                <p className="text-slate-700 dark:text-slate-300 leading-relaxed mb-4">
+                  We use Plaid to connect to your bank accounts. Plaid&apos;s services are governed by their own Privacy Policy. When you connect your accounts, you authorize Plaid to access and share your financial data with us. Learn more at{' '}
+                  <a href="https://plaid.com/legal" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">
+                    plaid.com/legal
+                  </a>.
+                </p>
+              </>
+            )}
 
             <h3 className="text-xl font-medium text-slate-800 dark:text-slate-200 mb-3">
-              6.2 Supabase
+              {isPlaidEnabled ? '6.2 Supabase' : '6.1 Supabase'}
             </h3>
             <p className="text-slate-700 dark:text-slate-300 leading-relaxed">
               We use Supabase for secure data storage and authentication. Your data is stored in compliance with industry security standards.

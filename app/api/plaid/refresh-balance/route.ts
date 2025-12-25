@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { plaidClient, isPlaidConfigured, formatPlaidError } from '@/lib/plaid-client';
 import { createClient } from '@/lib/supabase-server';
 import { supabase } from '@/lib/supabase';
+import { encryptNumber } from '@/lib/encryption';
+import { logFromRequest } from '@/lib/audit-logger';
 
 export const runtime = 'nodejs';
 
@@ -67,14 +69,15 @@ export async function POST(request: NextRequest) {
           access_token: item.plaid_access_token,
         });
 
-        // Update each account in database
+        // Update each account in database with encrypted balances
         for (const account of balanceResponse.data.accounts) {
           const { error: updateError } = await supabase
             .from('plaid_accounts')
             .update({
-              current_balance: account.balances.current,
-              available_balance: account.balances.available,
-              credit_limit: account.balances.limit,
+              current_balance_encrypted: encryptNumber(account.balances.current, userId),
+              available_balance_encrypted: encryptNumber(account.balances.available, userId),
+              credit_limit_encrypted: encryptNumber(account.balances.limit, userId),
+              last_synced_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
             })
             .eq('plaid_account_id', account.account_id);
@@ -112,6 +115,12 @@ export async function POST(request: NextRequest) {
         });
       }
     }
+
+    // Log the balance refresh event
+    logFromRequest(request, userId, 'plaid.refresh', {
+      items_processed: plaidItems.length,
+      accounts_updated: totalUpdated,
+    });
 
     return NextResponse.json({
       success: true,

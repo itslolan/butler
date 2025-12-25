@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { plaidClient, isPlaidConfigured, formatPlaidError } from '@/lib/plaid-client';
 import { createClient } from '@/lib/supabase-server';
 import { supabase } from '@/lib/supabase';
+import { logFromRequest } from '@/lib/audit-logger';
 
 export const runtime = 'nodejs';
 
@@ -77,6 +78,12 @@ export async function DELETE(request: NextRequest) {
     if (updateError) {
       throw new Error(`Failed to update Plaid item: ${updateError.message}`);
     }
+
+    // Log the disconnection event
+    logFromRequest(request, userId, 'plaid.disconnected', {
+      institution_name: plaidItem.plaid_institution_name,
+      item_id: plaid_item_id,
+    });
 
     return NextResponse.json({
       success: true,

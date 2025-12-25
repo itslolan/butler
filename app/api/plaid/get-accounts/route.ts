@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
 import { supabase } from '@/lib/supabase';
+import { decryptField, decryptNumber } from '@/lib/encryption';
 
 export const runtime = 'nodejs';
 
@@ -66,17 +67,49 @@ export async function GET(request: NextRequest) {
     for (const account of accounts) {
       const institution = institutionMap.get(account.plaid_item_id);
       if (institution) {
+        // Decrypt sensitive fields with fallback to unencrypted data
+        let currentBalance = null;
+        let availableBalance = null;
+        let creditLimit = null;
+        let officialName = null;
+
+        try {
+          // Try encrypted first, fall back to unencrypted (backwards compatibility)
+          currentBalance = account.current_balance_encrypted 
+            ? decryptNumber(account.current_balance_encrypted, userId)
+            : account.current_balance; // Fallback to old unencrypted data
+          
+          availableBalance = account.available_balance_encrypted
+            ? decryptNumber(account.available_balance_encrypted, userId)
+            : account.available_balance; // Fallback to old unencrypted data
+          
+          creditLimit = account.credit_limit_encrypted
+            ? decryptNumber(account.credit_limit_encrypted, userId)
+            : account.credit_limit; // Fallback to old unencrypted data
+          
+          officialName = account.account_official_name_encrypted
+            ? decryptField(account.account_official_name_encrypted, userId)
+            : account.account_official_name; // Fallback to unencrypted if exists
+        } catch (err) {
+          console.error('[get-accounts] Decryption error for account:', account.id, err);
+          // On decryption error, try falling back to unencrypted
+          currentBalance = account.current_balance || null;
+          availableBalance = account.available_balance || null;
+          creditLimit = account.credit_limit || null;
+          officialName = account.account_official_name || null;
+        }
+
         institution.accounts.push({
           id: account.id,
           plaid_account_id: account.plaid_account_id,
           name: account.account_name,
-          official_name: account.account_official_name,
+          official_name: officialName,
           type: account.account_type,
           subtype: account.account_subtype,
           mask: account.account_mask,
-          current_balance: account.current_balance,
-          available_balance: account.available_balance,
-          credit_limit: account.credit_limit,
+          current_balance: currentBalance,
+          available_balance: availableBalance,
+          credit_limit: creditLimit,
           currency: account.currency,
           last_synced_at: account.last_synced_at,
         });

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { plaidClient, isPlaidConfigured, formatPlaidError, PLAID_COUNTRY_CODES } from '@/lib/plaid-client';
 import { createClient } from '@/lib/supabase-server';
 import { supabase } from '@/lib/supabase';
+import { encryptField, encryptNumber } from '@/lib/encryption';
+import { logFromRequest } from '@/lib/audit-logger';
 
 export const runtime = 'nodejs';
 
@@ -98,19 +100,21 @@ export async function POST(request: NextRequest) {
       access_token: accessToken,
     });
 
-    // Store accounts in database
+    // Store accounts in database with encrypted sensitive fields
     const accountsToInsert = accountsResponse.data.accounts.map((account) => ({
       user_id: userId,
       plaid_item_id: plaidItem.id,
       plaid_account_id: account.account_id,
-      account_name: account.name,
-      account_official_name: account.official_name,
+      account_name: account.name, // Generic name like "Checking" - not sensitive
+      account_official_name_encrypted: account.official_name 
+        ? encryptField(account.official_name, userId) 
+        : null,
       account_type: account.type,
       account_subtype: account.subtype,
-      account_mask: account.mask,
-      current_balance: account.balances.current,
-      available_balance: account.balances.available,
-      credit_limit: account.balances.limit,
+      account_mask: account.mask, // Last 4 digits - safe to keep unencrypted
+      current_balance_encrypted: encryptNumber(account.balances.current, userId),
+      available_balance_encrypted: encryptNumber(account.balances.available, userId),
+      credit_limit_encrypted: encryptNumber(account.balances.limit, userId),
       currency: account.balances.iso_currency_code || 'USD',
     }));
 
@@ -122,6 +126,13 @@ export async function POST(request: NextRequest) {
       console.error('Error storing Plaid accounts:', accountsError);
       // Don't fail completely, the item was still created
     }
+
+    // Log the bank connection event
+    logFromRequest(request, userId, 'plaid.connected', {
+      institution_name: institutionName,
+      accounts_count: accountsToInsert.length,
+      item_id: plaidItem.id,
+    });
 
     return NextResponse.json({
       success: true,

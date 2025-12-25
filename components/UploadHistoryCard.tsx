@@ -5,9 +5,10 @@ import { UploadWithStats } from '@/lib/supabase';
 interface UploadHistoryCardProps {
   upload: UploadWithStats;
   onClick: () => void;
+  onDelete?: (uploadId: string) => void;
 }
 
-export default function UploadHistoryCard({ upload, onClick }: UploadHistoryCardProps) {
+export default function UploadHistoryCard({ upload, onClick, onDelete }: UploadHistoryCardProps) {
   const formatDate = (dateString: string | Date | undefined) => {
     if (!dateString) return 'Unknown date';
     const date = new Date(dateString);
@@ -57,23 +58,31 @@ export default function UploadHistoryCard({ upload, onClick }: UploadHistoryCard
     }
   };
 
+  const handleDeleteClick = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent card click
+    if (onDelete && upload.id) {
+      onDelete(upload.id);
+    }
+  };
+
   return (
-    <button
-      onClick={onClick}
-      className="w-full text-left bg-white dark:bg-gray-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 hover:shadow-md hover:border-blue-300 dark:hover:border-blue-700 transition-all group"
-    >
-      {/* Header */}
-      <div className="flex items-start justify-between gap-2 mb-3">
-        <div className="flex-1 min-w-0">
-          <h3 className="font-semibold text-slate-900 dark:text-white text-sm line-clamp-1 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-            {upload.upload_name}
-          </h3>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            {formatDate(upload.uploaded_at)}
-          </p>
+    <div className="relative">
+      <button
+        onClick={onClick}
+        className="w-full text-left bg-white dark:bg-gray-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 hover:shadow-md hover:border-blue-300 dark:hover:border-blue-700 transition-all group"
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between gap-2 mb-3">
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-slate-900 dark:text-white text-sm line-clamp-1 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+              {upload.upload_name}
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              {formatDate(upload.uploaded_at)}
+            </p>
+          </div>
+          {getStatusBadge()}
         </div>
-        {getStatusBadge()}
-      </div>
 
       {/* File type icons */}
       <div className="flex items-center gap-2 mb-3">
@@ -134,5 +143,20 @@ export default function UploadHistoryCard({ upload, onClick }: UploadHistoryCard
         </div>
       )}
     </button>
+
+    {/* Delete button - positioned absolutely on top right */}
+    {onDelete && upload.status !== 'processing' && (
+      <button
+        onClick={handleDeleteClick}
+        className="absolute top-2 right-2 p-1.5 rounded-lg bg-white dark:bg-gray-800 border border-slate-200 dark:border-slate-700 opacity-0 group-hover:opacity-100 hover:bg-red-50 dark:hover:bg-red-900/20 hover:border-red-300 dark:hover:border-red-700 transition-all z-10"
+        title="Delete upload"
+        aria-label="Delete upload"
+      >
+        <svg className="w-4 h-4 text-slate-600 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+        </svg>
+      </button>
+    )}
+  </div>
   );
 }
