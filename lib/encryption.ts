@@ -40,7 +40,10 @@ function deriveUserKey(userId: string): Buffer {
   const salt = Buffer.from(`adphex-user-${userId}`, 'utf8');
   
   // Use HKDF to derive a user-specific key
-  return crypto.hkdfSync('sha256', masterKey, salt, Buffer.from('encryption-key', 'utf8'), KEY_LENGTH);
+  const derivedKey = crypto.hkdfSync('sha256', masterKey, salt, Buffer.from('encryption-key', 'utf8'), KEY_LENGTH);
+  
+  // Ensure it's a Buffer (hkdfSync returns ArrayBuffer in some environments)
+  return Buffer.from(derivedKey);
 }
 
 /**
