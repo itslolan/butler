@@ -29,8 +29,9 @@ export default function Home() {
   const chatInterfaceRef = useRef<any>(null);
   
   // Date range controls for visualization
-  const [dateRange, setDateRange] = useState<number | null>(6);
-  const [selectedMonth, setSelectedMonth] = useState<string>('all');
+  // Default to current month
+  const [dateRange, setDateRange] = useState<number | null>(null);
+  const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().slice(0, 7));
   
   // Generate last 12 months for dropdown
   const monthOptions = Array.from({ length: 12 }, (_, i) => {

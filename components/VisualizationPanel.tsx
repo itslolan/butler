@@ -60,8 +60,9 @@ export default function VisualizationPanel({
   const [error, setError] = useState<string | null>(null);
   
   // Use external state if provided, otherwise use internal state
-  const [internalDateRange, setInternalDateRange] = useState<number | null>(6);
-  const [internalSelectedMonth, setInternalSelectedMonth] = useState<string>('all');
+  // Default to current month
+  const [internalDateRange, setInternalDateRange] = useState<number | null>(null);
+  const [internalSelectedMonth, setInternalSelectedMonth] = useState<string>(new Date().toISOString().slice(0, 7));
   
   const dateRange = externalDateRange !== undefined ? externalDateRange : internalDateRange;
   const selectedMonth = externalSelectedMonth !== undefined ? externalSelectedMonth : internalSelectedMonth;
@@ -92,6 +93,7 @@ export default function VisualizationPanel({
         queryParams.append('months', dateRange.toString());
       }
 
+      // Fetch from API (which calls canonical assistant functions)
       const [spendingRes, categoryRes, incomeRes, cashFlowRes] = await Promise.all([
         fetch(`/api/charts?${queryParams}&type=spending-trend`),
         fetch(`/api/charts?${queryParams}&type=category-breakdown`),
@@ -110,30 +112,29 @@ export default function VisualizationPanel({
         cashFlowRes.json(),
       ]);
 
+      // Parse envelope format: { chartConfig, rawData, params }
       setCharts({
-        spendingTrend: spendingData,
-        categoryBreakdown: categoryData,
-        incomeVsExpenses: incomeData,
-        cashFlow: cashFlowData,
+        spendingTrend: spendingData.chartConfig,
+        categoryBreakdown: categoryData.chartConfig,
+        incomeVsExpenses: incomeData.chartConfig,
+        cashFlow: cashFlowData.chartConfig,
       });
 
-      // Calculate placeholder KPIs from chart data
-      if (incomeData && incomeData.data) {
-        const totalIncome = incomeData.data.reduce((sum: number, d: any) => sum + (d.value || 0), 0);
-        const totalExpenses = incomeData.data.reduce((sum: number, d: any) => sum + (d.value2 || 0), 0);
+      // Calculate KPIs from rawData (not chartConfig) for accuracy
+      if (incomeData.rawData && Array.isArray(incomeData.rawData)) {
+        const totalIncome = incomeData.rawData.reduce((sum: number, d: any) => sum + (d.income || 0), 0);
+        const totalExpenses = incomeData.rawData.reduce((sum: number, d: any) => sum + (d.expenses || 0), 0);
         
-        // Extract currency - handle both boolean (old format) and string (new format)
-        let currencyCode = 'USD';
-        const rawCurrency = incomeData.currency || spendingData.currency || categoryData.currency;
-        if (typeof rawCurrency === 'string') {
-          currencyCode = rawCurrency;
-        }
+        // Extract currency from params or chartConfig
+        const currencyCode = incomeData.params?.currency || 
+                            incomeData.chartConfig?.currency || 
+                            'USD';
         
         setMetrics({
           totalIncome,
           totalExpenses,
           netResult: totalIncome - totalExpenses,
-          currency: currencyCode
+          currency: typeof currencyCode === 'string' ? currencyCode : 'USD'
         });
       }
 

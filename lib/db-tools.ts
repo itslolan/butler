@@ -608,10 +608,18 @@ export async function getMonthlySpendingTrend(
     inferMissingTypesByAmountSign: true,
     startDate,
     endDate,
-    selectFields: 'date, amount, transaction_type',
+    selectFields: 'id, date, amount, transaction_type, merchant',
   });
+  
+  // DEDUPLICATION TEMPORARILY DISABLED
+  // const deduplicatedData = deduplicateTransactions(data);
+  // const duplicatesRemoved = data.length - deduplicatedData.length;
+  // if (duplicatesRemoved > 0) {
+  //   console.log(`[getMonthlySpendingTrend] Removed ${duplicatesRemoved} duplicate transactions`);
+  // }
+  const deduplicatedData = data; // Using raw data without deduplication
 
-  if (!data || data.length === 0) {
+  if (!deduplicatedData || deduplicatedData.length === 0) {
     if (specificMonth) {
       return [{ month: specificMonth, total: 0 }];
     }
@@ -631,7 +639,7 @@ export async function getMonthlySpendingTrend(
   // Aggregate by month
   const monthlyMap = new Map<string, number>();
   
-  for (const txn of data) {
+  for (const txn of deduplicatedData) {
     const date = new Date(txn.date);
     const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
     const current = monthlyMap.get(monthKey) || 0;
@@ -662,6 +670,71 @@ export async function getMonthlySpendingTrend(
  * Get category breakdown for a user
  * Aggregates expenses by category for the last N months OR a specific month
  */
+/**
+ * Deduplicate transactions that appear in overlapping statements
+ * Identifies duplicates based on:
+ * - Same merchant name (case-insensitive, normalized)
+ * - Same or very similar amount (within 0.01 tolerance)
+ * - Date within 2 days of each other
+ */
+function deduplicateTransactions(transactions: any[]): any[] {
+  if (transactions.length === 0) return transactions;
+  
+  // Sort by date, then by amount for consistent processing
+  const sorted = [...transactions].sort((a, b) => {
+    const dateCompare = (a.date || '').localeCompare(b.date || '');
+    if (dateCompare !== 0) return dateCompare;
+    return Math.abs(Number(a.amount)) - Math.abs(Number(b.amount));
+  });
+  
+  const seen = new Set<string>();
+  const deduplicated: any[] = [];
+  
+  for (const txn of sorted) {
+    // Create a normalized signature for duplicate detection
+    const merchant = (txn.merchant || '').toLowerCase().trim();
+    const amount = Math.abs(Number(txn.amount)).toFixed(2);
+    const date = txn.date || '';
+    
+    // Check if we've seen a similar transaction recently
+    let isDuplicate = false;
+    
+    for (const seenTxn of deduplicated) {
+      const seenMerchant = (seenTxn.merchant || '').toLowerCase().trim();
+      const seenAmount = Math.abs(Number(seenTxn.amount)).toFixed(2);
+      const seenDate = seenTxn.date || '';
+      
+      // Check if merchants match (exact or very similar)
+      const merchantMatch = merchant && seenMerchant && (
+        merchant === seenMerchant ||
+        merchant.includes(seenMerchant) ||
+        seenMerchant.includes(merchant)
+      );
+      
+      // Check if amounts match (exact)
+      const amountMatch = amount === seenAmount;
+      
+      // Check if dates are within 2 days
+      const daysDiff = date && seenDate ? 
+        Math.abs(new Date(date).getTime() - new Date(seenDate).getTime()) / (1000 * 60 * 60 * 24) :
+        999;
+      const dateMatch = daysDiff <= 2;
+      
+      if (merchantMatch && amountMatch && dateMatch) {
+        isDuplicate = true;
+        console.log(`[deduplicateTransactions] Duplicate found: ${merchant} $${amount} on ${date} (matches ${seenDate})`);
+        break;
+      }
+    }
+    
+    if (!isDuplicate) {
+      deduplicated.push(txn);
+    }
+  }
+  
+  return deduplicated;
+}
+
 export async function getCategoryBreakdown(
   userId: string,
   months: number = 6,
@@ -677,11 +750,13 @@ export async function getCategoryBreakdown(
     // Calculate end of month
     const [year, month] = specificMonth.split('-').map(Number);
     endDate = new Date(year, month, 0).toISOString().split('T')[0]; // Last day of month
+    console.log(`[getCategoryBreakdown] Using specific month: ${specificMonth}, dates: ${startDate} to ${endDate}, userId: ${userId}`);
   } else {
     // Default: last N months - start from the 1st of the month N months ago
     const now = new Date();
     const monthsAgo = new Date(now.getFullYear(), now.getMonth() - months, 1);
     startDate = monthsAgo.toISOString().split('T')[0];
+    console.log(`[getCategoryBreakdown] Using months range: ${months}, startDate: ${startDate}, userId: ${userId}`);
   }
   
   // Get all transactions using pagination
@@ -690,18 +765,26 @@ export async function getCategoryBreakdown(
     inferMissingTypesByAmountSign: true,
     startDate,
     endDate,
-    selectFields: 'category, amount, transaction_type, date, spend_classification',
+    selectFields: 'id, category, amount, transaction_type, date, spend_classification, merchant',
   });
 
   if (!data || data.length === 0) {
     return [];
   }
 
+  // DEDUPLICATION TEMPORARILY DISABLED
+  // const deduplicatedData = deduplicateTransactions(data);
+  // const duplicatesRemoved = data.length - deduplicatedData.length;
+  // if (duplicatesRemoved > 0) {
+  //   console.log(`[getCategoryBreakdown] Removed ${duplicatesRemoved} duplicate transactions`);
+  // }
+  const deduplicatedData = data; // Using raw data without deduplication
+
   // Aggregate by category
   const categoryMap = new Map<string, { total: number; count: number; spend_classification?: string | null }>();
   let grandTotal = 0;
   
-  for (const txn of data) {
+  for (const txn of deduplicatedData) {
     const category = txn.category || 'Uncategorized';
     const absAmount = Math.abs(Number(txn.amount));
     
@@ -1083,8 +1166,16 @@ export async function getIncomeVsExpenses(
   const data = await fetchAllTransactions(userId, {
     startDate,
     endDate,
-    selectFields: 'date, amount, transaction_type',
+    selectFields: 'id, date, amount, transaction_type, merchant',
   });
+  
+  // DEDUPLICATION TEMPORARILY DISABLED
+  // const deduplicatedData = deduplicateTransactions(data);
+  // const duplicatesRemoved = data.length - deduplicatedData.length;
+  // if (duplicatesRemoved > 0) {
+  //   console.log(`[getIncomeVsExpenses] Removed ${duplicatesRemoved} duplicate transactions`);
+  // }
+  const deduplicatedData = data; // Using raw data without deduplication
 
   // Initialize monthly data
   const monthlyData = new Map<string, { income: number; expenses: number }>();
@@ -1102,9 +1193,9 @@ export async function getIncomeVsExpenses(
     monthlyData.set(specificMonth, { income: 0, expenses: 0 });
   }
 
-  if (data && data.length > 0) {
+  if (deduplicatedData && deduplicatedData.length > 0) {
     // Aggregate transactions
-    for (const txn of data) {
+    for (const txn of deduplicatedData) {
       const date = new Date(txn.date);
       const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
       
@@ -1185,11 +1276,19 @@ export async function getCashFlowSankeyData(
   const data = await fetchAllTransactions(userId, {
     startDate,
     endDate,
-    selectFields: 'category, merchant, amount, transaction_type, date',
+    selectFields: 'id, category, merchant, amount, transaction_type, date',
     inferMissingTypesByAmountSign: true
   });
+  
+  // DEDUPLICATION TEMPORARILY DISABLED
+  // const deduplicatedData = deduplicateTransactions(data);
+  // const duplicatesRemoved = data.length - deduplicatedData.length;
+  // if (duplicatesRemoved > 0) {
+  //   console.log(`[getCashFlowSankeyData] Removed ${duplicatesRemoved} duplicate transactions`);
+  // }
+  const deduplicatedData = data; // Using raw data without deduplication
 
-  if (!data || data.length === 0) {
+  if (!deduplicatedData || deduplicatedData.length === 0) {
     return { nodes: [], links: [] };
   }
 
@@ -1201,7 +1300,7 @@ export async function getCashFlowSankeyData(
   const expenseCategories = new Map<string, number>();
   let totalExpenses = 0;
 
-  for (const txn of data) {
+  for (const txn of deduplicatedData) {
     const amount = Number(txn.amount);
     
     // Determine type (income or expense)

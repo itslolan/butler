@@ -113,32 +113,68 @@ You have access to four data sources:
 
 6. calculate_net_worth(date): Calculate net worth at a specific date across all accounts
 
-7. render_chart(config): Render a visual chart/graph
-   - Use when user asks for trends, breakdowns, comparisons, or wants to "see" data visually
-   - Types: line (trends over time), bar (comparisons), pie (breakdowns), area (cumulative)
-   - Always provide data as an array of {label, value, value2?}
-   - Include descriptive title and insights in description field
+7. Data Functions (get_category_breakdown, get_monthly_spending_trend, etc.):
+   - These are the CANONICAL data sources - same functions dashboard uses
+   - These functions automatically deduplicate transactions from overlapping statements
+   - Always call these first to get the data
+   - Return raw data for analysis and explanation
 
-8. get_current_budget(): Get current month's budget with all categories and spending
+8. Visualization Functions (get_pie_chart, get_line_chart, get_bar_chart, get_area_chart):
+   - Create charts from data obtained in step 1
+   - Pure functions that transform data into chart configs
+   - Use after calling a data function
+
+9. **TWO-STEP WORKFLOW for showing charts:**
+   Step 1: Call data function (e.g., get_category_breakdown)
+   Step 2: Call visualization function (e.g., get_pie_chart) with that data
+   Step 3: Explain using the data from step 1
+   **CRITICAL**: Always use data from step 1 for both chart AND explanation
+
+10. get_visual(type, month|months): Legacy combined tool (DEPRECATED)
+   - Fetches from /api/charts endpoint
+   - Use the two-step workflow above instead for better transparency
+
+11. render_chart(config): Custom chart rendering (FALLBACK only)
+   - Use ONLY for custom charts not covered by standard visualization functions
+
+12. get_current_budget(): Get current month's budget with all categories and spending
    - Returns budgeted amounts, spent amounts, and available for each category
    - Use when user asks about their budget or wants to see budget status
 
-9. get_budget_health_analysis(): Analyze budget health and identify issues
+10. get_budget_health_analysis(): Analyze budget health and identify issues
    - Returns detailed analysis including overspent categories, large transactions, which category broke first
    - Use when user asks about budget problems, why they're over budget, or how to get back on track
    - Provides data needed to explain what caused budget issues and recommend adjustments
 
-10. adjust_budget_allocations(adjustments): Modify budget allocations based on user requests
+11. adjust_budget_allocations(adjustments): Modify budget allocations based on user requests
    - Use when user wants to move funds between categories, increase/decrease budgets, or reallocate
    - Saves changes immediately to database and updates the budget UI automatically
    - Validates that total doesn't exceed income before saving
 
-**When to Use Charts:**
-- User asks about "trends", "over time", "changes"
-- User wants to "see", "visualize", "show me a graph"
-- Comparing multiple values (e.g., income vs expenses)
-- Category breakdowns or distributions
-- Any question that would benefit from visual representation
+**When to Use Charts (TWO-STEP PROCESS):**
+When user asks for visualizations:
+1. **First, get the data**: Call appropriate data function
+   - get_category_breakdown → for category spending
+   - get_monthly_spending_trend → for spending over time
+   - get_income_vs_expenses → for income/expense comparison
+2. **Then, create the chart**: Call appropriate visualization function
+   - get_pie_chart → for category breakdowns
+   - get_line_chart → for trends over time
+   - get_bar_chart → for comparisons
+   - get_area_chart → for cumulative trends
+3. **Finally, explain**: Use the data from step 1 in your explanation
+
+**CRITICAL RULES:**
+- ALWAYS use the same data for both chart and explanation
+- Do NOT call data functions twice with different parameters
+- Transform the data from step 1 into the format needed for step 2
+- Example workflow for "Show me my spending by category":
+  1. Call get_category_breakdown({ month: '2025-12' })
+     Returns: [{ category: 'Food', total: 1184.90, ... }]
+  2. Transform to chart format: data.map(c => ({ label: c.category, value: c.total }))
+  3. Call get_pie_chart({ data: transformed, title: 'Spending by Category' })
+     Returns: { chartConfig }
+  4. Explain using original data from step 1: "Food & Dining: $1,184.90 (17.4%)"
 
 **Financial Health Analysis:**
 When analyzing financial data, automatically provide:
@@ -373,6 +409,56 @@ async function executeToolCall(name: string, args: any, effectiveUserId: string,
           error: 'Invalid chart configuration'
         };
       }
+    } else if (name === 'get_pie_chart') {
+      // Create pie chart from data
+      const chartConfig = getPieChart(args.data || [], {
+        title: args.title,
+        description: args.description,
+        currency: args.currency,
+      });
+      functionResult = {
+        success: true,
+        chartConfig,
+      };
+    } else if (name === 'get_line_chart') {
+      // Create line chart from data
+      const chartConfig = getLineChart(args.data || [], {
+        title: args.title,
+        description: args.description,
+        currency: args.currency,
+        xAxisLabel: args.xAxisLabel,
+        yAxisLabel: args.yAxisLabel,
+      });
+      functionResult = {
+        success: true,
+        chartConfig,
+      };
+    } else if (name === 'get_bar_chart') {
+      // Create bar chart from data
+      const chartConfig = getBarChart(args.data || [], {
+        title: args.title,
+        description: args.description,
+        currency: args.currency,
+        xAxisLabel: args.xAxisLabel,
+        yAxisLabel: args.yAxisLabel,
+      });
+      functionResult = {
+        success: true,
+        chartConfig,
+      };
+    } else if (name === 'get_area_chart') {
+      // Create area chart from data
+      const chartConfig = getAreaChart(args.data || [], {
+        title: args.title,
+        description: args.description,
+        currency: args.currency,
+        xAxisLabel: args.xAxisLabel,
+        yAxisLabel: args.yAxisLabel,
+      });
+      functionResult = {
+        success: true,
+        chartConfig,
+      };
     } else if (name === 'get_distinct_categories') {
       functionResult = await getDistinctCategories(effectiveUserId, {
         startDate: args.startDate,
@@ -418,56 +504,29 @@ async function executeToolCall(name: string, args: any, effectiveUserId: string,
         args.updates || {}
       );
     } else if (name === 'get_category_breakdown') {
-      functionResult = await getCategoryBreakdown(
+      // Call canonical assistant function
+      console.log('[CHAT get_category_breakdown] Args:', args);
+      const params = { month: args.specificMonth, months: args.months };
+      console.log('[CHAT get_category_breakdown] Calling with params:', params);
+      functionResult = await getAssistantCategoryBreakdown(
         effectiveUserId,
-        args.months || 6,
-        args.specificMonth
+        params
       );
+      console.log('[CHAT get_category_breakdown] Result count:', functionResult?.length);
+      const foodResult = functionResult?.find((c: any) => c.category?.toLowerCase().includes('food'));
+      console.log('[CHAT get_category_breakdown] Food & Dining result:', foodResult);
     } else if (name === 'get_monthly_spending_trend') {
-      functionResult = await getMonthlySpendingTrend(
+      // Call canonical assistant function
+      functionResult = await getAssistantMonthlySpending(
         effectiveUserId,
-        args.months || 6,
-        args.specificMonth
+        { month: args.specificMonth, months: args.months }
       );
     } else if (name === 'get_current_budget') {
-      // Get current month budget data
-      const now = new Date();
-      const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-      
-      const budgetData = await getBudgetData(effectiveUserId, currentMonth);
-      
-      // Transform to a format that's easy for the LLM to understand
-      const categories = budgetData.categories.map(cat => {
-        const budget = budgetData.budgets.find(b => b.category_id === cat.id);
-        const budgeted = budget?.budgeted_amount || 0;
-        const spent = budgetData.spending[cat.name] || 0;
-        
-        return {
-          name: cat.name,
-          budgeted,
-          spent,
-          available: budgeted - spent,
-          isOverBudget: spent > budgeted,
-        };
-      }).filter(cat => cat.budgeted > 0 || cat.spent > 0);
-      
-      const totalBudgeted = categories.reduce((sum, cat) => sum + cat.budgeted, 0);
-      const totalSpent = categories.reduce((sum, cat) => sum + cat.spent, 0);
-      
-      functionResult = {
-        month: currentMonth,
-        income: budgetData.income,
-        totalBudgeted,
-        totalSpent,
-        readyToAssign: budgetData.income - totalBudgeted,
-        categories,
-      };
+      // Call canonical assistant function
+      functionResult = await getAssistantCurrentBudget(effectiveUserId, args.month);
     } else if (name === 'get_budget_health_analysis') {
-      // Get detailed budget health analysis
-      const now = new Date();
-      const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-      
-      const analysis = await analyzeBudgetHealth(effectiveUserId, currentMonth);
+      // Call canonical assistant function
+      const analysis = await getAssistantBudgetHealth(effectiveUserId, args.month);
       
       functionResult = {
         healthStatus: analysis.healthStatus,
@@ -499,6 +558,45 @@ async function executeToolCall(name: string, args: any, effectiveUserId: string,
       );
       
       functionResult = result;
+    } else if (name === 'get_visual') {
+      // Fetch canonical chart visual from same endpoint as dashboard
+      let fullApiUrl: string;
+      
+      if (requestUrl) {
+        const url = new URL(requestUrl);
+        fullApiUrl = `${url.protocol}//${url.host}/api/charts`;
+      } else {
+        const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 
+                       process.env.NEXT_PUBLIC_BASE_URL || 
+                       'http://localhost:3000';
+        fullApiUrl = `${baseUrl}/api/charts`;
+      }
+      
+      try {
+        const params = new URLSearchParams({
+          userId: effectiveUserId,
+          type: args.type || 'category-breakdown',
+        });
+        
+        if (args.month) {
+          params.append('month', args.month);
+        } else if (args.months) {
+          params.append('months', args.months.toString());
+        }
+        
+        const response = await fetch(`${fullApiUrl}?${params}`);
+        
+        if (!response.ok) {
+          const errorData = await response.json();
+          functionResult = { error: errorData.error || 'Failed to fetch visual' };
+        } else {
+          const envelope = await response.json();
+          // Return the full envelope: { chartConfig, rawData, params }
+          functionResult = envelope;
+        }
+      } catch (error: any) {
+        functionResult = { error: error.message || 'Failed to fetch visual' };
+      }
     } else {
       functionResult = { error: 'Unknown function' };
     }
@@ -678,7 +776,7 @@ When answering questions, use these memories to provide context-aware responses.
           },
           {
             name: 'search_transactions',
-            description: 'Search individual transactions from all uploaded statements with optional filters',
+            description: 'Search individual transactions from all uploaded statements with optional filters. Returns raw transaction data without deduplication (may include duplicates from overlapping statements). For aggregated spending data, prefer get_category_breakdown which handles deduplication.',
             parameters: {
               type: SchemaType.OBJECT,
               properties: {
@@ -854,8 +952,34 @@ When answering questions, use these memories to provide context-aware responses.
             },
           },
           {
+            name: 'get_visual',
+            description: 'Get a canonical chart visual from the same endpoint as the dashboard. PREFER this over render_chart for standard financial charts. Returns BOTH chartConfig (for rendering) AND rawData (for explanations). IMPORTANT: Use the rawData from this call to explain the chart - do NOT make separate data calls or numbers will mismatch.',
+            parameters: {
+              type: SchemaType.OBJECT,
+              properties: {
+                reasoning: {
+                  type: SchemaType.STRING,
+                  description: 'Explain why you are calling this function and what you plan to do with the results (max 50 words)',
+                },
+                type: {
+                  type: SchemaType.STRING,
+                  description: 'Visual type: spending-trend, category-breakdown, income-vs-expenses, or cash-flow',
+                },
+                month: {
+                  type: SchemaType.STRING,
+                  description: 'Optional: Specific month (YYYY-MM format). Mutually exclusive with months.',
+                },
+                months: {
+                  type: SchemaType.NUMBER,
+                  description: 'Optional: Number of months to analyze (e.g., 3, 6, 12). Mutually exclusive with month. Defaults to current month if omitted.',
+                },
+              },
+              required: ['reasoning', 'type'],
+            },
+          },
+          {
             name: 'render_chart',
-            description: 'Render a chart or graph to visualize financial data. Use this when the user asks for trends, breakdowns, comparisons, or visual representations. Choose chart type based on data: line for trends over time, pie for category breakdowns, bar for comparisons.',
+            description: 'Render a custom chart or graph to visualize financial data. Use this ONLY for custom charts not covered by get_visual. For standard financial charts (spending trend, category breakdown, income vs expenses, cash flow), use get_visual instead.',
             parameters: {
               type: SchemaType.OBJECT,
               properties: {
@@ -911,6 +1035,169 @@ When answering questions, use these memories to provide context-aware responses.
                 },
               },
               required: ['reasoning', 'type', 'title', 'description', 'data'],
+            },
+          },
+          {
+            name: 'get_pie_chart',
+            description: 'Create a pie chart from provided data. Use after calling a data function (e.g., get_category_breakdown). This creates the visualization from that data.',
+            parameters: {
+              type: SchemaType.OBJECT,
+              properties: {
+                reasoning: {
+                  type: SchemaType.STRING,
+                  description: 'Explain why you are calling this function (max 50 words)',
+                },
+                data: {
+                  type: SchemaType.ARRAY,
+                  description: 'Array of {label, value} pairs from data function',
+                  items: {
+                    type: SchemaType.OBJECT,
+                    properties: {
+                      label: { type: SchemaType.STRING },
+                      value: { type: SchemaType.NUMBER },
+                    },
+                    required: ['label', 'value'],
+                  },
+                },
+                title: {
+                  type: SchemaType.STRING,
+                  description: 'Chart title',
+                },
+                description: {
+                  type: SchemaType.STRING,
+                  description: 'Chart description or insight',
+                },
+                currency: {
+                  type: SchemaType.BOOLEAN,
+                  description: 'Whether to format as currency (default: true)',
+                },
+              },
+              required: ['reasoning', 'data', 'title'],
+            },
+          },
+          {
+            name: 'get_line_chart',
+            description: 'Create a line chart from provided data. Use after calling a data function (e.g., get_monthly_spending_trend). For trends over time.',
+            parameters: {
+              type: SchemaType.OBJECT,
+              properties: {
+                reasoning: {
+                  type: SchemaType.STRING,
+                  description: 'Explain why you are calling this function (max 50 words)',
+                },
+                data: {
+                  type: SchemaType.ARRAY,
+                  description: 'Array of {label, value, value2?} pairs from data function',
+                  items: {
+                    type: SchemaType.OBJECT,
+                    properties: {
+                      label: { type: SchemaType.STRING },
+                      value: { type: SchemaType.NUMBER },
+                      value2: { type: SchemaType.NUMBER },
+                    },
+                    required: ['label', 'value'],
+                  },
+                },
+                title: {
+                  type: SchemaType.STRING,
+                  description: 'Chart title',
+                },
+                description: {
+                  type: SchemaType.STRING,
+                  description: 'Chart description',
+                },
+                currency: {
+                  type: SchemaType.BOOLEAN,
+                  description: 'Format as currency (default: true)',
+                },
+                xAxisLabel: {
+                  type: SchemaType.STRING,
+                  description: 'X-axis label',
+                },
+                yAxisLabel: {
+                  type: SchemaType.STRING,
+                  description: 'Y-axis label',
+                },
+              },
+              required: ['reasoning', 'data', 'title'],
+            },
+          },
+          {
+            name: 'get_bar_chart',
+            description: 'Create a bar chart from provided data. Use after calling a data function. Good for comparisons (e.g., income vs expenses).',
+            parameters: {
+              type: SchemaType.OBJECT,
+              properties: {
+                reasoning: {
+                  type: SchemaType.STRING,
+                  description: 'Explain why you are calling this function (max 50 words)',
+                },
+                data: {
+                  type: SchemaType.ARRAY,
+                  description: 'Array of {label, value, value2?} pairs',
+                  items: {
+                    type: SchemaType.OBJECT,
+                    properties: {
+                      label: { type: SchemaType.STRING },
+                      value: { type: SchemaType.NUMBER },
+                      value2: { type: SchemaType.NUMBER },
+                    },
+                    required: ['label', 'value'],
+                  },
+                },
+                title: {
+                  type: SchemaType.STRING,
+                  description: 'Chart title',
+                },
+                description: {
+                  type: SchemaType.STRING,
+                  description: 'Chart description',
+                },
+                currency: {
+                  type: SchemaType.BOOLEAN,
+                  description: 'Format as currency (default: true)',
+                },
+              },
+              required: ['reasoning', 'data', 'title'],
+            },
+          },
+          {
+            name: 'get_area_chart',
+            description: 'Create an area chart from provided data. Use after calling a data function. Good for cumulative trends.',
+            parameters: {
+              type: SchemaType.OBJECT,
+              properties: {
+                reasoning: {
+                  type: SchemaType.STRING,
+                  description: 'Explain why you are calling this function (max 50 words)',
+                },
+                data: {
+                  type: SchemaType.ARRAY,
+                  description: 'Array of {label, value, value2?} pairs',
+                  items: {
+                    type: SchemaType.OBJECT,
+                    properties: {
+                      label: { type: SchemaType.STRING },
+                      value: { type: SchemaType.NUMBER },
+                      value2: { type: SchemaType.NUMBER },
+                    },
+                    required: ['label', 'value'],
+                  },
+                },
+                title: {
+                  type: SchemaType.STRING,
+                  description: 'Chart title',
+                },
+                description: {
+                  type: SchemaType.STRING,
+                  description: 'Chart description',
+                },
+                currency: {
+                  type: SchemaType.BOOLEAN,
+                  description: 'Format as currency (default: true)',
+                },
+              },
+              required: ['reasoning', 'data', 'title'],
             },
           },
           {
@@ -1119,7 +1406,7 @@ When answering questions, use these memories to provide context-aware responses.
           },
           {
             name: 'get_category_breakdown',
-            description: 'Get spending breakdown by category with totals, counts, and percentages. More detailed than get_distinct_categories.',
+            description: 'Get spending breakdown by category with totals, counts, and percentages. This is the CANONICAL source for category spending data - same function dashboard uses. Automatically deduplicates transactions from overlapping statements.',
             parameters: {
               type: SchemaType.OBJECT,
               properties: {
@@ -1129,7 +1416,7 @@ When answering questions, use these memories to provide context-aware responses.
                 },
                 months: {
                   type: SchemaType.NUMBER,
-                  description: 'Number of months to analyze (default: 6)',
+                  description: 'Number of months to analyze. If omitted, defaults to current month only (matching dashboard).',
                 },
                 specificMonth: {
                   type: SchemaType.STRING,
@@ -1141,7 +1428,7 @@ When answering questions, use these memories to provide context-aware responses.
           },
           {
             name: 'get_monthly_spending_trend',
-            description: 'Get monthly spending totals over time. Useful for trend analysis.',
+            description: 'Get monthly spending totals over time. Use for data-only queries (no visual). If showing a chart, use get_visual instead and explain using its rawData to avoid number mismatches.',
             parameters: {
               type: SchemaType.OBJECT,
               properties: {
@@ -1151,7 +1438,7 @@ When answering questions, use these memories to provide context-aware responses.
                 },
                 months: {
                   type: SchemaType.NUMBER,
-                  description: 'Number of months to analyze (default: 6)',
+                  description: 'Number of months to analyze. If omitted, defaults to current month only (matching dashboard).',
                 },
                 specificMonth: {
                   type: SchemaType.STRING,
@@ -1303,10 +1590,25 @@ When answering questions, use these memories to provide context-aware responses.
                 resultCount: Array.isArray(functionResult) ? functionResult.length : null,
               });
 
-              // Check for chart config
-              if (name === 'render_chart' && functionResult?.success && functionResult?.chartConfig) {
-                chartConfig = functionResult.chartConfig;
-                sendEvent('chart_config', { config: chartConfig });
+              // Check for chart config from various tools
+              const chartTools = [
+                'render_chart',
+                'get_visual',
+                'get_pie_chart',
+                'get_line_chart',
+                'get_bar_chart',
+                'get_area_chart',
+              ];
+              
+              if (chartTools.includes(name)) {
+                if (functionResult?.success && functionResult?.chartConfig) {
+                  chartConfig = functionResult.chartConfig;
+                  sendEvent('chart_config', { config: chartConfig });
+                } else if (functionResult?.chartConfig) {
+                  // For get_visual which returns envelope
+                  chartConfig = functionResult.chartConfig;
+                  sendEvent('chart_config', { config: chartConfig });
+                }
               }
 
               functionResponses.push({

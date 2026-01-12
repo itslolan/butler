@@ -1,32 +1,60 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getMonthlySpendingTrend, getCategoryBreakdown, getIncomeVsExpenses, getCashFlowSankeyData } from '@/lib/db-tools';
-import { 
-  createSpendingTrendChart, 
-  createCategoryBreakdownChart, 
-  createIncomeVsExpensesChart,
-  createCashFlowChart
-} from '@/lib/chart-utils';
+import {
+  getCategoryBreakdown,
+  getMonthlySpendingTrend,
+  getIncomeVsExpenses,
+  getCashFlowData,
+} from '@/lib/assistant-functions';
+import {
+  getPieChart,
+  getLineChart,
+  getBarChart,
+  getSankeyChart,
+  transformCategoryBreakdownToChartData,
+  transformMonthlySpendingToChartData,
+  transformIncomeVsExpensesToChartData,
+} from '@/lib/visualization-functions';
 import { ChartConfig } from '@/lib/chart-types';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * GET /api/charts?userId=X&type=Y&months=6
+ * GET /api/charts?userId=X&type=Y&months=6&month=YYYY-MM
  * 
- * Returns chart configuration JSON for visualization
+ * Server-side API endpoint that wraps canonical assistant functions.
+ * Used by client components (dashboard) to fetch chart data.
+ * 
+ * Architecture:
+ * - Client components (VisualizationPanel) → call this API endpoint
+ * - This endpoint → calls @/lib/assistant-functions (canonical data)
+ * - This endpoint → calls @/lib/visualization-functions (canonical charts)
+ * - Chat tools → directly call the same canonical functions
+ * 
+ * This ensures Dashboard and Chat always show identical data!
+ * 
+ * Response format:
+ * {
+ *   chartConfig: ChartConfig (for rendering),
+ *   rawData: underlying aggregates (for explanations/tables),
+ *   params: { type, month?, months?, userId, generatedAt }
+ * }
  * 
  * Chart types:
  * - spending-trend: Monthly spending line chart
  * - category-breakdown: Category pie chart
  * - income-vs-expenses: Income/expense bar chart
+ * - cash-flow: Cash flow sankey diagram
+ * 
+ * Note: Server components can import assistant-functions directly without using this API.
  */
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const userId = searchParams.get('userId') || 'default-user';
     const type = searchParams.get('type');
-    const months = parseInt(searchParams.get('months') || '6', 10);
+    const monthsParam = searchParams.get('months');
+    const months = monthsParam ? parseInt(monthsParam, 10) : null;
     const monthFilter = searchParams.get('month'); // Optional: specific month filter (YYYY-MM)
 
     if (!type) {
@@ -36,30 +64,83 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Build time period params (assistant functions handle defaults)
+    const timePeriodParams: { month?: string; months?: number } = {};
+    if (monthFilter) {
+      timePeriodParams.month = monthFilter;
+    } else if (months !== null) {
+      timePeriodParams.months = months;
+    }
+    // If neither specified, assistant functions default to current month
+    
+    // Build params object for reproducibility
+    const params: any = {
+      type,
+      userId,
+      generatedAt: new Date().toISOString(),
+      ...timePeriodParams,
+    };
+
     let chartConfig: ChartConfig;
+    let rawData: any;
 
     switch (type) {
       case 'spending-trend': {
-        const data = await getMonthlySpendingTrend(userId, months, monthFilter || undefined);
-        chartConfig = createSpendingTrendChart(data);
+        // Call canonical assistant function
+        rawData = await getMonthlySpendingTrend(userId, timePeriodParams);
+        // Transform and create chart using pure visualization function
+        const chartData = transformMonthlySpendingToChartData(rawData);
+        chartConfig = getLineChart(chartData, {
+          title: 'Monthly Spending Trend',
+          description: 'Your spending over time',
+          currency: true,
+        });
         break;
       }
 
       case 'category-breakdown': {
-        const data = await getCategoryBreakdown(userId, months, monthFilter || undefined);
-        chartConfig = createCategoryBreakdownChart(data);
+        // Call canonical assistant function
+        console.log('[DASHBOARD category-breakdown] Calling with:', { userId, timePeriodParams });
+        rawData = await getCategoryBreakdown(userId, timePeriodParams);
+        console.log('[DASHBOARD category-breakdown] Result count:', rawData?.length);
+        const foodResult = rawData?.find((c: any) => c.category?.toLowerCase().includes('food'));
+        console.log('[DASHBOARD category-breakdown] Food & Dining result:', foodResult);
+        // Transform and create chart using pure visualization function
+        const chartData = transformCategoryBreakdownToChartData(rawData);
+        chartConfig = getPieChart(chartData, {
+          title: 'Spending by Category',
+          description: 'Breakdown of expenses by category',
+          currency: true,
+        });
         break;
       }
 
       case 'income-vs-expenses': {
-        const data = await getIncomeVsExpenses(userId, months, monthFilter || undefined);
-        chartConfig = createIncomeVsExpensesChart(data);
+        // Call canonical assistant function
+        rawData = await getIncomeVsExpenses(userId, timePeriodParams);
+        // Transform and create chart using pure visualization function
+        const chartData = transformIncomeVsExpensesToChartData(rawData);
+        chartConfig = getBarChart(chartData, {
+          title: 'Income vs Expenses',
+          description: 'Comparison of income and expenses',
+          currency: true,
+        });
         break;
       }
 
       case 'cash-flow': {
-        const data = await getCashFlowSankeyData(userId, months, monthFilter || undefined);
-        chartConfig = createCashFlowChart(data);
+        // Call canonical assistant function
+        rawData = await getCashFlowData(userId, timePeriodParams);
+        // Create chart using pure visualization function
+        chartConfig = getSankeyChart(
+          rawData.nodes || [],
+          rawData.links || [],
+          {
+            title: 'Cash Flow',
+            description: 'Flow of money through your accounts',
+            currency: true,
+          }
+        );
         break;
       }
 
@@ -70,7 +151,12 @@ export async function GET(request: NextRequest) {
         );
     }
 
-    return NextResponse.json(chartConfig);
+    // Return unified envelope
+    return NextResponse.json({
+      chartConfig,
+      rawData,
+      params,
+    });
 
   } catch (error: any) {
     console.error('Error generating chart data:', error);
