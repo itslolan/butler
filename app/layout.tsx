@@ -1,7 +1,14 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import "./globals.css";
 import { AuthProvider } from "@/components/AuthProvider";
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
+  themeColor: '#2563eb',
+};
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'https://adphex.com'),
@@ -10,11 +17,6 @@ export const metadata: Metadata = {
     template: "%s | Adphex"
   },
   description: "Get trusted answers about your finances with AI-powered analysis. Upload bank statements, track expenses, and get personalized financial insights. Save more money with Adphex's intelligent duplicate detection, automated categorization, and interactive financial dashboards.",
-  viewport: {
-    width: 'device-width',
-    initialScale: 1,
-    maximumScale: 5,
-  },
   keywords: [
     "financial assistant",
     "expense tracker",
@@ -73,9 +75,6 @@ export const metadata: Metadata = {
     // Add your verification codes here when available
     // google: "your-google-verification-code",
     // yandex: "your-yandex-verification-code",
-  },
-  alternates: {
-    canonical: "/",
   },
   category: "Finance",
   manifest: "/manifest.json",

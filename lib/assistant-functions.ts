@@ -21,9 +21,11 @@ import {
 import {
   getBudgetData,
   analyzeBudgetHealth,
-  getFixedExpensesByCategory as getFixedExpensesByCategoryFromBudget,
 } from './budget-utils';
-import { getCachedFixedExpenses } from './fixed-expenses';
+import {
+  getCachedFixedExpenses,
+  getFixedExpensesByCategory as getFixedExpensesByCategoryFromBudget,
+} from './fixed-expenses';
 
 /**
  * Common time period parameters for all functions
@@ -281,6 +283,15 @@ export async function getFixedExpenses(
   from_cache: boolean;
 }> {
   const data = await getCachedFixedExpenses(userId);
+  if (!data) {
+    return {
+      total: 0,
+      expenses: [],
+      subscriptions: [],
+      calculated_at: new Date().toISOString(),
+      from_cache: false,
+    };
+  }
   
   // Separate subscriptions from other fixed expenses
   const subscriptions = data.expenses.filter(e => e.is_subscription === true);

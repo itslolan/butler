@@ -36,11 +36,22 @@ import {
   getSankeyChart,
 } from '@/lib/visualization-functions';
 
-// Initialize Supabase client for direct database operations
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+/**
+ * Lazy Supabase admin client.
+ *
+ * Next.js may import/trace route files during build ("Collecting page data").
+ * Avoid creating clients (or throwing) at module load time.
+ */
+let _supabaseAdmin: ReturnType<typeof createClient<any>> | null = null;
+function getSupabaseAdmin() {
+  if (_supabaseAdmin) return _supabaseAdmin;
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url) throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL environment variable');
+  if (!key) throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY environment variable');
+  _supabaseAdmin = createClient<any>(url, key);
+  return _supabaseAdmin;
+}
 
 export const runtime = 'nodejs';
 
@@ -342,6 +353,7 @@ async function executeToolCall(name: string, args: any, effectiveUserId: string,
       // Call resolve logic directly instead of making HTTP request
       // This avoids URL construction issues in different deployment environments
       try {
+        const supabase = getSupabaseAdmin();
         const { updateTransactionType } = await import('@/lib/db-tools');
         const todoType = args.todo_type;
         const todoId = args.todo_id;
