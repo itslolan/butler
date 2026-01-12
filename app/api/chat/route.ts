@@ -19,6 +19,22 @@ import {
 } from '@/lib/db-tools';
 import { getBudgetData, analyzeBudgetHealth, adjustBudgetAllocations } from '@/lib/budget-utils';
 import { createClient } from '@supabase/supabase-js';
+import {
+  getCategoryBreakdown as getAssistantCategoryBreakdown,
+  getMonthlySpendingTrend as getAssistantMonthlySpending,
+  getIncomeVsExpenses as getAssistantIncomeVsExpenses,
+  getCashFlowData as getAssistantCashFlow,
+  getCurrentBudget as getAssistantCurrentBudget,
+  getBudgetHealthAnalysis as getAssistantBudgetHealth,
+  getFixedExpenses as getAssistantFixedExpenses,
+} from '@/lib/assistant-functions';
+import {
+  getPieChart,
+  getLineChart,
+  getBarChart,
+  getAreaChart,
+  getSankeyChart,
+} from '@/lib/visualization-functions';
 
 // Initialize Supabase client for direct database operations
 const supabase = createClient(
@@ -513,7 +529,7 @@ async function executeToolCall(name: string, args: any, effectiveUserId: string,
         params
       );
       console.log('[CHAT get_category_breakdown] Result count:', functionResult?.length);
-      const foodResult = functionResult?.find((c: any) => c.category?.toLowerCase().includes('food'));
+      const foodResult = functionResult?.find((cat: any) => cat.category?.toLowerCase().includes('food'));
       console.log('[CHAT get_category_breakdown] Food & Dining result:', foodResult);
     } else if (name === 'get_monthly_spending_trend') {
       // Call canonical assistant function
@@ -536,7 +552,7 @@ async function executeToolCall(name: string, args: any, effectiveUserId: string,
         totalSpent: analysis.totalSpent,
         utilizationPercentage: Math.round(analysis.utilizationPercentage),
         firstCategoryOverBudget: analysis.firstCategoryOverBudget,
-        overspentCategories: analysis.overspentCategories.map(cat => ({
+        overspentCategories: analysis.overspentCategories.map((cat: any) => ({
           name: cat.name,
           budgeted: cat.budgeted,
           spent: cat.spent,
