@@ -15,6 +15,7 @@ import TodoButton from '@/components/TodoButton';
 import TodoList from '@/components/TodoList';
 import OnboardingPanels from '@/components/OnboardingPanels';
 import SubscriptionsPanel from '@/components/SubscriptionsPanel';
+import DashboardWelcomeSummary from '@/components/DashboardWelcomeSummary';
 
 export default function Home() {
   const { user, loading } = useAuth();
@@ -308,6 +309,13 @@ export default function Home() {
                   </div>
                 </div>
               </div>
+
+              {/* Welcome Summary (cached, regeneratable) */}
+              <DashboardWelcomeSummary
+                userId={user?.id || 'default-user'}
+                displayName={(user?.user_metadata as any)?.full_name || user?.email || null}
+                refreshTrigger={chartRefreshKey}
+              />
               
               {/* Todo List - Prominent placement above charts */}
               <TodoList 

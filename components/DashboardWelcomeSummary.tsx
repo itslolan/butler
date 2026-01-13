@@ -1,0 +1,229 @@
+'use client';
+
+import { useCallback, useEffect, useMemo, useState } from 'react';
+
+type Availability = {
+  startMonth: string | null; // YYYY-MM
+  endMonth: string | null;   // YYYY-MM
+  missingMonths: string[];   // YYYY-MM
+};
+
+type WelcomeSummaryResponse = {
+  summaryText: string;
+  fromCache: boolean;
+  generatedAt: string | null;
+  availability: Availability;
+  availabilityOneLiner: string;
+  error?: string;
+};
+
+function formatMonth(month: string): string {
+  const [y, m] = month.split('-').map(Number);
+  const d = new Date(Date.UTC(y, m - 1, 1));
+  return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+}
+
+function displayNameFallback(displayName?: string | null) {
+  const trimmed = (displayName || '').trim();
+  if (!trimmed) return null;
+  // Keep just first token for a tight greeting
+  return trimmed.split(/\s+/)[0];
+}
+
+export default function DashboardWelcomeSummary({
+  userId,
+  displayName,
+  refreshTrigger,
+}: {
+  userId: string;
+  displayName?: string | null;
+  refreshTrigger?: number;
+}) {
+  const [data, setData] = useState<WelcomeSummaryResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [regenerating, setRegenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const name = useMemo(() => displayNameFallback(displayName), [displayName]);
+
+  const fetchSummary = useCallback(async (force: boolean) => {
+    setError(null);
+    const qs = new URLSearchParams({
+      userId,
+      ...(force ? { force: '1' } : {}),
+      _ts: String(Date.now()),
+    });
+    const res = await fetch(`/api/dashboard/welcome-summary?${qs.toString()}`, {
+      cache: 'no-store',
+      headers: { 'Cache-Control': 'no-cache' },
+    });
+    const body: WelcomeSummaryResponse = await res.json().catch(() => ({} as any));
+    if (!res.ok) {
+      throw new Error(body?.error || `HTTP ${res.status}`);
+    }
+    setData(body);
+  }, [userId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoading(true);
+        await fetchSummary(false);
+      } catch (e: any) {
+        if (!cancelled) setError(e?.message || 'Failed to load summary');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchSummary, refreshTrigger]);
+
+  const onRegenerate = async () => {
+    try {
+      setRegenerating(true);
+      await fetchSummary(true);
+    } catch (e: any) {
+      setError(e?.message || 'Failed to regenerate summary');
+    } finally {
+      setRegenerating(false);
+    }
+  };
+
+  const availability = data?.availability;
+  const missingMonths = availability?.missingMonths || [];
+  const hasGaps = missingMonths.length > 0;
+
+  return (
+    <div className="bg-white dark:bg-gray-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+      <div className="p-5 sm:p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              {name ? `Welcome back, ${name}` : 'Welcome back'}
+            </div>
+            <div className="mt-2 text-lg sm:text-xl font-semibold leading-snug text-slate-900 dark:text-white">
+              {loading ? (
+                <div className="space-y-2">
+                  <div className="h-5 w-11/12 bg-slate-100 dark:bg-slate-800 rounded animate-pulse" />
+                  <div className="h-5 w-9/12 bg-slate-100 dark:bg-slate-800 rounded animate-pulse" />
+                </div>
+              ) : error ? (
+                <span className="text-red-600 dark:text-red-400">
+                  {error}
+                </span>
+              ) : (
+                data?.summaryText || 'Your dashboard summary will appear here once we have data.'
+              )}
+            </div>
+          </div>
+
+          <button
+            onClick={onRegenerate}
+            disabled={loading || regenerating}
+            aria-label="Regenerate summary"
+            title="Regenerate summary"
+            className="shrink-0 inline-flex items-center justify-center w-10 h-10 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-gray-900 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <svg
+              className={`w-5 h-5 text-slate-700 dark:text-slate-200 ${regenerating ? 'animate-spin' : ''}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M4 4v6h6M20 20v-6h-6M5.5 18.5A8 8 0 0018.5 5.5"
+              />
+            </svg>
+          </button>
+        </div>
+
+        <div className="mt-4">
+          <details className="group">
+            <summary className="cursor-pointer list-none rounded-xl px-3 py-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 text-sm text-slate-700 dark:text-slate-300 flex items-center justify-between gap-3 hover:bg-slate-100/60 dark:hover:bg-slate-800 transition-colors">
+              <span className="min-w-0 truncate">
+                {data?.availabilityOneLiner || 'Data availability'}
+              </span>
+              <span className="inline-flex items-center gap-2 shrink-0">
+                {hasGaps && (
+                  <span className="text-xs font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-full px-2 py-0.5">
+                    Gaps detected
+                  </span>
+                )}
+                <svg
+                  className="w-4 h-4 text-slate-500 dark:text-slate-400 transition-transform group-open:rotate-180"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </span>
+            </summary>
+
+            <div className="mt-3 px-1 text-sm text-slate-600 dark:text-slate-300">
+              {!availability?.startMonth || !availability?.endMonth ? (
+                <div className="text-slate-600 dark:text-slate-300">
+                  No transactions found yet. Upload a statement or connect an account to populate your dashboard.
+                </div>
+              ) : (
+                <>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium text-slate-900 dark:text-white">Range:</span>
+                    <span className="text-slate-700 dark:text-slate-300">
+                      {formatMonth(availability.startMonth)} → {formatMonth(availability.endMonth)}
+                    </span>
+                    {data?.generatedAt && (
+                      <span className="text-xs text-slate-500 dark:text-slate-400">
+                        • summary {data.fromCache ? 'cached' : 'generated'} {new Date(data.generatedAt).toLocaleString()}
+                      </span>
+                    )}
+                  </div>
+
+                  {hasGaps ? (
+                    <div className="mt-3">
+                      <div className="font-medium text-slate-900 dark:text-white">
+                        Missing months (no transactions found):
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {missingMonths.slice(0, 18).map((m) => (
+                          <span
+                            key={m}
+                            className="text-xs font-semibold text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-full px-2 py-0.5"
+                          >
+                            {formatMonth(m)}
+                          </span>
+                        ))}
+                        {missingMonths.length > 18 && (
+                          <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full px-2 py-0.5">
+                            +{missingMonths.length - 18} more
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                        These gaps usually mean statements/syncs for those periods haven’t been uploaded yet.
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                      No gaps detected in this range.
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </details>
+        </div>
+      </div>
+
+      {/* Subtle emphasis bar */}
+      <div className="h-1.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600" />
+    </div>
+  );
+}
+

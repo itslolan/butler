@@ -37,6 +37,14 @@ export interface TransactionFilter {
   maxAmount?: number;
 }
 
+export interface DashboardWelcomeSummaryCache {
+  user_id: string;
+  summary_text: string;
+  model?: string | null;
+  generated_at?: string;
+  updated_at?: string;
+}
+
 /**
  * Search documents with optional filters
  */
@@ -235,6 +243,65 @@ export async function insertTransactions(transactions: Transaction[]) {
   }
 
   return data || [];
+}
+
+/**
+ * Get cached LLM-generated dashboard welcome summary (if any).
+ * Stored in dashboard_welcome_summaries to avoid expensive LLM calls on every load.
+ */
+export async function getDashboardWelcomeSummaryCache(
+  userId: string
+): Promise<DashboardWelcomeSummaryCache | null> {
+  try {
+    const { data, error } = await supabase
+      .from('dashboard_welcome_summaries')
+      .select('user_id, summary_text, model, generated_at, updated_at')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error) {
+      // If table isn't migrated yet, fail gracefully.
+      if ((error as any).code === '42P01') return null;
+      throw new Error(`Failed to get welcome summary cache: ${error.message}`);
+    }
+
+    return (data as any) || null;
+  } catch (e: any) {
+    // Avoid crashing the whole dashboard if cache layer is unavailable.
+    console.warn('[getDashboardWelcomeSummaryCache] Falling back to null:', e?.message || e);
+    return null;
+  }
+}
+
+/**
+ * Upsert cached LLM-generated dashboard welcome summary.
+ */
+export async function upsertDashboardWelcomeSummaryCache(
+  userId: string,
+  summaryText: string,
+  model?: string | null
+): Promise<void> {
+  try {
+    const { error } = await supabase
+      .from('dashboard_welcome_summaries')
+      .upsert(
+        {
+          user_id: userId,
+          summary_text: summaryText,
+          model: model || null,
+          generated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id' }
+      );
+
+    if (error) {
+      // If table isn't migrated yet, fail gracefully.
+      if ((error as any).code === '42P01') return;
+      throw new Error(`Failed to upsert welcome summary cache: ${error.message}`);
+    }
+  } catch (e: any) {
+    console.warn('[upsertDashboardWelcomeSummaryCache] Cache write skipped:', e?.message || e);
+  }
 }
 
 /**
