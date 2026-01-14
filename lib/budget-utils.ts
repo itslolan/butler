@@ -1,4 +1,5 @@
 import { supabase, BudgetCategory, Budget } from './supabase';
+import { USER_PROVIDED_INCOME_MERCHANT } from './financial-figure-sources';
 
 // Default categories - aligned with AI categorizer output for consistency
 // These match the categories the LLM typically generates when categorizing transactions
@@ -160,6 +161,8 @@ async function fetchAllIncomeTransactionsInRange(
       .select('date, amount')
       .eq('user_id', userId)
       .eq('transaction_type', 'income')
+      // Exclude synthetic "user provided" income rows from median calculation.
+      .neq('merchant', USER_PROVIDED_INCOME_MERCHANT)
       .gte('date', startDate)
       .order('date', { ascending: true })
       .range(from, to);
@@ -584,6 +587,8 @@ export async function getIncomeForMonth(userId: string, month: string): Promise<
     .eq('user_id', userId)
     .gte('date', startDate)
     .lte('date', endDate)
+    // Exclude synthetic "user provided" income rows from derived income.
+    .neq('merchant', USER_PROVIDED_INCOME_MERCHANT)
     // Backward-compat: older ingestion paths stored rows without transaction_type.
     // Ingestion convention: positive = credits/deposits (income-like).
     .or('transaction_type.eq.income,and(transaction_type.is.null,amount.gt.0)');
@@ -608,7 +613,7 @@ export async function getUserProvidedIncome(userId: string, month: string): Prom
     .eq('user_id', userId)
     .eq('date', date)
     .eq('transaction_type', 'income')
-    .eq('merchant', 'User Provided Income')
+    .eq('merchant', USER_PROVIDED_INCOME_MERCHANT)
     .single();
 
   if (error) {
@@ -641,7 +646,7 @@ export async function saveUserProvidedIncome(
     .eq('user_id', userId)
     .eq('date', date)
     .eq('transaction_type', 'income')
-    .eq('merchant', 'User Provided Income')
+    .eq('merchant', USER_PROVIDED_INCOME_MERCHANT)
     .single();
 
   if (checkError && checkError.code !== 'PGRST116') {
@@ -666,7 +671,7 @@ export async function saveUserProvidedIncome(
       .insert({
         user_id: userId,
         date,
-        merchant: 'User Provided Income',
+        merchant: USER_PROVIDED_INCOME_MERCHANT,
         amount,
         transaction_type: 'income',
         category: 'Income',
@@ -688,6 +693,8 @@ export async function findLastMonthWithIncome(userId: string): Promise<string | 
     .from('transactions')
     .select('date')
     .eq('user_id', userId)
+    // Exclude synthetic "user provided" income rows from derived income discovery.
+    .neq('merchant', USER_PROVIDED_INCOME_MERCHANT)
     .or('transaction_type.eq.income,and(transaction_type.is.null,amount.gt.0)')
     .order('date', { ascending: false })
     .limit(1);

@@ -15,6 +15,7 @@ import {
   ProcessingJob,
   ProcessingJobProgress,
 } from './supabase';
+import { isUserProvidedIncomeTransaction } from './financial-figure-sources';
 
 export interface DocumentFilter {
   documentType?: string;
@@ -1263,6 +1264,9 @@ export async function getIncomeVsExpenses(
   if (deduplicatedData && deduplicatedData.length > 0) {
     // Aggregate transactions
     for (const txn of deduplicatedData) {
+      // Exclude synthetic "user provided" income rows from derived charts/metrics.
+      if (isUserProvidedIncomeTransaction(txn as any)) continue;
+
       const date = new Date(txn.date);
       const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
       
@@ -1368,6 +1372,9 @@ export async function getCashFlowSankeyData(
   let totalExpenses = 0;
 
   for (const txn of deduplicatedData) {
+    // Exclude synthetic "user provided" income rows from derived charts/metrics.
+    if (isUserProvidedIncomeTransaction(txn as any)) continue;
+
     const amount = Number(txn.amount);
     
     // Determine type (income or expense)
