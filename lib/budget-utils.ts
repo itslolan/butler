@@ -1013,6 +1013,9 @@ export async function analyzeBudgetHealth(userId: string, month: string): Promis
     spent: number;
     overspent: number;
     firstOverspentDate?: string;
+    transactionCount: number;
+    largeTransactionsTotal: number;
+    largeTransactionsCount: number;
     largeTransactions: Array<{
       date: string;
       merchant: string;
