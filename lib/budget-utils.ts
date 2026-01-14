@@ -968,6 +968,9 @@ export async function analyzeBudgetHealth(userId: string, month: string): Promis
     spent: number;
     overspent: number;
     firstOverspentDate?: string;
+    transactionCount: number;
+    largeTransactionsTotal: number;
+    largeTransactionsCount: number;
     largeTransactions: Array<{
       date: string;
       merchant: string;
@@ -985,7 +988,8 @@ export async function analyzeBudgetHealth(userId: string, month: string): Promis
   
   // Get all transactions for the month to analyze patterns
   const startDate = `${month}-01`;
-  const endDate = `${month}-31`;
+  const [year, monthNum] = month.split('-').map(Number);
+  const endDate = new Date(year, monthNum, 0).toISOString().split('T')[0]; // last day of month
   
   const { data: transactions, error: txnError } = await supabase
     .from('transactions')
@@ -993,7 +997,9 @@ export async function analyzeBudgetHealth(userId: string, month: string): Promis
     .eq('user_id', userId)
     .gte('date', startDate)
     .lte('date', endDate)
-    .eq('transaction_type', 'expense')
+    // Backward-compat: older ingestion paths stored rows without transaction_type.
+    // Ingestion convention: negative = debits/charges (expense-like).
+    .or('transaction_type.in.(expense,other),and(transaction_type.is.null,amount.lt.0)')
     .order('date', { ascending: true });
   
   if (txnError) {
@@ -1050,6 +1056,7 @@ export async function analyzeBudgetHealth(userId: string, month: string): Promis
         .filter(t => t.amount >= largeThreshold)
         .sort((a, b) => b.amount - a.amount)
         .slice(0, 5);
+      const largeTransactionsTotal = largeTransactions.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
       
       // Find when this category first went over budget
       let runningTotal = 0;
@@ -1074,6 +1081,9 @@ export async function analyzeBudgetHealth(userId: string, month: string): Promis
         spent: spentAmount,
         overspent,
         firstOverspentDate,
+        transactionCount: categoryTransactions.length,
+        largeTransactionsTotal,
+        largeTransactionsCount: largeTransactions.length,
         largeTransactions,
       });
     }

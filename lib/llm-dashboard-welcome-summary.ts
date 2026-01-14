@@ -5,6 +5,7 @@ const GEMINI_MODEL = 'gemini-2.0-flash-exp';
 
 export interface WelcomeSummaryMetrics {
   currentMonth: string; // YYYY-MM
+  lastMonth?: string; // YYYY-MM
   incomeVsExpensesLast3?: Array<{ month: string; income: number; expenses: number }>;
   currentBudget?: {
     income: number;
@@ -13,6 +14,18 @@ export interface WelcomeSummaryMetrics {
     readyToAssign: number;
     overspentCount: number;
   };
+  budgetIsSet?: boolean;
+  categoryBreakdownCurrent?: Array<{ category: string; total: number; count: number }>;
+  categoryBreakdownLastMonth?: Array<{ category: string; total: number; count: number }>;
+  overspentCategories?: Array<{
+    name: string;
+    budgeted: number;
+    spent: number;
+    overspent: number;
+    transactionCount: number;
+    largeTransactionsTotal: number;
+    largeTransactionsCount: number;
+  }>;
 }
 
 // Lazy init (avoid throwing during build trace)
@@ -40,6 +53,50 @@ function safeNum(n: any): number {
   return Number.isFinite(x) ? x : 0;
 }
 
+function formatUsd0(n: number): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(Math.round(n));
+}
+
+function clamp(n: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, n));
+}
+
+function getTop<T>(items: T[], n: number, score: (x: T) => number): T[] {
+  return [...items].sort((a, b) => score(b) - score(a)).slice(0, n);
+}
+
+function classifyOverspendPattern(cat: {
+  spent: number;
+  transactionCount: number;
+  largeTransactionsTotal: number;
+  largeTransactionsCount: number;
+}): 'few_large' | 'many_small' | 'mixed' {
+  const spent = Math.max(0, safeNum(cat.spent));
+  const txCount = Math.max(0, Math.floor(safeNum(cat.transactionCount)));
+  const largeTotal = Math.max(0, safeNum(cat.largeTransactionsTotal));
+  const largeCount = Math.max(0, Math.floor(safeNum(cat.largeTransactionsCount)));
+
+  if (spent <= 0) return 'mixed';
+
+  const largeShare = largeTotal / spent;
+  const looksFewLarge =
+    (largeCount > 0 && largeShare >= 0.5) ||
+    (largeCount > 0 && largeCount <= 3 && largeShare >= 0.35);
+
+  const looksManySmall =
+    (txCount >= 10 && largeShare <= 0.2) ||
+    (txCount >= 14 && largeCount === 0);
+
+  if (looksFewLarge && !looksManySmall) return 'few_large';
+  if (looksManySmall && !looksFewLarge) return 'many_small';
+  return 'mixed';
+}
+
 export function generateWelcomeSummaryFallback(metrics: WelcomeSummaryMetrics): string {
   const cur = metrics.currentBudget;
   const ive = metrics.incomeVsExpensesLast3 || [];
@@ -49,21 +106,89 @@ export function generateWelcomeSummaryFallback(metrics: WelcomeSummaryMetrics): 
   const savings = income - expenses;
 
   const parts: string[] = [];
-  if (income > 0 && expenses > 0) {
-    const rate = income > 0 ? Math.round((savings / income) * 100) : 0;
-    parts.push(`This month you’re spending about $${expenses.toFixed(0)} with ~$${Math.max(0, savings).toFixed(0)} left over (${Math.max(0, rate)}% savings rate).`);
-  } else if (expenses > 0) {
-    parts.push(`This month you’ve spent about $${expenses.toFixed(0)} so far — keep an eye on the categories that are creeping up.`);
-  } else {
-    parts.push(`Upload more transaction data to unlock your personalized spending + budget snapshot.`);
+
+  const budgetIsSet = Boolean(metrics.budgetIsSet ?? (cur && safeNum(cur.totalBudgeted) > 0));
+  const overspent = (metrics.overspentCategories || []).filter(c => safeNum(c.overspent) > 0);
+
+  // If no spending data at all, keep it simple.
+  const hasAnySpend =
+    expenses > 0 ||
+    (metrics.categoryBreakdownCurrent || []).some(c => safeNum(c.total) > 0);
+  if (!hasAnySpend) {
+    return `Upload more transaction data to unlock your personalized spending snapshot.`;
   }
 
-  if (cur) {
-    if (cur.overspentCount > 0) {
-      parts.push(`${cur.overspentCount} budget categor${cur.overspentCount === 1 ? 'y is' : 'ies are'} currently overspent — a quick rebalance can fix it.`);
-    } else if (cur.totalBudgeted > 0) {
-      parts.push(`Budgets look stable — you have $${safeNum(cur.readyToAssign).toFixed(0)} ready to assign.`);
+  // 1) Budget set: focus ONLY on categories that breached budget.
+  if (budgetIsSet) {
+    if (overspent.length === 0) {
+      parts.push(`No categories have breached your budget yet this month — nice work staying on track.`);
+      return parts.join(' ');
     }
+
+    const top = getTop(overspent, 3, c => safeNum(c.overspent));
+    const lines = top.map(c => {
+      const name = c.name;
+      const spentStr = formatUsd0(safeNum(c.spent));
+      const budgetStr = formatUsd0(safeNum(c.budgeted));
+      const overStr = formatUsd0(safeNum(c.overspent));
+
+      const pattern = classifyOverspendPattern({
+        spent: safeNum(c.spent),
+        transactionCount: safeNum(c.transactionCount),
+        largeTransactionsTotal: safeNum(c.largeTransactionsTotal),
+        largeTransactionsCount: safeNum(c.largeTransactionsCount),
+      });
+
+      const txCount = Math.max(0, Math.floor(safeNum(c.transactionCount)));
+      const largeCount = Math.max(0, Math.floor(safeNum(c.largeTransactionsCount)));
+      const largeTotal = safeNum(c.largeTransactionsTotal);
+      const largeSharePct = spentStr && safeNum(c.spent) > 0 ? Math.round((largeTotal / safeNum(c.spent)) * 100) : 0;
+
+      let why = '';
+      if (pattern === 'few_large') {
+        why =
+          largeCount > 0
+            ? `mostly from ${largeCount} larger purchase${largeCount === 1 ? '' : 's'} (~${clamp(largeSharePct, 0, 100)}% of the category spend).`
+            : `mostly from a few larger purchases.`;
+      } else if (pattern === 'many_small') {
+        why = txCount > 0 ? `mostly from many smaller charges (${txCount} transactions).` : `mostly from many smaller charges.`;
+      } else {
+        why = `a mix of bigger and smaller purchases.`;
+      }
+
+      return `${name} is over budget: ${spentStr} spent vs ${budgetStr} budgeted (${overStr} over) — ${why}`;
+    });
+
+    parts.push(lines.join(' '));
+    return parts.join(' ');
+  }
+
+  // 2) No budget set: compare current vs last month for top categories.
+  const curCats = (metrics.categoryBreakdownCurrent || []).filter(c => safeNum(c.total) > 0);
+  const lastCats = metrics.categoryBreakdownLastMonth || [];
+  const lastByName = new Map(lastCats.map(c => [c.category, safeNum(c.total)]));
+
+  const topCur = getTop(curCats, 3, c => safeNum(c.total));
+  if (topCur.length === 0) {
+    parts.push(`This month you’ve spent about ${formatUsd0(expenses)} so far — set up a budget to see which categories are trending up.`);
+    return parts.join(' ');
+  }
+
+  const increased: string[] = [];
+  const comparisons = topCur.map(c => {
+    const name = c.category;
+    const curTotal = safeNum(c.total);
+    const prevTotal = safeNum(lastByName.get(name) ?? 0);
+    const delta = curTotal - prevTotal;
+    const direction = delta > 0 ? 'up' : delta < 0 ? 'down' : 'flat';
+    const deltaAbs = Math.abs(delta);
+    if (delta > 0) increased.push(name);
+    return `${name}: ${formatUsd0(curTotal)} this month, ${direction} ${formatUsd0(deltaAbs)} vs last month (${formatUsd0(prevTotal)}).`;
+  });
+
+  parts.push(comparisons.join(' '));
+  if (increased.length > 0) {
+    parts.push(`A few categories are trending up — set up your budget for this month to keep those increases in check.`);
   }
 
   return parts.join(' ');
