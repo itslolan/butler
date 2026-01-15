@@ -2,13 +2,12 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 
-export interface FixedExpenseTxn {
+export interface FixedExpenseItem {
   id: string;
   merchant: string;
-  amount: number;
-  date: string;
-  category?: string | null;
-  description?: string | null;
+  monthly_amount: number;
+  mtd_amount: number;
+  month_dates: string[]; // YYYY-MM-DD dates in current month (may be empty if upcoming)
   currency?: string | null;
   is_maybe?: boolean;
   fixed_expense_source?: string | null;
@@ -17,8 +16,10 @@ export interface FixedExpenseTxn {
 }
 
 export interface FixedExpensesData {
-  total: number;
-  expenses: FixedExpenseTxn[];
+  month: string; // YYYY-MM
+  monthly_total: number; // estimated monthly total from latest month of txns per merchant
+  mtd_total: number; // how much has occurred so far this month
+  expenses: FixedExpenseItem[];
   calculated_at: string;
   from_cache: boolean;
 }
@@ -44,6 +45,13 @@ function formatShortDate(dateStr: string): string {
   const d = new Date(dateStr);
   if (!Number.isFinite(d.getTime())) return dateStr;
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function buildDatesIndicator(dates: string[]): { short: string; full: string } {
+  const formatted = (dates || []).filter(Boolean).map(formatShortDate);
+  const full = formatted.length > 0 ? `on ${formatted.join(', ')}` : '';
+  // Short version is same as full; UI will truncate with CSS.
+  return { short: full, full };
 }
 
 export default function FixedExpensesPanel({
@@ -137,7 +145,7 @@ export default function FixedExpensesPanel({
   }, []);
 
   // Handle confirming a "maybe" transaction as fixed
-  const handleConfirmFixedExpense = useCallback(async (expense: FixedExpenseTxn, index: number) => {
+  const handleConfirmFixedExpense = useCallback(async (expense: FixedExpenseItem, index: number) => {
     if (!expense.id) return;
 
     setConfirmingIndex(index);
@@ -151,8 +159,7 @@ export default function FixedExpensesPanel({
         body: JSON.stringify({
           transaction_id: expense.id,
           merchant_name: expense.merchant,
-          amount: expense.amount,
-          date: expense.date,
+          amount: expense.monthly_amount,
           action: 'confirm',
         }),
       });
@@ -183,7 +190,7 @@ export default function FixedExpensesPanel({
   }, []);
 
   // Handle rejecting an expense as NOT fixed
-  const handleRejectFixedExpense = useCallback(async (expense: FixedExpenseTxn, index: number) => {
+  const handleRejectFixedExpense = useCallback(async (expense: FixedExpenseItem, index: number) => {
     if (!expense.id) return;
 
     setConfirmingIndex(index);
@@ -197,8 +204,7 @@ export default function FixedExpensesPanel({
         body: JSON.stringify({
           transaction_id: expense.id,
           merchant_name: expense.merchant,
-          amount: expense.amount,
-          date: expense.date,
+          amount: expense.monthly_amount,
           action: 'reject',
         }),
       });
@@ -211,12 +217,14 @@ export default function FixedExpensesPanel({
       setData(current => {
         if (!current) return null;
         const newExpenses = current.expenses.filter(e => e.id !== expense.id);
-        const newTotal = current.total; // keep server total; next fetch will recompute accurately
+        const newMonthlyTotal = newExpenses.reduce((sum, e) => sum + (e.monthly_amount || 0), 0);
+        const newMtdTotal = newExpenses.reduce((sum, e) => sum + (e.mtd_amount || 0), 0);
         
         return {
           ...current,
           expenses: newExpenses,
-          total: newTotal
+          monthly_total: newMonthlyTotal,
+          mtd_total: newMtdTotal,
         };
       });
       
@@ -327,7 +335,7 @@ export default function FixedExpensesPanel({
               Fixed Expenses
             </h4>
             <span className="text-[10px] text-slate-400 dark:text-slate-500">
-              ({data.expenses.length} transactions)
+              ({data.expenses.length} items)
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -351,13 +359,18 @@ export default function FixedExpensesPanel({
                 />
               </svg>
             </button>
-            <div className="text-right">
-              <span className="text-sm font-bold text-slate-900 dark:text-white">
-                {formatCurrency(data.total, currency)}
-              </span>
-              <span className="text-[10px] text-slate-400 dark:text-slate-500 ml-0.5">
-                MTD
-              </span>
+            <div className="text-right leading-tight">
+              <div className="flex items-baseline justify-end gap-1">
+                <span className="text-sm font-bold text-slate-900 dark:text-white">
+                  {formatCurrency(data.monthly_total, currency)}
+                </span>
+                <span className="text-[10px] text-slate-400 dark:text-slate-500">
+                  /mo
+                </span>
+              </div>
+              <div className="text-[10px] text-slate-400 dark:text-slate-500">
+                {formatCurrency(data.mtd_total, currency)} so far
+              </div>
             </div>
           </div>
         </div>
@@ -368,7 +381,7 @@ export default function FixedExpensesPanel({
         <div className="space-y-1">
           {displayedExpenses.map((expense, index) => (
             <div 
-              key={expense.id || `${expense.merchant}-${expense.date}-${index}`}
+              key={expense.id || `${expense.merchant}-${index}`}
               className={`relative flex items-center justify-between h-10 px-2 border-b border-slate-50 dark:border-slate-800/50 last:border-b-0 ${
                 expense.is_maybe 
                   ? 'bg-amber-50/50 dark:bg-amber-900/10 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors' 
@@ -386,9 +399,18 @@ export default function FixedExpensesPanel({
                     maybe
                   </span>
                 )}
-                <span className="text-[10px] text-slate-400 dark:text-slate-500 shrink-0">
-                  {formatShortDate(expense.date)}
-                </span>
+                {expense.month_dates?.length ? (
+                  <span
+                    className="text-[10px] text-slate-400 dark:text-slate-500 shrink-0 max-w-[140px] truncate"
+                    title={buildDatesIndicator(expense.month_dates).full}
+                  >
+                    {buildDatesIndicator(expense.month_dates).short}
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-slate-400 dark:text-slate-500 shrink-0">
+                    later this month
+                  </span>
+                )}
               </div>
               <div className="flex items-center justify-end min-w-[80px]">
                 {hoveredIndex === index ? (
@@ -419,9 +441,14 @@ export default function FixedExpensesPanel({
                     </button>
                   </div>
                 ) : (
-                  <p className="text-xs font-semibold text-slate-900 dark:text-white shrink-0 text-right">
-                    {formatCurrency(expense.amount, currency)}
-                  </p>
+                  <div className="text-right">
+                    <p className="text-xs font-semibold text-slate-900 dark:text-white shrink-0">
+                      {formatCurrency(expense.monthly_amount, currency)}
+                    </p>
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500">
+                      {formatCurrency(expense.mtd_amount, currency)} so far
+                    </p>
+                  </div>
                 )}
               </div>
             </div>
