@@ -60,10 +60,28 @@ export default function BudgetPage() {
     categories: Array<{
       id: string;
       name: string;
+      superCategoryId: string;
       isCustom: boolean;
       budgeted: number;
       spent: number;
       available: number;
+    }>;
+    superCategories: Array<{
+      id: string;
+      name: string;
+      budgeted: number;
+      spent: number;
+      available: number;
+      isOverride: boolean;
+      categories: Array<{
+        id: string;
+        name: string;
+        superCategoryId: string;
+        isCustom: boolean;
+        budgeted: number;
+        spent: number;
+        available: number;
+      }>;
     }>;
   } | null>(null);
   
@@ -150,6 +168,7 @@ export default function BudgetPage() {
       totalBudgeted: anyData.totalBudgeted,
       readyToAssign: effectiveReadyToAssign,
       categories: anyData.categories,
+      superCategories: anyData.superCategories || [],
     });
 
     // Check if any categories have pre-filled suggested budgets (indicating unsaved changes)
@@ -212,36 +231,65 @@ export default function BudgetPage() {
     setShowQuestionnaire(false);
   };
 
-  const handleBudgetChange = useCallback((categoryId: string, newAmount: number) => {
+  const handleBudgetChange = useCallback((update: {
+    categories: Array<{
+      id: string;
+      name: string;
+      superCategoryId: string;
+      isCustom: boolean;
+      budgeted: number;
+      spent: number;
+      available: number;
+    }>;
+    superCategories: Array<{
+      id: string;
+      name: string;
+      budgeted: number;
+      spent: number;
+      available: number;
+      isOverride: boolean;
+      categories: Array<{
+        id: string;
+        name: string;
+        superCategoryId: string;
+        isCustom: boolean;
+        budgeted: number;
+        spent: number;
+        available: number;
+      }>;
+    }>;
+    totalBudgeted: number;
+    changedCategory?: { id: string; name: string; amount: number };
+    changedSuperCategory?: { id: string; name: string; amount: number };
+  }) => {
     if (!budgetData) return;
-
-    const updatedCategories = budgetData.categories.map(cat => {
-      if (cat.id === categoryId) {
-        return {
-          ...cat,
-          budgeted: newAmount,
-          available: newAmount - cat.spent,
-        };
-      }
-      return cat;
-    });
-
-    const newTotalBudgeted = updatedCategories.reduce((sum, c) => sum + c.budgeted, 0);
 
     setBudgetData({
       ...budgetData,
-      categories: updatedCategories,
-      totalBudgeted: newTotalBudgeted,
-      readyToAssign: budgetData.income - newTotalBudgeted,
+      categories: update.categories,
+      superCategories: update.superCategories,
+      totalBudgeted: update.totalBudgeted,
+      readyToAssign: budgetData.income - update.totalBudgeted,
     });
     
-    // Track this as a user-set budget (by category name for API)
-    const category = budgetData.categories.find(c => c.id === categoryId);
-    if (category) {
+    if (update.changedCategory) {
       setUserSetBudgets(prev => ({
         ...prev,
-        [category.name]: newAmount,
+        [update.changedCategory.name]: update.changedCategory.amount,
       }));
+    }
+
+    if (update.changedSuperCategory) {
+      const target = update.superCategories.find(sc => sc.id === update.changedSuperCategory?.id);
+      if (target) {
+        setUserSetBudgets(prev => {
+          const next = { ...prev };
+          target.categories.forEach(cat => {
+            delete next[cat.name];
+          });
+          return next;
+        });
+      }
     }
     
     setHasUnsavedChanges(true);
@@ -289,6 +337,12 @@ export default function BudgetPage() {
         categoryId: cat.id,
         amount: cat.budgeted,
       }));
+      const superBudgets = budgetData.superCategories
+        .filter(superCategory => superCategory.isOverride)
+        .map(superCategory => ({
+          superCategoryId: superCategory.id,
+          amount: superCategory.budgeted,
+        }));
 
       const res = await fetch('/api/budget', {
         method: 'POST',
@@ -297,6 +351,7 @@ export default function BudgetPage() {
           userId: user.id,
           month: selectedMonth,
           budgets,
+          superBudgets,
         }),
       });
 
@@ -375,11 +430,29 @@ export default function BudgetPage() {
           };
         });
 
-        const newTotalBudgeted = updatedCategories.reduce((sum, c) => sum + c.budgeted, 0);
+        const updatedSuperCategories = budgetData.superCategories.map(superCategory => {
+          const updatedChildren = superCategory.categories.map(cat => {
+            const updated = updatedCategories.find(updatedCat => updatedCat.id === cat.id);
+            return updated ? { ...cat, ...updated } : cat;
+          });
+          const budgeted = updatedChildren.reduce((sum, cat) => sum + cat.budgeted, 0);
+          const spent = updatedChildren.reduce((sum, cat) => sum + cat.spent, 0);
+          return {
+            ...superCategory,
+            categories: updatedChildren,
+            budgeted,
+            spent,
+            available: budgeted - spent,
+            isOverride: false,
+          };
+        });
+
+        const newTotalBudgeted = updatedSuperCategories.reduce((sum, c) => sum + c.budgeted, 0);
 
         setBudgetData({
           ...budgetData,
           categories: updatedCategories,
+          superCategories: updatedSuperCategories,
           totalBudgeted: newTotalBudgeted,
           readyToAssign: budgetData.income - newTotalBudgeted,
         });
@@ -414,11 +487,27 @@ export default function BudgetPage() {
       budgeted: 0,
       available: 0 - cat.spent, // Recalculate available based on 0 budget
     }));
+    const updatedSuperCategories = budgetData.superCategories.map(superCategory => {
+      const updatedChildren = superCategory.categories.map(cat => {
+        const updated = updatedCategories.find(updatedCat => updatedCat.id === cat.id);
+        return updated ? { ...cat, ...updated } : cat;
+      });
+      const spent = updatedChildren.reduce((sum, cat) => sum + cat.spent, 0);
+      return {
+        ...superCategory,
+        categories: updatedChildren,
+        budgeted: 0,
+        spent,
+        available: 0 - spent,
+        isOverride: false,
+      };
+    });
 
     // Optimistic update
     setBudgetData({
       ...budgetData,
       categories: updatedCategories,
+      superCategories: updatedSuperCategories,
       totalBudgeted: 0,
       readyToAssign: budgetData.income,
     });
@@ -439,6 +528,7 @@ export default function BudgetPage() {
           userId: user.id,
           month: selectedMonth,
           budgets,
+          superBudgets: [],
         }),
       });
     } catch (error) {

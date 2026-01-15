@@ -2,15 +2,21 @@ import { NextRequest, NextResponse } from 'next/server';
 import { 
   getBudgetData, 
   saveBudgets, 
+  saveSuperBudgets,
   hasBudgets,
+  hasBudgetCategories,
   hasTransactions,
   getMedianMonthlyIncome,
   getCategoriesWithTransactions,
   getMostRecentBudgetMonth,
-  getBudgetsForMonth,
+  getAllBudgetsForMonth,
+  getSuperBudgetsForMonth,
+  getBudgetSuperCategories,
   getHistoricalSpendingBreakdown,
   getCategoriesFromTransactions,
   syncTransactionCategoriesToBudget,
+  initializeBudgetCategories,
+  DEFAULT_MISC_SUPER_CATEGORY,
 } from '@/lib/budget-utils';
 import { getFixedExpensesByCategory } from '@/lib/fixed-expenses';
 
@@ -61,7 +67,13 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // First, ensure budget categories are synced with transaction categories
+    // Ensure default hierarchy exists before syncing transaction categories
+    const categoriesExist = await hasBudgetCategories(userId);
+    if (!categoriesExist) {
+      await initializeBudgetCategories(userId);
+    }
+
+    // Sync transaction categories (adds any new categories under Miscellaneous)
     const transactionCategories = await getCategoriesFromTransactions(userId);
     if (transactionCategories.length > 0) {
       await syncTransactionCategoriesToBudget(userId, transactionCategories);
@@ -72,39 +84,91 @@ export async function GET(request: NextRequest) {
     
     // Then fetch supplementary data in parallel
     // Reduce months for historical data to save memory
-    const [transactionsExist, incomeStats, categoriesWithTransactions, historicalSpending, fixedExpensesByCategory] = await Promise.all([
+    const [
+      transactionsExist,
+      incomeStats,
+      categoriesWithTransactions,
+      historicalSpending,
+      fixedExpensesByCategory,
+      superCategories,
+      superBudgets,
+    ] = await Promise.all([
       hasTransactions(userId),
       getMedianMonthlyIncome(userId, 6), // Reduced from 12 to 6 months
       getCategoriesWithTransactions(userId),
       getHistoricalSpendingBreakdown(userId, 3), // Reduced from 6 to 3 months
       getFixedExpensesByCategory(userId),
+      getBudgetSuperCategories(userId),
+      getSuperBudgetsForMonth(userId, month),
     ]);
     
     // Check if this is a past month with no budgets - use baseline data
     const currentMonth = new Date().toISOString().slice(0, 7);
     const isPastMonth = month < currentMonth;
-    const hasBudgetsForMonth = data.budgets.length > 0;
+    const hasBudgetsForMonth = data.budgets.length > 0 || superBudgets.length > 0;
     let isBaselineData = false;
     let baselineMonth: string | null = null;
     let baselineBudgets: Record<string, number> = {};
+    let baselineSuperBudgets: Record<string, number> = {};
     
     if (isPastMonth && !hasBudgetsForMonth) {
       // Try to get the most recent month's budgets as baseline
       const recentBudgetMonth = await getMostRecentBudgetMonth(userId);
       if (recentBudgetMonth) {
-        const recentBudgets = await getBudgetsForMonth(userId, recentBudgetMonth);
+        const recentBudgets = await getAllBudgetsForMonth(userId, recentBudgetMonth);
         isBaselineData = true;
         baselineMonth = recentBudgetMonth;
         baselineBudgets = recentBudgets.reduce((acc, b) => {
-          acc[b.category_id] = b.budgeted_amount;
+          if (b.category_id) {
+            acc[b.category_id] = b.budgeted_amount;
+          }
+          return acc;
+        }, {} as Record<string, number>);
+        baselineSuperBudgets = recentBudgets.reduce((acc, b) => {
+          if (b.super_category_id) {
+            acc[b.super_category_id] = b.budgeted_amount;
+          }
           return acc;
         }, {} as Record<string, number>);
       }
     }
     
+    // Build explicit super-category budget overrides
+    const superBudgetOverrides = new Map<string, number>();
+    for (const budget of superBudgets) {
+      if (budget.super_category_id) {
+        superBudgetOverrides.set(budget.super_category_id, Number(budget.budgeted_amount) || 0);
+      }
+    }
+
+    if (isBaselineData) {
+      for (const [superCategoryId, amount] of Object.entries(baselineSuperBudgets)) {
+        if (!superBudgetOverrides.has(superCategoryId)) {
+          superBudgetOverrides.set(superCategoryId, Number(amount) || 0);
+        }
+      }
+    }
+
+    const superCategoryList = [...superCategories];
+    let miscSuperCategoryId =
+      superCategoryList.find(sc => sc.name === DEFAULT_MISC_SUPER_CATEGORY)?.id || null;
+
+    if (!miscSuperCategoryId) {
+      miscSuperCategoryId = 'miscellaneous';
+      superCategoryList.push({
+        id: miscSuperCategoryId,
+        user_id: userId,
+        name: DEFAULT_MISC_SUPER_CATEGORY,
+        display_order: superCategoryList.length,
+      });
+    }
+
     // Transform data for frontend
     const categoryBudgets = data.categories.map((category) => {
       const categoryId = category.id ?? '';
+      const resolvedSuperCategoryId = category.super_category_id || miscSuperCategoryId || '';
+      const hasSuperOverride =
+        resolvedSuperCategoryId ? superBudgetOverrides.has(resolvedSuperCategoryId) : false;
       const budget = data.budgets.find(b => b.category_id === categoryId);
       const spent = data.spending[category.name] || 0;
       const historicalAverage = historicalSpending.categoryAverages[category.name] || 0;
@@ -118,21 +182,29 @@ export async function GET(request: NextRequest) {
       // For current/future months with no budget, pre-fill with suggested budget
       let budgeted = budget?.budgeted_amount ??
         (isBaselineData ? (baselineBudgets[categoryId] ?? 0) : 0);
-      
-      // Pre-fill with suggested budget if no budget is set and we have a suggestion
-      // Round UP to whole dollars for cleaner budgeting
-      if (budgeted === 0 && suggestedBudget > 0 && !isPastMonth) {
-        budgeted = Math.ceil(suggestedBudget);
+
+      if (!hasSuperOverride) {
+        // Pre-fill with suggested budget if no budget is set and we have a suggestion
+        // Round UP to whole dollars for cleaner budgeting
+        if (budgeted === 0 && suggestedBudget > 0 && !isPastMonth) {
+          budgeted = Math.ceil(suggestedBudget);
+        }
+      } else {
+        budgeted = 0;
       }
+
+      const roundedBudgeted = Math.round(Number(budgeted)) || 0;
       
       return {
         id: categoryId,
         name: category.name,
+        superCategoryId: resolvedSuperCategoryId,
+        displayOrder: category.display_order ?? 0,
         isCustom: category.is_custom,
         hasTransactions: categoriesWithTransactions.has(category.name),
-        budgeted: Math.round(Number(budgeted)), // Round to whole dollars
+        budgeted: roundedBudgeted, // Round to whole dollars
         spent: Number(spent),       // Ensure number
-        available: Math.round(Number(budgeted)) - Number(spent),
+        available: roundedBudgeted - Number(spent),
         // Pre-fill data for reference
         historicalAverage: Math.round(historicalAverage * 100) / 100,
         fixedExpenseAmount: Math.round(fixedExpenseAmount * 100) / 100,
@@ -140,46 +212,43 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    // Filter out categories that have no activity and no historical data
-    // Keep categories that have:
-    // 1. Transactions (spent > 0), OR
-    // 2. Budget allocated (budgeted > 0), OR  
-    // 3. Historical spending or fixed expenses (suggestedBudget > 0)
-    const activeCategoryBudgets = categoryBudgets.filter(cat => 
-      cat.spent > 0 || 
-      cat.budgeted > 0 || 
-      (cat.suggestedBudget && cat.suggestedBudget > 0) ||
-      cat.hasTransactions
-    );
+    const categoriesBySuperCategory = new Map<string, typeof categoryBudgets>();
+    for (const category of categoryBudgets) {
+      const superCategoryId = category.superCategoryId || miscSuperCategoryId;
+      if (!superCategoryId) continue;
+      const current = categoriesBySuperCategory.get(superCategoryId) || [];
+      current.push(category);
+      categoriesBySuperCategory.set(superCategoryId, current);
+    }
 
-    // Sort by: budgeted amount desc (budgeted > 0 first), then suggested budget, then spent, then name
-    activeCategoryBudgets.sort((a, b) => {
-      // Priority 1: Categories with budget allocated come first
-      if ((a.budgeted > 0 ? 1 : 0) !== (b.budgeted > 0 ? 1 : 0)) {
-        return (b.budgeted > 0 ? 1 : 0) - (a.budgeted > 0 ? 1 : 0);
-      }
-      
-      // Priority 2: Within budgeted categories, sort by amount desc
-      if (a.budgeted > 0 && b.budgeted > 0 && b.budgeted !== a.budgeted) {
-        return b.budgeted - a.budgeted;
-      }
-      
-      // Priority 3: For unbudgeted categories, sort by suggested budget desc
-      const aSuggested = a.suggestedBudget || 0;
-      const bSuggested = b.suggestedBudget || 0;
-      if (aSuggested > 0 || bSuggested > 0) {
-        if (bSuggested !== aSuggested) {
-          return bSuggested - aSuggested;
+    const superCategoryBudgets = superCategoryList.map((superCategory) => {
+      const superCategoryId = superCategory.id || '';
+      const categories = categoriesBySuperCategory.get(superCategoryId) || [];
+
+      categories.sort((a, b) => {
+        if (a.displayOrder !== b.displayOrder) {
+          return a.displayOrder - b.displayOrder;
         }
-      }
-      
-      // Priority 4: Sort by spent amount desc
-      if (b.spent !== a.spent) {
-        return b.spent - a.spent;
-      }
-      
-      // Priority 5: Alphabetically by name
-      return a.name.localeCompare(b.name);
+        return a.name.localeCompare(b.name);
+      });
+
+      const spent = categories.reduce((sum, c) => sum + c.spent, 0);
+      const isOverride = superCategoryId ? superBudgetOverrides.has(superCategoryId) : false;
+      const overrideAmount = superCategoryId ? superBudgetOverrides.get(superCategoryId) : 0;
+      const budgeted = isOverride
+        ? Math.round(Number(overrideAmount) || 0)
+        : categories.reduce((sum, c) => sum + c.budgeted, 0);
+
+      return {
+        id: superCategoryId,
+        name: superCategory.name,
+        displayOrder: superCategory.display_order ?? 0,
+        budgeted,
+        spent,
+        available: budgeted - spent,
+        isOverride,
+        categories,
+      };
     });
 
     // Determine effective income with proper priority:
@@ -209,12 +278,12 @@ export async function GET(request: NextRequest) {
       incomeSource = 'median';
     }
 
-    // Calculate ready to assign using effective income (use all categories for calculation)
-    const totalBudgeted = categoryBudgets.reduce((sum, c) => sum + c.budgeted, 0);
+    // Calculate ready to assign using effective income (use super-categories for calculation)
+    const totalBudgeted = superCategoryBudgets.reduce((sum, c) => sum + c.budgeted, 0);
     const readyToAssign = effectiveIncome - totalBudgeted;
 
     const duration = Date.now() - startTime;
-    console.log(`[Budget API] Request completed in ${duration}ms, returned ${activeCategoryBudgets.length} categories`);
+    console.log(`[Budget API] Request completed in ${duration}ms, returned ${categoryBudgets.length} categories`);
     
     return NextResponse.json({
       month,
@@ -223,7 +292,8 @@ export async function GET(request: NextRequest) {
       incomeSource, // 'user_entered', 'transactions', 'median', or 'none'
       totalBudgeted,
       readyToAssign,
-      categories: activeCategoryBudgets, // Return only active categories
+      categories: categoryBudgets,
+      superCategories: superCategoryBudgets,
       hasTransactions: transactionsExist,
       incomeStats: incomeStats,
       isBaselineData,
@@ -248,7 +318,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { userId, month, budgets } = body;
+    const { userId, month, budgets, superBudgets } = body;
 
     if (!userId) {
       return NextResponse.json(
@@ -278,6 +348,14 @@ export async function POST(request: NextRequest) {
     }));
 
     await saveBudgets(userId, month, budgetRecords);
+
+    if (Array.isArray(superBudgets)) {
+      const superBudgetRecords = superBudgets.map((b: { superCategoryId: string; amount: number }) => ({
+        super_category_id: b.superCategoryId,
+        budgeted_amount: Number(b.amount) || 0,
+      }));
+      await saveSuperBudgets(userId, month, superBudgetRecords);
+    }
 
     return NextResponse.json({ success: true });
 

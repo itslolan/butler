@@ -102,7 +102,15 @@ export async function DELETE(request: NextRequest) {
     deletedCounts.budget_categories = categoriesCount || 0;
     console.log(`[delete-data] Deleted ${categoriesCount || 0} budget categories`);
 
-    // 9. Delete user memories
+    // 9. Delete budget super-categories
+    const { count: superCategoriesCount } = await supabase
+      .from('budget_super_categories')
+      .delete({ count: 'exact' })
+      .eq('user_id', userId);
+    deletedCounts.budget_super_categories = superCategoriesCount || 0;
+    console.log(`[delete-data] Deleted ${superCategoriesCount || 0} budget super-categories`);
+
+    // 10. Delete user memories
     const { count: memoriesCount } = await supabase
       .from('user_memories')
       .delete({ count: 'exact' })
@@ -110,7 +118,7 @@ export async function DELETE(request: NextRequest) {
     deletedCounts.user_memories = memoriesCount || 0;
     console.log(`[delete-data] Deleted ${memoriesCount || 0} user memories`);
 
-    // 10. Delete user metadata
+    // 11. Delete user metadata
     const { count: metadataCount } = await supabase
       .from('user_metadata')
       .delete({ count: 'exact' })
@@ -118,7 +126,7 @@ export async function DELETE(request: NextRequest) {
     deletedCounts.user_metadata = metadataCount || 0;
     console.log(`[delete-data] Deleted ${metadataCount || 0} user metadata entries`);
 
-    // 11. Delete account snapshots
+    // 12. Delete account snapshots
     const { count: snapshotsCount } = await supabase
       .from('account_snapshots')
       .delete({ count: 'exact' })
@@ -126,7 +134,7 @@ export async function DELETE(request: NextRequest) {
     deletedCounts.account_snapshots = snapshotsCount || 0;
     console.log(`[delete-data] Deleted ${snapshotsCount || 0} account snapshots`);
 
-    // 12. Delete fixed expenses cache
+    // 13. Delete fixed expenses cache
     const { count: fixedExpensesCount } = await supabase
       .from('fixed_expenses_cache')
       .delete({ count: 'exact' })
@@ -134,7 +142,7 @@ export async function DELETE(request: NextRequest) {
     deletedCounts.fixed_expenses_cache = fixedExpensesCount || 0;
     console.log(`[delete-data] Deleted ${fixedExpensesCount || 0} fixed expenses cache entries`);
 
-    // 13. Delete files from storage
+    // 14. Delete files from storage
     try {
       const { data: files } = await supabase.storage
         .from('statements')
