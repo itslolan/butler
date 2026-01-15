@@ -24,6 +24,8 @@ import { generateSuggestedActions } from '../lib/action-generator';
 import { refreshFixedExpensesCache } from '../lib/fixed-expenses';
 import { deduplicateTransactionsSimple } from '../lib/deduplication-test';
 import { BASE_SYSTEM_PROMPT, GEMINI_MODEL } from '../lib/gemini-prompts';
+import { getBudgetCategories } from '../lib/budget-utils';
+import { normalizeCategoryNameKey, normalizeCategoryDisplayName } from '../lib/category-normalization';
 
 type SendUpdate = (step: string, message: string, status?: 'processing' | 'complete') => void;
 
@@ -153,17 +155,37 @@ async function processFileBuffer(opts: {
     throw new Error('Gemini API key not configured');
   }
 
-  // Retrieve user memories to inject into system prompt
-  let memoriesText = '';
-  try {
-    memoriesText = await getAllMemories(userId);
-  } catch (error: any) {
-    console.error('[worker] Error retrieving memories:', error?.message || error);
+  // Retrieve user memories + existing budget categories for better category reuse
+  const [memoriesText, budgetCategories] = await Promise.all([
+    getAllMemories(userId).catch((error: any) => {
+      console.error('[worker] Error retrieving memories:', error?.message || error);
+      return '';
+    }),
+    getBudgetCategories(userId).catch((error: any) => {
+      console.error('[worker] Error retrieving budget categories:', error?.message || error);
+      return [];
+    }),
+  ]);
+
+  let SYSTEM_PROMPT = BASE_SYSTEM_PROMPT;
+
+  if (budgetCategories.length > 0) {
+    const categoryNames = budgetCategories
+      .map(c => c?.name)
+      .filter((n): n is string => typeof n === 'string')
+      .map(n => normalizeCategoryDisplayName(n))
+      .filter(Boolean);
+
+    if (categoryNames.length > 0) {
+      SYSTEM_PROMPT += `\n\n**Existing Budget Categories:**\nThe user has these budget categories set up:\n${categoryNames.join(
+        ', '
+      )}\n\n**IMPORTANT**: When categorizing transactions, PREFER using these existing categories when applicable. Only create a new category if none of the existing ones fit.`;
+    }
   }
 
-  const SYSTEM_PROMPT = memoriesText
-    ? `${BASE_SYSTEM_PROMPT}\n\n**User Context/Memories:**\n${memoriesText}\n\nUse these memories to help classify transactions. For example, if you know the user receives a salary of a certain amount from a specific merchant, classify similar transactions accordingly.`
-    : BASE_SYSTEM_PROMPT;
+  if (memoriesText) {
+    SYSTEM_PROMPT += `\n\n**User Context/Memories:**\n${memoriesText}\n\nUse these memories to help classify transactions. For example, if you know the user receives a salary of a certain amount from a specific merchant, classify similar transactions accordingly.`;
+  }
 
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
   const model = genAI.getGenerativeModel({
@@ -431,6 +453,13 @@ async function processFileBuffer(opts: {
   log('info', 'Inserted document', { documentId, fileName, uploadId: normalizedUploadId, userId });
 
   if (transactionsToInsert.length > 0) {
+    const existingBudgetByKey = new Map<string, string>();
+    for (const c of budgetCategories as any[]) {
+      const name = c?.name;
+      if (typeof name !== 'string') continue;
+      existingBudgetByKey.set(normalizeCategoryNameKey(name), normalizeCategoryDisplayName(name));
+    }
+
     const transactions: Transaction[] = transactionsToInsert.map((txn: any) => ({
       user_id: userId,
       document_id: documentId,
@@ -438,7 +467,10 @@ async function processFileBuffer(opts: {
       date: txn.date,
       merchant: txn.merchant,
       amount: txn.amount,
-      category: txn.category || null,
+      category:
+        typeof txn.category === 'string' && txn.category.trim()
+          ? existingBudgetByKey.get(normalizeCategoryNameKey(txn.category)) ?? normalizeCategoryDisplayName(txn.category)
+          : null,
       description: txn.description || null,
       transaction_type: txn.transactionType || null,
       spend_classification: txn.spendClassification || null,
