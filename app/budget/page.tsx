@@ -273,9 +273,11 @@ export default function BudgetPage() {
     });
     
     if (update.changedCategory) {
+      // TS doesn't preserve optional narrowing into async state updaters
+      const { name, amount } = update.changedCategory;
       setUserSetBudgets(prev => ({
         ...prev,
-        [update.changedCategory.name]: update.changedCategory.amount,
+        [name]: amount,
       }));
     }
 
