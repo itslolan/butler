@@ -193,6 +193,15 @@ export interface BudgetCategory {
   user_id: string;
   name: string;
   is_custom: boolean;
+  super_category_id?: string | null;
+  display_order?: number;
+  created_at?: Date | string;
+}
+
+export interface BudgetSuperCategory {
+  id?: string;
+  user_id: string;
+  name: string;
   display_order?: number;
   created_at?: Date | string;
 }
@@ -200,7 +209,8 @@ export interface BudgetCategory {
 export interface Budget {
   id?: string;
   user_id: string;
-  category_id: string;
+  category_id?: string | null;
+  super_category_id?: string | null;
   month: string; // Format: 'YYYY-MM'
   budgeted_amount: number;
   created_at?: Date | string;

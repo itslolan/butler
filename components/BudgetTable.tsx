@@ -5,6 +5,8 @@ import { useState, useEffect, useCallback } from 'react';
 interface Category {
   id: string;
   name: string;
+  superCategoryId: string;
+  displayOrder?: number;
   isCustom: boolean;
   hasTransactions: boolean;
   budgeted: number;
@@ -16,6 +18,17 @@ interface Category {
   suggestedBudget?: number;
 }
 
+interface SuperCategory {
+  id: string;
+  name: string;
+  displayOrder?: number;
+  budgeted: number;
+  spent: number;
+  available: number;
+  isOverride: boolean;
+  categories: Category[];
+}
+
 interface BudgetTableProps {
   userId: string;
   month: string;
@@ -25,10 +38,17 @@ interface BudgetTableProps {
     totalBudgeted: number;
     readyToAssign: number;
     categories: Category[];
+    superCategories: SuperCategory[];
     hasTransactions?: boolean;
     incomeStats?: { medianMonthlyIncome: number; monthsIncluded: number };
   } | null) => void;
-  onBudgetChange: (categoryId: string, newAmount: number) => void;
+  onBudgetChange: (data: {
+    categories: Category[];
+    superCategories: SuperCategory[];
+    totalBudgeted: number;
+    changedCategory?: { id: string; name: string; amount: number };
+    changedSuperCategory?: { id: string; name: string; amount: number };
+  }) => void;
   onCategoryAdded: () => void;
   onCategoryDeleted: () => void;
   budgetedOverrides?: Record<string, number> | null;
@@ -45,7 +65,7 @@ export default function BudgetTable({
   budgetedOverrides = null,
   isReadOnly = false,
 }: BudgetTableProps) {
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [superCategories, setSuperCategories] = useState<SuperCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
@@ -58,6 +78,8 @@ export default function BudgetTable({
   // Delete confirmation state
   const [deletingCategory, setDeletingCategory] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const [expandedSuperCategories, setExpandedSuperCategories] = useState<Record<string, boolean>>({});
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -72,37 +94,8 @@ export default function BudgetTable({
 
       const data = await res.json();
       
-      // Sort categories: Budgeted desc (with budgeted > 0 first), then by suggested budget, then by spent, then Name asc
-      data.categories.sort((a: Category, b: Category) => {
-        // Priority 1: Categories with budget allocated come first
-        if ((a.budgeted > 0 ? 1 : 0) !== (b.budgeted > 0 ? 1 : 0)) {
-          return (b.budgeted > 0 ? 1 : 0) - (a.budgeted > 0 ? 1 : 0);
-        }
-        
-        // Priority 2: Within budgeted categories, sort by amount desc
-        if (a.budgeted > 0 && b.budgeted > 0 && b.budgeted !== a.budgeted) {
-          return b.budgeted - a.budgeted;
-        }
-        
-        // Priority 3: For unbudgeted categories, sort by suggested budget desc
-        const aSuggested = a.suggestedBudget || 0;
-        const bSuggested = b.suggestedBudget || 0;
-        if (aSuggested > 0 || bSuggested > 0) {
-          if (bSuggested !== aSuggested) {
-            return bSuggested - aSuggested;
-          }
-        }
-        
-        // Priority 4: Sort by spent amount desc
-        if (b.spent !== a.spent) {
-          return b.spent - a.spent;
-        }
-        
-        // Priority 5: Alphabetically by name
-        return a.name.localeCompare(b.name);
-      });
-
-      setCategories(data.categories);
+      setSuperCategories(data.superCategories || []);
+      setExpandedSuperCategories({});
       onDataLoaded(data);
     } catch (err: any) {
       setError(err.message);
@@ -116,10 +109,28 @@ export default function BudgetTable({
     fetchData();
   }, [fetchData]);
 
+  const flattenCategories = (groups: SuperCategory[]) =>
+    groups.flatMap(group => group.categories);
+
+  const emitBudgetChange = (
+    updatedSuperCategories: SuperCategory[],
+    changedCategory?: { id: string; name: string; amount: number },
+    changedSuperCategory?: { id: string; name: string; amount: number }
+  ) => {
+    const totalBudgeted = updatedSuperCategories.reduce((sum, group) => sum + group.budgeted, 0);
+    onBudgetChange({
+      categories: flattenCategories(updatedSuperCategories),
+      superCategories: updatedSuperCategories,
+      totalBudgeted,
+      changedCategory,
+      changedSuperCategory,
+    });
+  };
+
   useEffect(() => {
     if (!budgetedOverrides) return;
-    setCategories(prev => {
-      const updated = prev.map(cat => {
+    setSuperCategories(prev => prev.map(superCategory => {
+      const updatedCategories = superCategory.categories.map(cat => {
         const overridden = budgetedOverrides[cat.id];
         if (overridden === undefined) return cat;
         return {
@@ -128,33 +139,108 @@ export default function BudgetTable({
           available: overridden - cat.spent,
         };
       });
-      // Re-sort after applying overrides: Budgeted desc, then Name asc
-      return updated.sort((a, b) => {
-        if (b.budgeted !== a.budgeted) {
-          return b.budgeted - a.budgeted;
-        }
-        return a.name.localeCompare(b.name);
-      });
-    });
+      const budgeted = updatedCategories.reduce((sum, cat) => sum + cat.budgeted, 0);
+      const spent = updatedCategories.reduce((sum, cat) => sum + cat.spent, 0);
+      return {
+        ...superCategory,
+        categories: updatedCategories,
+        budgeted,
+        spent,
+        available: budgeted - spent,
+        isOverride: false,
+      };
+    }));
   }, [budgetedOverrides]);
 
-  const handleBudgetInput = (categoryId: string, value: string) => {
+  const handleCategoryBudgetInput = (categoryId: string, value: string) => {
     const numValue = parseFloat(value) || 0;
-    
-    // Update local state
-    setCategories(prev => prev.map(cat => {
-      if (cat.id === categoryId) {
-        return {
-          ...cat,
-          budgeted: numValue,
-          available: numValue - cat.spent,
-        };
-      }
-      return cat;
-    }));
 
-    // Notify parent
-    onBudgetChange(categoryId, numValue);
+    setSuperCategories(prev => {
+      const updated = prev.map(superCategory => {
+        const hasCategory = superCategory.categories.some(cat => cat.id === categoryId);
+        if (!hasCategory) {
+          return superCategory;
+        }
+
+        const updatedCategories = superCategory.categories.map(cat => {
+          if (cat.id === categoryId) {
+            return {
+              ...cat,
+              budgeted: numValue,
+              available: numValue - cat.spent,
+            };
+          }
+          return cat;
+        });
+
+        const budgeted = updatedCategories.reduce((sum, cat) => sum + cat.budgeted, 0);
+        const spent = updatedCategories.reduce((sum, cat) => sum + cat.spent, 0);
+
+        return {
+          ...superCategory,
+          categories: updatedCategories,
+          budgeted,
+          spent,
+          available: budgeted - spent,
+          isOverride: false,
+        };
+      });
+
+      const changedCategory = updated
+        .flatMap(group => group.categories)
+        .find(cat => cat.id === categoryId);
+
+      if (changedCategory) {
+        emitBudgetChange(updated, {
+          id: changedCategory.id,
+          name: changedCategory.name,
+          amount: numValue,
+        });
+      }
+
+      return updated;
+    });
+  };
+
+  const handleSuperCategoryBudgetInput = (superCategoryId: string, value: string) => {
+    const numValue = parseFloat(value) || 0;
+
+    setSuperCategories(prev => {
+      const updated = prev.map(superCategory => {
+        if (superCategory.id !== superCategoryId) {
+          return superCategory;
+        }
+
+        const updatedCategories = superCategory.categories.map(cat => ({
+          ...cat,
+          budgeted: 0,
+          available: 0 - cat.spent,
+        }));
+
+        const spent = updatedCategories.reduce((sum, cat) => sum + cat.spent, 0);
+
+        return {
+          ...superCategory,
+          categories: updatedCategories,
+          budgeted: numValue,
+          spent,
+          available: numValue - spent,
+          isOverride: true,
+        };
+      });
+
+      const changedSuperCategory = updated.find(group => group.id === superCategoryId);
+
+      if (changedSuperCategory) {
+        emitBudgetChange(updated, undefined, {
+          id: changedSuperCategory.id,
+          name: changedSuperCategory.name,
+          amount: numValue,
+        });
+      }
+
+      return updated;
+    });
   };
 
   const handleAddCategory = async () => {
@@ -215,6 +301,13 @@ export default function BudgetTable({
     }
   };
 
+  const toggleSuperCategory = (superCategoryId: string) => {
+    setExpandedSuperCategories(prev => ({
+      ...prev,
+      [superCategoryId]: !prev[superCategoryId],
+    }));
+  };
+
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -222,6 +315,22 @@ export default function BudgetTable({
       minimumFractionDigits: 2,
     }).format(value);
   };
+
+  const rows = superCategories.flatMap(superCategory => {
+    const isExpanded = expandedSuperCategories[superCategory.id] ?? false;
+    const items: Array<
+      | { type: 'super'; superCategory: SuperCategory; isExpanded: boolean }
+      | { type: 'category'; superCategory: SuperCategory; category: Category }
+    > = [{ type: 'super', superCategory, isExpanded }];
+
+    if (isExpanded) {
+      superCategory.categories.forEach(category => {
+        items.push({ type: 'category', superCategory, category });
+      });
+    }
+
+    return items;
+  });
 
   if (loading) {
     return (
@@ -272,122 +381,204 @@ export default function BudgetTable({
 
       {/* Category Rows */}
       <div className="divide-y divide-slate-100 dark:divide-slate-800">
-        {categories.map(category => {
-          // Ensure all numeric values are properly defined
-          const budgeted = Number(category.budgeted) || 0;
-          const spent = Number(category.spent) || 0;
-          const available = Number(category.available) || 0;
-          
-          return (
-          <div
-            key={category.id}
-            className="px-4 md:px-6 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group"
-          >
-            <div className="grid grid-cols-10 md:grid-cols-12 gap-2 md:gap-4 items-start">
-              {/* Category Name */}
-              <div className="col-span-4 md:col-span-5 flex items-center gap-2 pt-1.5">
-                <span className="text-sm font-medium text-slate-900 dark:text-white">
-                  {category.name}
-                </span>
-                {category.isCustom && (
-                  <span className="text-[10px] font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-1.5 py-0.5 rounded">
-                    Custom
-                  </span>
-                )}
-              </div>
+        {rows.map(row => {
+          if (row.type === 'super') {
+            const budgeted = Number(row.superCategory.budgeted) || 0;
+            const spent = Number(row.superCategory.spent) || 0;
+            const available = Number(row.superCategory.available) || 0;
 
-              {/* Budgeted Input */}
-              <div className="col-span-3 md:col-span-2">
-                <div className="relative group/input">
-                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
-                  <input
-                    type="number"
-                    value={budgeted || ''}
-                    onChange={(e) => handleBudgetInput(category.id, e.target.value)}
-                    placeholder="0.00"
-                    disabled={isReadOnly}
-                    className={`w-full pl-6 pr-2 py-1.5 text-sm text-right border rounded-lg focus:outline-none ${
-                      isReadOnly 
-                        ? 'bg-slate-100 dark:bg-slate-900 border-slate-100 dark:border-slate-800 text-slate-500 dark:text-slate-400 cursor-not-allowed' 
-                        : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500'
-                    }`}
-                  />
-                  {/* Tooltip showing suggestion breakdown */}
-                  {(!isReadOnly && (category.historicalAverage || category.fixedExpenseAmount) && budgeted > 0) ? (
-                    <div className="absolute left-0 bottom-full mb-1 hidden group-hover/input:block z-10">
-                      <div className="bg-slate-900 dark:bg-slate-700 text-white text-xs px-2 py-1.5 rounded shadow-lg whitespace-nowrap">
-                        {(category.fixedExpenseAmount && category.fixedExpenseAmount > 0) ? (
-                          <div>Fixed expenses: ${category.fixedExpenseAmount.toFixed(2)}</div>
-                        ) : null}
-                        {(category.historicalAverage && category.historicalAverage > 0) ? (
-                          <div>Avg spent: ${category.historicalAverage.toFixed(2)}/mo</div>
-                        ) : null}
-                        {(category.suggestedBudget && category.suggestedBudget > 0 && budgeted !== category.suggestedBudget) ? (
-                          <div className="font-semibold border-t border-slate-700 dark:border-slate-600 pt-1 mt-1">
-                            Suggested: ${category.suggestedBudget.toFixed(2)}
-                          </div>
-                        ) : null}
-                      </div>
+            return (
+              <div
+                key={`super-${row.superCategory.id}`}
+                className="px-4 md:px-6 py-3 bg-slate-50/60 dark:bg-slate-900/40 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors"
+              >
+                <div className="grid grid-cols-10 md:grid-cols-12 gap-2 md:gap-4 items-start">
+                  {/* Super-category Name */}
+                  <div className="col-span-4 md:col-span-5 flex items-center gap-2 pt-1.5">
+                    <button
+                      type="button"
+                      onClick={() => toggleSuperCategory(row.superCategory.id)}
+                      className="flex items-center justify-center w-5 h-5 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400"
+                      aria-label={`${row.isExpanded ? 'Collapse' : 'Expand'} ${row.superCategory.name}`}
+                    >
+                      <svg
+                        className={`w-3.5 h-3.5 transition-transform ${row.isExpanded ? 'rotate-90' : ''}`}
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </button>
+                    <span className="text-sm font-semibold text-slate-900 dark:text-white">
+                      {row.superCategory.name}
+                    </span>
+                    {row.superCategory.isOverride && (
+                      <span className="text-[10px] font-medium text-violet-600 dark:text-violet-300 bg-violet-50 dark:bg-violet-900/30 px-1.5 py-0.5 rounded">
+                        Override
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Budgeted Input */}
+                  <div className="col-span-3 md:col-span-2">
+                    <div className="relative">
+                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
+                      <input
+                        type="number"
+                        value={budgeted || ''}
+                        onChange={(e) => handleSuperCategoryBudgetInput(row.superCategory.id, e.target.value)}
+                        placeholder="0.00"
+                        disabled={isReadOnly}
+                        className={`w-full pl-6 pr-2 py-1.5 text-sm text-right border rounded-lg focus:outline-none ${
+                          isReadOnly 
+                            ? 'bg-slate-100 dark:bg-slate-900 border-slate-100 dark:border-slate-800 text-slate-500 dark:text-slate-400 cursor-not-allowed' 
+                            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500'
+                        }`}
+                      />
                     </div>
+                  </div>
+
+                  {/* Spent (read-only) - Desktop only */}
+                  <div className="hidden md:block md:col-span-2 text-right pt-1.5">
+                    <span className="text-sm text-slate-600 dark:text-slate-400">
+                      {formatCurrency(spent)}
+                    </span>
+                  </div>
+
+                  {/* Available */}
+                  <div className="col-span-3 md:col-span-2 text-right pt-1.5">
+                    <span
+                      className={`text-sm font-semibold ${
+                        available >= 0
+                          ? 'text-emerald-600 dark:text-emerald-400'
+                          : 'text-red-600 dark:text-red-400'
+                      }`}
+                    >
+                      {formatCurrency(available)}
+                    </span>
+                  </div>
+
+                  <div className="hidden md:block md:col-span-1"></div>
+                </div>
+              </div>
+            );
+          }
+
+          const budgeted = Number(row.category.budgeted) || 0;
+          const spent = Number(row.category.spent) || 0;
+          const available = Number(row.category.available) || 0;
+
+          return (
+            <div
+              key={row.category.id}
+              className="px-4 md:px-6 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group"
+            >
+              <div className="grid grid-cols-10 md:grid-cols-12 gap-2 md:gap-4 items-start">
+                {/* Category Name */}
+                <div className="col-span-4 md:col-span-5 flex items-center gap-2 pt-1.5 pl-6">
+                  <span className="text-sm font-medium text-slate-900 dark:text-white">
+                    {row.category.name}
+                  </span>
+                  {row.category.isCustom && (
+                    <span className="text-[10px] font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-1.5 py-0.5 rounded">
+                      Custom
+                    </span>
+                  )}
+                </div>
+
+                {/* Budgeted Input */}
+                <div className="col-span-3 md:col-span-2">
+                  <div className="relative group/input">
+                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
+                    <input
+                      type="number"
+                      value={budgeted || ''}
+                      onChange={(e) => handleCategoryBudgetInput(row.category.id, e.target.value)}
+                      placeholder="0.00"
+                      disabled={isReadOnly}
+                      className={`w-full pl-6 pr-2 py-1.5 text-sm text-right border rounded-lg focus:outline-none ${
+                        isReadOnly 
+                          ? 'bg-slate-100 dark:bg-slate-900 border-slate-100 dark:border-slate-800 text-slate-500 dark:text-slate-400 cursor-not-allowed' 
+                          : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500'
+                      }`}
+                    />
+                    {/* Tooltip showing suggestion breakdown */}
+                    {(!isReadOnly && (row.category.historicalAverage || row.category.fixedExpenseAmount) && budgeted > 0) ? (
+                      <div className="absolute left-0 bottom-full mb-1 hidden group-hover/input:block z-10">
+                        <div className="bg-slate-900 dark:bg-slate-700 text-white text-xs px-2 py-1.5 rounded shadow-lg whitespace-nowrap">
+                          {(row.category.fixedExpenseAmount && row.category.fixedExpenseAmount > 0) ? (
+                            <div>Fixed expenses: ${row.category.fixedExpenseAmount.toFixed(2)}</div>
+                          ) : null}
+                          {(row.category.historicalAverage && row.category.historicalAverage > 0) ? (
+                            <div>Avg spent: ${row.category.historicalAverage.toFixed(2)}/mo</div>
+                          ) : null}
+                          {(row.category.suggestedBudget && row.category.suggestedBudget > 0 && budgeted !== row.category.suggestedBudget) ? (
+                            <div className="font-semibold border-t border-slate-700 dark:border-slate-600 pt-1 mt-1">
+                              Suggested: ${row.category.suggestedBudget.toFixed(2)}
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+
+                {/* Spent (read-only) - Desktop only */}
+                <div className="hidden md:block md:col-span-2 text-right pt-1.5">
+                  <span className="text-sm text-slate-600 dark:text-slate-400">
+                    {formatCurrency(spent)}
+                  </span>
+                </div>
+
+                {/* Available */}
+                <div className="col-span-3 md:col-span-2 text-right pt-1.5">
+                  <span
+                    className={`text-sm font-medium ${
+                      available >= 0
+                        ? 'text-emerald-600 dark:text-emerald-400'
+                        : 'text-red-600 dark:text-red-400'
+                    }`}
+                  >
+                    {formatCurrency(available)}
+                  </span>
+                </div>
+
+                {/* Actions */}
+                <div className="hidden md:flex md:col-span-1 justify-end gap-1">
+                  {/* Use Suggested button - show when user has changed from suggested and there's a different suggestion */}
+                  {(!isReadOnly && row.category.suggestedBudget && row.category.suggestedBudget > 0 && 
+                   budgeted !== row.category.suggestedBudget && Math.abs(budgeted - row.category.suggestedBudget) > 0.01) ? (
+                    <button
+                      onClick={() => handleCategoryBudgetInput(row.category.id, row.category.suggestedBudget!.toString())}
+                      className="opacity-0 group-hover:opacity-100 p-1.5 text-emerald-500 hover:text-emerald-600 dark:text-emerald-400 dark:hover:text-emerald-300 transition-all"
+                      title={`Use suggested: $${row.category.suggestedBudget.toFixed(2)}`}
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                      </svg>
+                    </button>
+                  ) : null}
+                  {(!isReadOnly && (row.category.isCustom || !row.category.hasTransactions)) ? (
+                    <button
+                      onClick={() => handleDeleteCategory(row.category.id)}
+                      disabled={deletingCategory === row.category.id}
+                      className="opacity-0 group-hover:opacity-100 p-1.5 text-slate-400 hover:text-red-500 dark:hover:text-red-400 transition-all disabled:opacity-50"
+                      title="Delete category"
+                    >
+                      {deletingCategory === row.category.id ? (
+                        <div className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      )}
+                    </button>
                   ) : null}
                 </div>
               </div>
-
-              {/* Spent (read-only) - Desktop only */}
-              <div className="hidden md:block md:col-span-2 text-right pt-1.5">
-                <span className="text-sm text-slate-600 dark:text-slate-400">
-                  {formatCurrency(spent)}
-                </span>
-              </div>
-
-              {/* Available */}
-              <div className="col-span-3 md:col-span-2 text-right pt-1.5">
-                <span
-                  className={`text-sm font-medium ${
-                    available >= 0
-                      ? 'text-emerald-600 dark:text-emerald-400'
-                      : 'text-red-600 dark:text-red-400'
-                  }`}
-                >
-                  {formatCurrency(available)}
-                </span>
-              </div>
-
-              {/* Actions */}
-              <div className="hidden md:flex md:col-span-1 justify-end gap-1">
-                {/* Use Suggested button - show when user has changed from suggested and there's a different suggestion */}
-                {(!isReadOnly && category.suggestedBudget && category.suggestedBudget > 0 && 
-                 budgeted !== category.suggestedBudget && Math.abs(budgeted - category.suggestedBudget) > 0.01) ? (
-                  <button
-                    onClick={() => handleBudgetInput(category.id, category.suggestedBudget!.toString())}
-                    className="opacity-0 group-hover:opacity-100 p-1.5 text-emerald-500 hover:text-emerald-600 dark:text-emerald-400 dark:hover:text-emerald-300 transition-all"
-                    title={`Use suggested: $${category.suggestedBudget.toFixed(2)}`}
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
-                  </button>
-                ) : null}
-                {(!isReadOnly && (category.isCustom || !category.hasTransactions)) ? (
-                  <button
-                    onClick={() => handleDeleteCategory(category.id)}
-                    disabled={deletingCategory === category.id}
-                    className="opacity-0 group-hover:opacity-100 p-1.5 text-slate-400 hover:text-red-500 dark:hover:text-red-400 transition-all disabled:opacity-50"
-                    title="Delete category"
-                  >
-                    {deletingCategory === category.id ? (
-                      <div className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
-                    ) : (
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    )}
-                  </button>
-                ) : null}
-              </div>
             </div>
-          </div>
-        );
+          );
         })}
       </div>
 

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { 
   getMostRecentBudgetMonth,
   copyBudgetsToMonth,
-  getBudgetsForMonth,
+  getAllBudgetsForMonth,
 } from '@/lib/budget-utils';
 
 export const runtime = 'nodejs';
@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if target month already has budgets
-    const existingBudgets = await getBudgetsForMonth(userId, targetMonth);
+    const existingBudgets = await getAllBudgetsForMonth(userId, targetMonth);
     if (existingBudgets.length > 0) {
       return NextResponse.json({ 
         success: true, 

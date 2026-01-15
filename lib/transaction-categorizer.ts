@@ -1,6 +1,6 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getAllMemories, upsertMemory } from '@/lib/db-tools';
-import { getBudgetCategories, syncTransactionCategoriesToBudget } from '@/lib/budget-utils';
+import { getBudgetCategoryHierarchy, syncTransactionCategoriesToBudget } from '@/lib/budget-utils';
 
 const GEMINI_MODEL = 'gemini-2.0-flash';
 
@@ -116,20 +116,58 @@ export async function categorizeTransactions(
 
   try {
     // Get user memories AND budget categories for context
-    const [memoriesText, budgetCategories] = await Promise.all([
+    const [memoriesText, hierarchy] = await Promise.all([
       getAllMemories(userId).catch(() => ''),
-      getBudgetCategories(userId),
+      getBudgetCategoryHierarchy(userId),
     ]);
     
     // Build system prompt with budget category guidance
     let systemPrompt = CATEGORIZATION_PROMPT;
     
-    if (budgetCategories.length > 0) {
-      const categoryNames = budgetCategories.map(c => c.name);
-      systemPrompt += `\n\n**User's Budget Categories:**
-${categoryNames.join(', ')}
+    const categoryNameSet = new Set<string>();
+    const superCategoryNameSet = new Set<string>();
+    const superCategoryIdSet = new Set<string>();
+    const categoriesBySuper = new Map<string, string[]>();
+    const ungroupedNames: string[] = [];
 
-PREFER using these categories when applicable, but create new ones if needed.`;
+    if (hierarchy?.categories?.length || hierarchy?.superCategories?.length) {
+      for (const superCategory of hierarchy.superCategories || []) {
+        const superId = superCategory.id || superCategory.name;
+        superCategoryNameSet.add(superCategory.name.toLowerCase());
+        superCategoryIdSet.add(superId);
+        categoriesBySuper.set(superId, []);
+      }
+
+      for (const category of hierarchy.categories || []) {
+        const normalizedName = category.name.trim();
+        if (!normalizedName) continue;
+        categoryNameSet.add(normalizedName.toLowerCase());
+        const superId = category.super_category_id;
+        if (superId && superCategoryIdSet.has(superId)) {
+          const list = categoriesBySuper.get(superId) || [];
+          list.push(normalizedName);
+          categoriesBySuper.set(superId, list);
+        } else {
+          ungroupedNames.push(normalizedName);
+        }
+      }
+
+      const groupedLines = (hierarchy.superCategories || []).map(superCategory => {
+        const grouped = categoriesBySuper.get(superCategory.id || superCategory.name) || [];
+        const unique = Array.from(new Set(grouped));
+        const categoriesText = unique.length > 0 ? unique.join(', ') : 'No categories yet';
+        return `- ${superCategory.name}: ${categoriesText}`;
+      });
+
+      if (ungroupedNames.length > 0) {
+        groupedLines.push(`- Other: ${Array.from(new Set(ungroupedNames)).join(', ')}`);
+      }
+
+      systemPrompt += `\n\n**User's Budget Categories (grouped by super-category):**
+${groupedLines.join('\n')}
+
+Choose the most specific CATEGORY from the lists above. Do NOT assign a super-category as a transaction category.
+PREFER using these categories when applicable, but create new categories if needed (do not create new super-categories).`;
     }
     
     if (memoriesText) {
@@ -169,11 +207,25 @@ Use these memories to help classify transactions accurately.`;
     // Merge LLM results back into transactions
     const categorizedTransactions: CategorizedTransaction[] = transactions.map((t, index) => {
       const llmResult = parsed.transactions?.find((r: any) => r.index === index);
-      
+      let resolvedCategory = llmResult?.category || t.category || null;
+      if (resolvedCategory && typeof resolvedCategory === 'string') {
+        const trimmed = resolvedCategory.trim();
+        const lower = trimmed.toLowerCase();
+        if (trimmed) {
+          if (!categoryNameSet.has(lower) && superCategoryNameSet.has(lower)) {
+            resolvedCategory = 'Uncategorized';
+          } else {
+            resolvedCategory = trimmed;
+          }
+        } else {
+          resolvedCategory = null;
+        }
+      }
+
       return {
         ...t,
         transactionType: llmResult?.transactionType || t.transactionType || determineBasicType(t.amount, t.merchant),
-        category: llmResult?.category || t.category || null,
+        category: resolvedCategory,
         spendClassification: llmResult?.spendClassification || null,
         confidence: llmResult?.confidence || 0.5,
         clarificationNeeded: llmResult?.clarificationNeeded || false,

@@ -35,8 +35,11 @@ export default function BudgetCTAPanel({ userId }: BudgetCTAPanelProps) {
           if (data.totalBudgeted > 0) {
             setHasBudgets(true);
             
-            // Sort by budgeted amount (descending) and take top 5
-            const sorted = data.categories
+            const categories = Array.isArray(data.categories) ? data.categories : [];
+            const superCategories = Array.isArray(data.superCategories) ? data.superCategories : [];
+            const categoryBudgets = categories.filter((c: any) => c.budgeted > 0);
+
+            const sorted = (categoryBudgets.length > 0 ? categoryBudgets : superCategories)
               .filter((c: any) => c.budgeted > 0)
               .sort((a: any, b: any) => b.budgeted - a.budgeted)
               .slice(0, 5)
@@ -44,9 +47,9 @@ export default function BudgetCTAPanel({ userId }: BudgetCTAPanelProps) {
                 id: c.id,
                 name: c.name,
                 budgeted: c.budgeted,
-                spent: c.spent // spent is already provided in the API response
+                spent: c.spent, // spent is already provided in the API response
               }));
-            
+
             setTopCategories(sorted);
           } else {
             setHasBudgets(false);
