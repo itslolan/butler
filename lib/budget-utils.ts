@@ -4,6 +4,47 @@ import { normalizeCategoryNameKey, normalizeCategoryDisplayName, uniqueCategoryN
 
 export const DEFAULT_MISC_SUPER_CATEGORY = 'Miscellaneous';
 
+function guessIsFixedExpenseCategoryName(name: string): boolean {
+  const n = (name || '').toLowerCase().trim();
+  if (!n) return false;
+
+  // Keep this conservative: only mark categories that are very commonly fixed/recurring for most users.
+  const strong = [
+    // Housing
+    'rent',
+    'mortgage',
+    'property taxes',
+    'home insurance',
+    'hoa',
+    // Utilities
+    'utilities',
+    'electric',
+    'electricity',
+    'water',
+    'gas',
+    'internet',
+    'mobile phone',
+    'phone',
+    // Insurance
+    'insurance',
+    'health insurance',
+    'vehicle insurance',
+    // Debt
+    'loan',
+    'loans',
+    'student loans',
+    'auto loans',
+    'personal loans',
+    // Subscriptions (often fixed)
+    'subscriptions',
+    'streaming services',
+    'hosting / domains',
+    'coworking / office rent',
+  ];
+
+  return strong.some((k) => n.includes(k));
+}
+
 // Default category hierarchy for new users
 export const DEFAULT_CATEGORY_HIERARCHY: Array<{
   name: string;
@@ -218,6 +259,7 @@ async function ensureDefaultBudgetHierarchy(userId: string): Promise<void> {
         is_custom: false,
         display_order: index,
         super_category_id: superCategoryId,
+        is_fixed_expense_category: guessIsFixedExpenseCategoryName(name),
       });
     });
   }
@@ -484,6 +526,7 @@ export async function addCustomCategory(userId: string, name: string): Promise<B
       is_custom: true,
       display_order: maxOrder + 1,
       super_category_id: superCategoryId,
+      is_fixed_expense_category: guessIsFixedExpenseCategoryName(name),
     })
     .select()
     .single();
@@ -539,6 +582,7 @@ export async function syncTransactionCategoriesToBudget(
     is_custom: false,
     display_order: maxOrder + idx + 1,
     super_category_id: miscSuperCategoryId,
+    is_fixed_expense_category: guessIsFixedExpenseCategoryName(rawName),
   }));
   
   const { error } = await supabase.from('budget_categories').upsert(categoryRecords, {

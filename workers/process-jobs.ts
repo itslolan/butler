@@ -21,7 +21,7 @@ import {
 import { Transaction } from '../lib/supabase';
 import { calculateMonthlySnapshots } from '../lib/snapshot-calculator';
 import { generateSuggestedActions } from '../lib/action-generator';
-import { refreshFixedExpensesCache } from '../lib/fixed-expenses';
+import { applyFixedExpenseDetectionToTransactions, persistFixedExpenseFlags } from '../lib/fixed-expense-detector';
 import { deduplicateTransactionsSimple } from '../lib/deduplication-test';
 import { BASE_SYSTEM_PROMPT, GEMINI_MODEL } from '../lib/gemini-prompts';
 import { getBudgetCategories } from '../lib/budget-utils';
@@ -481,8 +481,19 @@ async function processFileBuffer(opts: {
       metadata: txn.metadata || {},
     }));
 
-    await insertTransactions(transactions);
+    const insertedTransactions = await insertTransactions(transactions);
     log('info', 'Inserted transactions', { documentId, count: transactions.length, needsClarification: transactions.filter(t => t.needs_clarification).length });
+
+    // Fixed expense detection (NEW): category-based + LLM transaction-level tagging
+    // Old cadence-based fixed-expense logic is intentionally disabled.
+    sendUpdate('fixed-expenses', '📌 Detecting fixed expenses...', 'processing');
+    try {
+      const detected = await applyFixedExpenseDetectionToTransactions(userId, insertedTransactions as any);
+      await persistFixedExpenseFlags(userId, detected as any);
+      sendUpdate('fixed-expenses', '📌 Fixed expenses detected', 'complete');
+    } catch (e: any) {
+      sendUpdate('fixed-expenses', `⚠️ Fixed expense detection skipped: ${e?.message || 'unknown error'}`, 'complete');
+    }
   }
 
   // Append metadata summary
@@ -526,12 +537,6 @@ async function processFileBuffer(opts: {
 
   const unclarifiedTransactions = await getUnclarifiedTransactions(userId, documentId);
   log('info', 'Fetched unclarified transactions', { documentId, count: unclarifiedTransactions.length });
-
-  if (transactionsToInsert.length > 0) {
-    refreshFixedExpensesCache(userId).catch(err => {
-      console.error('[worker] Error refreshing fixed expenses cache:', err);
-    });
-  }
 
   sendUpdate('complete', '🎉 Processing complete!', 'complete');
 

@@ -5,9 +5,9 @@ import { uploadFile, Transaction } from '@/lib/supabase';
 import { calculateMonthlySnapshots } from '@/lib/snapshot-calculator';
 import { generateSuggestedActions } from '@/lib/action-generator';
 import { v4 as uuidv4 } from 'uuid';
-import { refreshFixedExpensesCache } from '@/lib/fixed-expenses';
 import { getBudgetCategories, syncTransactionCategoriesToBudget } from '@/lib/budget-utils';
 import { normalizeCategoryNameKey, normalizeCategoryDisplayName } from '@/lib/category-normalization';
+import { applyFixedExpenseDetectionToTransactions, persistFixedExpenseFlags } from '@/lib/fixed-expense-detector';
 
 export const runtime = 'nodejs';
 
@@ -745,7 +745,18 @@ export async function POST(request: NextRequest) {
             metadata: {},
           }));
 
-          await insertTransactions(transactions);
+          const insertedTransactions = await insertTransactions(transactions);
+
+          // Fixed expense detection (NEW): category-based + LLM transaction-level tagging
+          // Old cadence-based fixed-expense logic is intentionally disabled.
+          sendUpdate('fixed-expenses', '📌 Detecting fixed expenses...', 'processing');
+          try {
+            const detected = await applyFixedExpenseDetectionToTransactions(userId, insertedTransactions as any);
+            await persistFixedExpenseFlags(userId, detected as any);
+            sendUpdate('fixed-expenses', '📌 Fixed expenses detected', 'complete');
+          } catch (e: any) {
+            sendUpdate('fixed-expenses', `⚠️ Fixed expense detection skipped: ${e?.message || 'unknown error'}`, 'complete');
+          }
           
           // Sync new categories to budget
           const newCategories = extractedData.transactions
@@ -814,13 +825,6 @@ export async function POST(request: NextRequest) {
 
         // Get unclarified transactions for this document
         const unclarifiedTransactions = await getUnclarifiedTransactions(userId, documentId);
-
-        // Refresh fixed expenses cache in the background (non-blocking)
-        if (transactionsToInsert.length > 0) {
-          refreshFixedExpensesCache(userId).catch(err => {
-            console.error('[process-statement-stream] Error refreshing fixed expenses cache:', err);
-          });
-        }
 
         // Send final result
         const result = {

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { insertDocument, insertTransactions, appendMetadata } from '@/lib/db-tools';
 import { uploadFile } from '@/lib/supabase';
-import { refreshFixedExpensesCache } from '@/lib/fixed-expenses';
+import { applyFixedExpenseDetectionToTransactions, persistFixedExpenseFlags } from '@/lib/fixed-expense-detector';
 
 export const runtime = 'nodejs';
 
@@ -335,7 +335,20 @@ export async function POST(request: NextRequest) {
         metadata: {},
       }));
 
-      await insertTransactions(transactions);
+      const insertedTransactions = await insertTransactions(transactions);
+
+      // Fixed expense detection (NEW): category-based + LLM transaction-level tagging
+      // Old cadence-based fixed-expense logic is intentionally disabled.
+      addStep('fixed-expenses', '📌 Detecting fixed expenses...', 'processing');
+      try {
+        const detected = await applyFixedExpenseDetectionToTransactions(userId, insertedTransactions as any);
+        await persistFixedExpenseFlags(userId, detected as any);
+        processingSteps[processingSteps.length - 1].status = 'complete';
+        addStep('fixed-expenses', '📌 Fixed expenses detected', 'complete');
+      } catch (e: any) {
+        processingSteps[processingSteps.length - 1].status = 'complete';
+        addStep('fixed-expenses', `⚠️ Fixed expense detection skipped: ${e?.message || 'unknown error'}`, 'complete');
+      }
     }
 
     // Append metadata summary
@@ -346,13 +359,6 @@ export async function POST(request: NextRequest) {
     
     processingSteps[processingSteps.length - 1].status = 'complete';
     addStep('complete', '🎉 Processing complete!', 'complete');
-
-    // Refresh fixed expenses cache in the background (non-blocking)
-    if (transactionsToInsert.length > 0) {
-      refreshFixedExpensesCache(userId).catch(err => {
-        console.error('[process-statement] Error refreshing fixed expenses cache:', err);
-      });
-    }
 
     const result = {
       id: documentId,

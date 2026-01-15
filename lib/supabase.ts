@@ -147,6 +147,14 @@ export interface Transaction {
   description?: string | null;
   transaction_type?: 'income' | 'expense' | 'transfer' | 'other' | null;
   spend_classification?: 'essential' | 'discretionary' | null;
+  // Fixed-expense detection (transaction-level)
+  is_fixed_expense?: boolean;
+  fixed_expense_status?: 'fixed' | 'maybe' | null;
+  fixed_expense_source?: 'category' | 'llm' | 'user' | null;
+  fixed_expense_confidence?: number | null;
+  fixed_expense_model?: string | null;
+  fixed_expense_explain?: string | null;
+  fixed_expense_user_input_id?: string | null;
   needs_clarification?: boolean;
   clarification_question?: string | null;
   suggested_actions?: string[] | null;

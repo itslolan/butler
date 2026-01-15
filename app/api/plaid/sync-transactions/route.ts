@@ -5,8 +5,8 @@ import { supabase, Transaction } from '@/lib/supabase';
 import { categorizeTransactions, monitorTransactionPatterns } from '@/lib/transaction-categorizer';
 import { searchTransactions, findAccountByPlaidId, findAccountsByLast4, getOrCreateAccount } from '@/lib/db-tools';
 import { deduplicateTransactionsSimple } from '@/lib/deduplication-test';
-import { refreshFixedExpensesCache } from '@/lib/fixed-expenses';
 import { syncTransactionCategoriesToBudget } from '@/lib/budget-utils';
+import { applyFixedExpenseDetectionToTransactions } from '@/lib/fixed-expense-detector';
 
 export const runtime = 'nodejs';
 
@@ -413,14 +413,14 @@ export async function POST(request: NextRequest) {
         let itemClarificationNeeded = 0;
         const existingByPlaidIdSkipped = candidateTransactions.length - newTransactions.length;
 
+        // Build transactions first so we can run fixed-expense detection in one batch.
+        let transactionsForInsert: Transaction[] = [];
         for (let i = 0; i < dedupedNewTransactions.length; i++) {
           const plaidTxn = dedupedNewTransactions[i];
           const categorized = categorizedTransactions[i];
-          
-          // Get unified account_id if available
-          const unifiedAccountId = accountIdMap.get(plaidTxn.account_id) || null;
 
-          const transaction: Transaction = {
+          const unifiedAccountId = accountIdMap.get(plaidTxn.account_id) || null;
+          transactionsForInsert.push({
             user_id: userId,
             plaid_transaction_id: plaidTxn.transaction_id,
             plaid_account_id: plaidTxn.account_id,
@@ -448,7 +448,19 @@ export async function POST(request: NextRequest) {
               location: plaidTxn.location,
               confidence: categorized?.confidence || 0.5,
             },
-          };
+          });
+        }
+
+        // Fixed expense detection (NEW): category-based + LLM transaction-level tagging
+        // Old cadence-based fixed-expense logic is intentionally disabled.
+        try {
+          transactionsForInsert = await applyFixedExpenseDetectionToTransactions(userId, transactionsForInsert);
+        } catch (e: any) {
+          console.warn('[plaid/sync-transactions] Fixed expense detection skipped:', e?.message || e);
+        }
+
+        for (let i = 0; i < transactionsForInsert.length; i++) {
+          const transaction = transactionsForInsert[i];
 
           const { error: insertError } = await supabase
             .from('transactions')
@@ -459,7 +471,7 @@ export async function POST(request: NextRequest) {
             itemSkipped++;
           } else {
             itemAdded++;
-            allInsertedTransactions.push(categorized);
+            allInsertedTransactions.push(categorizedTransactions[i]);
             if (transaction.needs_clarification) {
               itemClarificationNeeded++;
             }
@@ -528,13 +540,6 @@ export async function POST(request: NextRequest) {
         console.error('[plaid/sync-transactions] Pattern monitoring error:', monitorError.message);
         // Non-critical, don't fail the sync
       }
-    }
-
-    // Refresh fixed expenses cache in the background (non-blocking)
-    if (totalAdded > 0 || totalModified > 0) {
-      refreshFixedExpensesCache(userId).catch(err => {
-        console.error('[plaid/sync-transactions] Error refreshing fixed expenses cache:', err);
-      });
     }
 
     // Sync all transaction categories to budget (safety net)

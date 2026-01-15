@@ -2,20 +2,23 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 
-interface FixedExpense {
-  merchant_name: string;
-  median_amount: number; // Monthly amount
-  occurrence_count: number;
-  months_tracked: number;
-  avg_day_of_month: number;
-  last_occurrence_date: string;
-  is_maybe?: boolean; // True if this needs user confirmation
-  merchant_key?: string; // Normalized merchant key
+interface FixedExpenseTxn {
+  id: string;
+  merchant: string;
+  amount: number;
+  date: string;
+  category?: string | null;
+  description?: string | null;
+  currency?: string | null;
+  is_maybe?: boolean;
+  fixed_expense_source?: string | null;
+  fixed_expense_confidence?: number | null;
+  fixed_expense_explain?: string | null;
 }
 
 interface FixedExpensesData {
   total: number;
-  expenses: FixedExpense[];
+  expenses: FixedExpenseTxn[];
   calculated_at: string;
   from_cache: boolean;
 }
@@ -35,6 +38,12 @@ function formatCurrency(amount: number, currency: string = 'USD'): string {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(amount);
+}
+
+function formatShortDate(dateStr: string): string {
+  const d = new Date(dateStr);
+  if (!Number.isFinite(d.getTime())) return dateStr;
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 export default function FixedExpensesPanel({
@@ -96,11 +105,10 @@ export default function FixedExpensesPanel({
   // Handle manual refresh
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
-    // User explicitly requested a full DB-cache invalidate + recompute
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`/api/fixed-expenses?refresh=1&_ts=${Date.now()}`, {
+      const response = await fetch(`/api/fixed-expenses?_ts=${Date.now()}`, {
         cache: 'no-store',
         headers: { 'Cache-Control': 'no-cache' },
       });
@@ -128,12 +136,9 @@ export default function FixedExpensesPanel({
     setIsRefreshing(false);
   }, []);
 
-  // Handle confirming a "maybe" expense as fixed
-  const handleConfirmFixedExpense = useCallback(async (expense: FixedExpense, index: number) => {
-    if (!expense.merchant_key) {
-      console.error('Cannot confirm expense without merchant_key');
-      return;
-    }
+  // Handle confirming a "maybe" transaction as fixed
+  const handleConfirmFixedExpense = useCallback(async (expense: FixedExpenseTxn, index: number) => {
+    if (!expense.id) return;
 
     setConfirmingIndex(index);
 
@@ -144,10 +149,10 @@ export default function FixedExpensesPanel({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          merchant_key: expense.merchant_key,
-          merchant_name: expense.merchant_name,
-          amount: expense.median_amount,
-          day: expense.avg_day_of_month,
+          transaction_id: expense.id,
+          merchant_name: expense.merchant,
+          amount: expense.amount,
+          date: expense.date,
           action: 'confirm',
         }),
       });
@@ -156,17 +161,13 @@ export default function FixedExpensesPanel({
         throw new Error('Failed to confirm fixed expense');
       }
 
-      // Don't clear cache or refresh - let the memory take effect on next natural recalculation
-      // (user refresh, bank statement upload, or Plaid sync)
-      console.log(`✓ Confirmed "${expense.merchant_name}" as fixed expense (will apply on next calculation)`);
-      
       // Update UI locally: remove "maybe" badge
       setData(current => {
         if (!current) return null;
         return {
           ...current,
           expenses: current.expenses.map(e => 
-            e.merchant_key === expense.merchant_key 
+            e.id === expense.id
               ? { ...e, is_maybe: false } 
               : e
           )
@@ -182,11 +183,8 @@ export default function FixedExpensesPanel({
   }, []);
 
   // Handle rejecting an expense as NOT fixed
-  const handleRejectFixedExpense = useCallback(async (expense: FixedExpense, index: number) => {
-    if (!expense.merchant_key) {
-      console.error('Cannot reject expense without merchant_key');
-      return;
-    }
+  const handleRejectFixedExpense = useCallback(async (expense: FixedExpenseTxn, index: number) => {
+    if (!expense.id) return;
 
     setConfirmingIndex(index);
 
@@ -197,10 +195,10 @@ export default function FixedExpensesPanel({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          merchant_key: expense.merchant_key,
-          merchant_name: expense.merchant_name,
-          amount: expense.median_amount,
-          day: expense.avg_day_of_month,
+          transaction_id: expense.id,
+          merchant_name: expense.merchant,
+          amount: expense.amount,
+          date: expense.date,
           action: 'reject',
         }),
       });
@@ -209,16 +207,11 @@ export default function FixedExpensesPanel({
         throw new Error('Failed to reject fixed expense');
       }
 
-      // Don't clear cache or refresh - let the memory take effect on next natural recalculation
-      // (user refresh, bank statement upload, or Plaid sync)
-      console.log(`✕ Rejected "${expense.merchant_name}" as fixed expense (will apply on next calculation)`);
-      
-      // Update UI locally: remove the rejected expense from the list
+      // Update UI locally: remove the rejected transaction from the list
       setData(current => {
         if (!current) return null;
-        const newExpenses = current.expenses.filter(e => e.merchant_key !== expense.merchant_key);
-        // Also update total amount
-        const newTotal = newExpenses.reduce((sum, e) => sum + e.median_amount, 0);
+        const newExpenses = current.expenses.filter(e => e.id !== expense.id);
+        const newTotal = current.total; // keep server total; next fetch will recompute accurately
         
         return {
           ...current,
@@ -310,7 +303,7 @@ export default function FixedExpensesPanel({
         </div>
         <div className="px-4 py-4 text-center">
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            AI-powered detection • Requires 3+ months of data
+            Automatically detected from your transactions
           </p>
         </div>
       </div>
@@ -334,7 +327,7 @@ export default function FixedExpensesPanel({
               Fixed Expenses
             </h4>
             <span className="text-[10px] text-slate-400 dark:text-slate-500">
-              ({data.expenses.length} recurring)
+              ({data.expenses.length} transactions)
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -363,7 +356,7 @@ export default function FixedExpensesPanel({
                 {formatCurrency(data.total, currency)}
               </span>
               <span className="text-[10px] text-slate-400 dark:text-slate-500 ml-0.5">
-                /mo
+                MTD
               </span>
             </div>
           </div>
@@ -375,7 +368,7 @@ export default function FixedExpensesPanel({
         <div className="space-y-1">
           {displayedExpenses.map((expense, index) => (
             <div 
-              key={`${expense.merchant_name}-${index}`}
+              key={expense.id || `${expense.merchant}-${expense.date}-${index}`}
               className={`relative flex items-center justify-between h-10 px-2 border-b border-slate-50 dark:border-slate-800/50 last:border-b-0 ${
                 expense.is_maybe 
                   ? 'bg-amber-50/50 dark:bg-amber-900/10 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors' 
@@ -386,7 +379,7 @@ export default function FixedExpensesPanel({
             >
               <div className="flex-1 min-w-0 pr-3 flex items-center gap-2">
                 <p className="text-xs font-medium text-slate-900 dark:text-white truncate">
-                  {expense.merchant_name}
+                  {expense.merchant}
                 </p>
                 {expense.is_maybe && (
                   <span className="text-[9px] px-1.5 py-0.5 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded shrink-0">
@@ -394,7 +387,7 @@ export default function FixedExpensesPanel({
                   </span>
                 )}
                 <span className="text-[10px] text-slate-400 dark:text-slate-500 shrink-0">
-                  Day {expense.avg_day_of_month}
+                  {formatShortDate(expense.date)}
                 </span>
               </div>
               <div className="flex items-center justify-end min-w-[80px]">
@@ -427,7 +420,7 @@ export default function FixedExpensesPanel({
                   </div>
                 ) : (
                   <p className="text-xs font-semibold text-slate-900 dark:text-white shrink-0 text-right">
-                    {formatCurrency(expense.median_amount, currency)}
+                    {formatCurrency(expense.amount, currency)}
                   </p>
                 )}
               </div>
