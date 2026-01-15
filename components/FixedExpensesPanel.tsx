@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 
-interface FixedExpenseTxn {
+export interface FixedExpenseTxn {
   id: string;
   merchant: string;
   amount: number;
@@ -16,7 +16,7 @@ interface FixedExpenseTxn {
   fixed_expense_explain?: string | null;
 }
 
-interface FixedExpensesData {
+export interface FixedExpensesData {
   total: number;
   expenses: FixedExpenseTxn[];
   calculated_at: string;

@@ -2,25 +2,9 @@
 
 import { useState, useEffect, ReactNode, useCallback } from 'react';
 import ChartRenderer from './ChartRenderer';
-import FixedExpensesPanel from './FixedExpensesPanel';
+import FixedExpensesPanel, { type FixedExpensesData } from './FixedExpensesPanel';
 import { ChartConfig } from '@/lib/chart-types';
 import { formatCompactCurrency } from '@/lib/chart-utils';
-
-interface FixedExpensesData {
-  total: number;
-  expenses: Array<{
-    merchant_name: string;
-    median_amount: number;
-    occurrence_count: number;
-    months_tracked: number;
-    avg_day_of_month: number;
-    last_occurrence_date: string;
-    is_maybe?: boolean;
-    merchant_key?: string;
-  }>;
-  calculated_at: string;
-  from_cache: boolean;
-}
 
 interface VisualizationPanelProps {
   userId?: string;

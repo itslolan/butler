@@ -11,67 +11,73 @@ import Link from 'next/link';
 // Demo user ID - this will be used to load sample data
 const DEMO_USER_ID = 'demo-user';
 
-// Hardcoded fixed expenses for demo mode (aligned with seed-sample-data)
+// Hardcoded fixed expenses for demo mode (transaction-level)
 const DEMO_FIXED_EXPENSES = {
   total: 360.97,
   expenses: [
     {
-      merchant_name: 'Pacific Gas & Electric',
-      median_amount: 125.00,
-      occurrence_count: 12,
-      months_tracked: 12,
-      avg_day_of_month: 15,
-      last_occurrence_date: new Date().toISOString().split('T')[0],
-      merchant_key: 'pacific_gas_electric'
+      id: 'demo-fixed-1',
+      merchant: 'Pacific Gas & Electric',
+      amount: 125.0,
+      date: new Date().toISOString().split('T')[0],
+      currency: 'USD',
+      is_maybe: false,
+      fixed_expense_source: 'category',
     },
     {
-      merchant_name: 'Verizon Wireless',
-      median_amount: 85.00,
-      occurrence_count: 12,
-      months_tracked: 12,
-      avg_day_of_month: 5,
-      last_occurrence_date: new Date().toISOString().split('T')[0],
-      merchant_key: 'verizon_wireless'
+      id: 'demo-fixed-2',
+      merchant: 'Verizon Wireless',
+      amount: 85.0,
+      date: new Date().toISOString().split('T')[0],
+      currency: 'USD',
+      is_maybe: false,
+      fixed_expense_source: 'category',
     },
     {
-      merchant_name: 'AT&T Internet',
-      median_amount: 75.00,
-      occurrence_count: 12,
-      months_tracked: 12,
-      avg_day_of_month: 10,
-      last_occurrence_date: new Date().toISOString().split('T')[0],
-      merchant_key: 'att_internet'
+      id: 'demo-fixed-3',
+      merchant: 'AT&T Internet',
+      amount: 75.0,
+      date: new Date().toISOString().split('T')[0],
+      currency: 'USD',
+      is_maybe: false,
+      fixed_expense_source: 'category',
     },
     {
-      merchant_name: 'Planet Fitness',
-      median_amount: 49.99,
-      occurrence_count: 12,
-      months_tracked: 12,
-      avg_day_of_month: 1,
-      last_occurrence_date: new Date().toISOString().split('T')[0],
-      merchant_key: 'planet_fitness'
+      id: 'demo-fixed-4',
+      merchant: 'Planet Fitness',
+      amount: 49.99,
+      date: new Date().toISOString().split('T')[0],
+      currency: 'USD',
+      is_maybe: true,
+      fixed_expense_source: 'llm',
+      fixed_expense_confidence: 0.62,
+      fixed_expense_explain: 'Gym membership subscription that likely recurs monthly',
     },
     {
-      merchant_name: 'Netflix',
-      median_amount: 15.99,
-      occurrence_count: 12,
-      months_tracked: 12,
-      avg_day_of_month: 8,
-      last_occurrence_date: new Date().toISOString().split('T')[0],
-      merchant_key: 'netflix'
+      id: 'demo-fixed-5',
+      merchant: 'Netflix',
+      amount: 15.99,
+      date: new Date().toISOString().split('T')[0],
+      currency: 'USD',
+      is_maybe: false,
+      fixed_expense_source: 'llm',
+      fixed_expense_confidence: 0.92,
+      fixed_expense_explain: 'Recognizable subscription service',
     },
     {
-      merchant_name: 'Spotify',
-      median_amount: 9.99,
-      occurrence_count: 12,
-      months_tracked: 12,
-      avg_day_of_month: 12,
-      last_occurrence_date: new Date().toISOString().split('T')[0],
-      merchant_key: 'spotify'
-    }
+      id: 'demo-fixed-6',
+      merchant: 'Spotify',
+      amount: 9.99,
+      date: new Date().toISOString().split('T')[0],
+      currency: 'USD',
+      is_maybe: false,
+      fixed_expense_source: 'llm',
+      fixed_expense_confidence: 0.9,
+      fixed_expense_explain: 'Recognizable subscription service',
+    },
   ],
   calculated_at: new Date().toISOString(),
-  from_cache: false
+  from_cache: false,
 };
 
 export default function DemoPage() {
