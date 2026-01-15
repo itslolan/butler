@@ -1,42 +1,241 @@
-import { supabase, BudgetCategory, Budget } from './supabase';
+import { supabase, BudgetCategory, Budget, BudgetSuperCategory } from './supabase';
 import { USER_PROVIDED_INCOME_MERCHANT } from './financial-figure-sources';
 
-// Default categories - aligned with AI categorizer output for consistency
-// These match the categories the LLM typically generates when categorizing transactions
-export const DEFAULT_FREELANCER_CATEGORIES = [
-  // Housing & Utilities (Essential)
-  'Housing',
-  'Rent / Housing',
-  'Utilities',
-  
-  // Food (Essential & Discretionary)
-  'Groceries',
-  'Food & Dining',
-  
-  // Transportation (Essential)
-  'Transportation',
-  'Gas',
-  
-  // Healthcare (Essential)
-  'Healthcare',
-  'Health Insurance',
-  
+export const DEFAULT_MISC_SUPER_CATEGORY = 'Miscellaneous';
+
+// Default category hierarchy for new users
+export const DEFAULT_CATEGORY_HIERARCHY: Array<{
+  name: string;
+  categories: string[];
+}> = [
+  // Income
+  {
+    name: 'Primary Income',
+    categories: ['Salary / Wages', 'Contract Income', 'Freelance Income'],
+  },
+  {
+    name: 'Variable Income',
+    categories: ['Bonuses', 'Commissions', 'Overtime', 'Tips'],
+  },
+  {
+    name: 'Business Income',
+    categories: ['Client Payments', 'Project-Based Income', 'Retainers'],
+  },
+  {
+    name: 'Other Income',
+    categories: ['Interest', 'Dividends', 'Rental Income', 'Refunds & Reimbursements', 'Gifts', 'Other Income'],
+  },
+  // Expenses
+  {
+    name: 'Housing',
+    categories: ['Rent / Mortgage', 'Property Taxes', 'Home Insurance', 'Maintenance & Repairs', 'HOA Fees'],
+  },
+  {
+    name: 'Utilities',
+    categories: ['Electricity', 'Water', 'Gas', 'Internet', 'Mobile Phone'],
+  },
+  {
+    name: 'Food & Dining',
+    categories: ['Groceries', 'Restaurants', 'Coffee & Snacks', 'Food Delivery'],
+  },
+  {
+    name: 'Transportation',
+    categories: ['Fuel', 'Public Transit', 'Ride Share / Taxi', 'Vehicle Maintenance', 'Parking & Tolls', 'Vehicle Insurance'],
+  },
+  {
+    name: 'Shopping',
+    categories: ['Clothing', 'Electronics', 'Household Items', 'Personal Purchases'],
+  },
   // Financial
-  'Loans',
-  'Insurance',
-  'Savings',
-  
-  // Lifestyle (Discretionary)
-  'Shopping',
-  'Entertainment',
-  'Travel',
-  'Personal Care',
-  'Subscriptions',
-  
-  // Other
-  'Other Expenses',
-  'Uncategorized',
+  {
+    name: 'Debt & Credit',
+    categories: ['Credit Card Payments', 'Personal Loans', 'Student Loans', 'Auto Loans'],
+  },
+  {
+    name: 'Savings & Investments',
+    categories: ['Emergency Fund', 'Retirement Contributions', 'Investments', 'High-Yield Savings'],
+  },
+  // Business
+  {
+    name: 'Business Expenses',
+    categories: [
+      'Software & Tools',
+      'Hardware & Equipment',
+      'Subscriptions',
+      'Hosting / Domains',
+      'Coworking / Office Rent',
+      'Marketing & Advertising',
+      'Professional Services',
+    ],
+  },
+  // Taxes
+  {
+    name: 'Taxes',
+    categories: ['Income Tax', 'Self-Employment Tax', 'VAT / GST', 'Estimated Taxes'],
+  },
+  // Lifestyle
+  {
+    name: 'Health & Wellness',
+    categories: ['Health Insurance', 'Medical', 'Dental', 'Vision', 'Fitness'],
+  },
+  {
+    name: 'Personal & Family',
+    categories: ['Childcare', 'Education', 'Personal Care', 'Pet Expenses'],
+  },
+  {
+    name: 'Entertainment',
+    categories: ['Streaming Services', 'Events & Hobbies', 'Games'],
+  },
+  {
+    name: 'Travel',
+    categories: ['Flights', 'Accommodation', 'Local Transport'],
+  },
+  // Miscellaneous
+  {
+    name: DEFAULT_MISC_SUPER_CATEGORY,
+    categories: ['Cash Withdrawals', 'Transfers', 'Fees & Charges', 'Charitable Donations', 'Uncategorized'],
+  },
 ];
+
+/**
+ * Get all budget super-categories for a user
+ */
+export async function getBudgetSuperCategories(userId: string): Promise<BudgetSuperCategory[]> {
+  const { data, error } = await supabase
+    .from('budget_super_categories')
+    .select('*')
+    .eq('user_id', userId)
+    .order('display_order', { ascending: true })
+    .order('name', { ascending: true });
+
+  if (error) {
+    throw new Error(`Failed to get budget super-categories: ${error.message}`);
+  }
+
+  return data || [];
+}
+
+/**
+ * Get super-categories and categories together for a user
+ */
+export async function getBudgetCategoryHierarchy(userId: string): Promise<{
+  superCategories: BudgetSuperCategory[];
+  categories: BudgetCategory[];
+}> {
+  let [superCategories, categories] = await Promise.all([
+    getBudgetSuperCategories(userId),
+    getBudgetCategories(userId),
+  ]);
+
+  if (superCategories.length === 0 && categories.length === 0) {
+    await ensureDefaultBudgetHierarchy(userId);
+    [superCategories, categories] = await Promise.all([
+      getBudgetSuperCategories(userId),
+      getBudgetCategories(userId),
+    ]);
+  }
+
+  return { superCategories, categories };
+}
+
+async function getMiscSuperCategoryId(userId: string): Promise<string> {
+  const { data, error } = await supabase
+    .from('budget_super_categories')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('name', DEFAULT_MISC_SUPER_CATEGORY)
+    .single();
+
+  if (!error && data?.id) {
+    return data.id as string;
+  }
+
+  if (error && error.code !== 'PGRST116') {
+    throw new Error(`Failed to get "${DEFAULT_MISC_SUPER_CATEGORY}" super-category: ${error.message}`);
+  }
+
+  const { data: maxOrderData, error: maxOrderError } = await supabase
+    .from('budget_super_categories')
+    .select('display_order')
+    .eq('user_id', userId)
+    .order('display_order', { ascending: false })
+    .limit(1);
+
+  if (maxOrderError) {
+    throw new Error(`Failed to determine super-category order: ${maxOrderError.message}`);
+  }
+
+  const nextOrder = (maxOrderData?.[0]?.display_order ?? 0) + 1;
+  const { data: inserted, error: insertError } = await supabase
+    .from('budget_super_categories')
+    .insert({
+      user_id: userId,
+      name: DEFAULT_MISC_SUPER_CATEGORY,
+      display_order: nextOrder,
+    })
+    .select()
+    .single();
+
+  if (insertError || !inserted) {
+    throw new Error(`Failed to create "${DEFAULT_MISC_SUPER_CATEGORY}" super-category: ${insertError?.message}`);
+  }
+
+  return inserted.id as string;
+}
+
+async function ensureDefaultBudgetHierarchy(userId: string): Promise<void> {
+  const superCategoryRecords = DEFAULT_CATEGORY_HIERARCHY.map((superCategory, index) => ({
+    user_id: userId,
+    name: superCategory.name,
+    display_order: index,
+  }));
+
+  const { error: superCategoryError } = await supabase
+    .from('budget_super_categories')
+    .upsert(superCategoryRecords, {
+      onConflict: 'user_id,name',
+      ignoreDuplicates: true,
+    });
+
+  if (superCategoryError) {
+    throw new Error(`Failed to initialize budget super-categories: ${superCategoryError.message}`);
+  }
+
+  const superCategories = await getBudgetSuperCategories(userId);
+  const superCategoryMap = new Map(
+    superCategories.map(superCategory => [superCategory.name, superCategory.id as string])
+  );
+
+  const categoryRecords: Omit<BudgetCategory, 'id' | 'created_at'>[] = [];
+  for (const superCategory of DEFAULT_CATEGORY_HIERARCHY) {
+    const superCategoryId = superCategoryMap.get(superCategory.name);
+    if (!superCategoryId) continue;
+    superCategory.categories.forEach((name, index) => {
+      categoryRecords.push({
+        user_id: userId,
+        name,
+        is_custom: false,
+        display_order: index,
+        super_category_id: superCategoryId,
+      });
+    });
+  }
+
+  if (categoryRecords.length === 0) {
+    return;
+  }
+
+  const { error: categoryError } = await supabase
+    .from('budget_categories')
+    .upsert(categoryRecords, {
+      onConflict: 'user_id,name',
+      ignoreDuplicates: true,
+    });
+
+  if (categoryError) {
+    throw new Error(`Failed to initialize budget categories: ${categoryError.message}`);
+  }
+}
 
 /**
  * Get all budget categories for a user
@@ -234,50 +433,8 @@ export async function getMedianMonthlyIncome(
  * Uses categories from transactions if they exist, otherwise uses default freelancer categories
  */
 export async function initializeBudgetCategories(userId: string): Promise<BudgetCategory[]> {
-  // If the user has any existing transactions, we should ONLY initialize from those transactions
-  // (including "Uncategorized" if applicable) — do NOT fall back to starter categories.
-  const [transactionsExist, transactionCategories] = await Promise.all([
-    hasTransactions(userId),
-    getCategoriesFromTransactions(userId),
-  ]);
-  
-  // If user has transactions, use only those categories; otherwise use default freelancer categories.
-  const allCategories = transactionsExist
-    ? new Set<string>(transactionCategories.length > 0 ? transactionCategories : ['Uncategorized'])
-    : new Set<string>(DEFAULT_FREELANCER_CATEGORIES);
+  await ensureDefaultBudgetHierarchy(userId);
 
-  // Create category records
-  const categoryRecords: Omit<BudgetCategory, 'id' | 'created_at'>[] = [];
-  let order = 0;
-  
-  for (const name of allCategories) {
-    const isFromTransactions = transactionCategories.includes(name);
-    categoryRecords.push({
-      user_id: userId,
-      name,
-      is_custom: false, // All initial categories are not custom
-      display_order: order++,
-    });
-  }
-
-  if (categoryRecords.length === 0) {
-    return [];
-  }
-
-  // Insert categories (ignore conflicts for existing ones)
-  const { data, error } = await supabase
-    .from('budget_categories')
-    .upsert(categoryRecords, { 
-      onConflict: 'user_id,name',
-      ignoreDuplicates: true 
-    })
-    .select();
-
-  if (error) {
-    throw new Error(`Failed to initialize budget categories: ${error.message}`);
-  }
-
-  // Return all categories for the user
   return getBudgetCategories(userId);
 }
 
@@ -285,11 +442,14 @@ export async function initializeBudgetCategories(userId: string): Promise<Budget
  * Add a custom category for a user
  */
 export async function addCustomCategory(userId: string, name: string): Promise<BudgetCategory> {
+  const superCategoryId = await getMiscSuperCategoryId(userId);
+
   // Get max display order
   const { data: maxOrderData } = await supabase
     .from('budget_categories')
     .select('display_order')
     .eq('user_id', userId)
+    .eq('super_category_id', superCategoryId)
     .order('display_order', { ascending: false })
     .limit(1);
 
@@ -302,6 +462,7 @@ export async function addCustomCategory(userId: string, name: string): Promise<B
       name: name.trim(),
       is_custom: true,
       display_order: maxOrder + 1,
+      super_category_id: superCategoryId,
     })
     .select()
     .single();
@@ -326,8 +487,14 @@ export async function syncTransactionCategoriesToBudget(
 ): Promise<void> {
   if (transactionCategories.length === 0) return;
   
+  const miscSuperCategoryId = await getMiscSuperCategoryId(userId);
+
   // Get existing budget categories
-  const existingCategories = await getBudgetCategories(userId);
+  let existingCategories = await getBudgetCategories(userId);
+  if (existingCategories.length === 0) {
+    await ensureDefaultBudgetHierarchy(userId);
+    existingCategories = await getBudgetCategories(userId);
+  }
   const existingNames = new Set(existingCategories.map(c => c.name));
   
   // Find new categories that don't exist in budget
@@ -336,12 +503,15 @@ export async function syncTransactionCategoriesToBudget(
   if (newCategories.length === 0) return;
   
   // Insert new categories
-  const maxOrder = existingCategories.reduce((max, c) => Math.max(max, c.display_order || 0), 0);
+  const maxOrder = existingCategories
+    .filter(c => c.super_category_id === miscSuperCategoryId)
+    .reduce((max, c) => Math.max(max, c.display_order || 0), 0);
   const categoryRecords = newCategories.map((name, idx) => ({
     user_id: userId,
     name,
     is_custom: false,
     display_order: maxOrder + idx + 1,
+    super_category_id: miscSuperCategoryId,
   }));
   
   const { error } = await supabase.from('budget_categories').insert(categoryRecords);
@@ -453,6 +623,49 @@ export async function getBudgetsForMonth(
     .from('budgets')
     .select('*')
     .eq('user_id', userId)
+    .eq('month', month)
+    .not('category_id', 'is', null);
+
+  if (error) {
+    throw new Error(`Failed to get budgets: ${error.message}`);
+  }
+
+  return data || [];
+}
+
+/**
+ * Get super-category budgets for a specific month
+ */
+export async function getSuperBudgetsForMonth(
+  userId: string,
+  month: string
+): Promise<Budget[]> {
+  const { data, error } = await supabase
+    .from('budgets')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('month', month)
+    .is('category_id', null)
+    .not('super_category_id', 'is', null);
+
+  if (error) {
+    throw new Error(`Failed to get super-category budgets: ${error.message}`);
+  }
+
+  return data || [];
+}
+
+/**
+ * Get all budgets (categories + super-categories) for a specific month
+ */
+export async function getAllBudgetsForMonth(
+  userId: string,
+  month: string
+): Promise<Budget[]> {
+  const { data, error } = await supabase
+    .from('budgets')
+    .select('*')
+    .eq('user_id', userId)
     .eq('month', month);
 
   if (error) {
@@ -490,6 +703,47 @@ export async function saveBudgets(
 }
 
 /**
+ * Save super-category budgets for a month (replace existing)
+ */
+export async function saveSuperBudgets(
+  userId: string,
+  month: string,
+  budgets: Array<{ super_category_id: string; budgeted_amount: number }>
+): Promise<void> {
+  const { error: deleteError } = await supabase
+    .from('budgets')
+    .delete()
+    .eq('user_id', userId)
+    .eq('month', month)
+    .is('category_id', null);
+
+  if (deleteError) {
+    throw new Error(`Failed to clear super-category budgets: ${deleteError.message}`);
+  }
+
+  if (budgets.length === 0) {
+    return;
+  }
+
+  const records = budgets.map(b => ({
+    user_id: userId,
+    category_id: null,
+    super_category_id: b.super_category_id,
+    month,
+    budgeted_amount: b.budgeted_amount,
+    updated_at: new Date().toISOString(),
+  }));
+
+  const { error } = await supabase
+    .from('budgets')
+    .insert(records);
+
+  if (error) {
+    throw new Error(`Failed to save super-category budgets: ${error.message}`);
+  }
+}
+
+/**
  * Get the most recent month that has budget records for a user
  * Useful for budget carryover to future months
  */
@@ -522,19 +776,32 @@ export async function copyBudgetsToMonth(
   toMonth: string
 ): Promise<void> {
   // Get source month budgets
-  const sourceBudgets = await getBudgetsForMonth(userId, fromMonth);
+  const sourceBudgets = await getAllBudgetsForMonth(userId, fromMonth);
   
   if (sourceBudgets.length === 0) {
     return; // Nothing to copy
   }
 
   // Create target month budget records
-  const targetBudgets = sourceBudgets.map(b => ({
-    category_id: b.category_id,
-    budgeted_amount: b.budgeted_amount,
-  }));
+  const targetCategoryBudgets = sourceBudgets
+    .filter(b => b.category_id)
+    .map(b => ({
+      category_id: b.category_id as string,
+      budgeted_amount: b.budgeted_amount,
+    }));
 
-  await saveBudgets(userId, toMonth, targetBudgets);
+  const targetSuperBudgets = sourceBudgets
+    .filter(b => b.super_category_id)
+    .map(b => ({
+      super_category_id: b.super_category_id as string,
+      budgeted_amount: b.budgeted_amount,
+    }));
+
+  if (targetCategoryBudgets.length > 0) {
+    await saveBudgets(userId, toMonth, targetCategoryBudgets);
+  }
+
+  await saveSuperBudgets(userId, toMonth, targetSuperBudgets);
 }
 
 /**
