@@ -1,5 +1,6 @@
 import { supabase, BudgetCategory, Budget, BudgetSuperCategory } from './supabase';
 import { USER_PROVIDED_INCOME_MERCHANT } from './financial-figure-sources';
+import { normalizeCategoryNameKey, normalizeCategoryDisplayName, uniqueCategoryNamesByKey } from './category-normalization';
 
 export const DEFAULT_MISC_SUPER_CATEGORY = 'Miscellaneous';
 
@@ -495,10 +496,16 @@ export async function syncTransactionCategoriesToBudget(
     await ensureDefaultBudgetHierarchy(userId);
     existingCategories = await getBudgetCategories(userId);
   }
-  const existingNames = new Set(existingCategories.map(c => c.name));
+  const existingByKey = new Map<string, string>(
+    existingCategories.map(c => [normalizeCategoryNameKey(c.name), c.name])
+  );
   
   // Find new categories that don't exist in budget
-  const newCategories = transactionCategories.filter(cat => cat && !existingNames.has(cat));
+  const candidates = uniqueCategoryNamesByKey(transactionCategories);
+  const newCategories = candidates.filter(name => {
+    const key = normalizeCategoryNameKey(name);
+    return !existingByKey.has(key);
+  });
   
   if (newCategories.length === 0) return;
   
@@ -506,21 +513,21 @@ export async function syncTransactionCategoriesToBudget(
   const maxOrder = existingCategories
     .filter(c => c.super_category_id === miscSuperCategoryId)
     .reduce((max, c) => Math.max(max, c.display_order || 0), 0);
-  const categoryRecords = newCategories.map((name, idx) => ({
+  const categoryRecords = newCategories.map((rawName, idx) => ({
     user_id: userId,
-    name,
+    name: normalizeCategoryDisplayName(rawName),
     is_custom: false,
     display_order: maxOrder + idx + 1,
     super_category_id: miscSuperCategoryId,
   }));
   
-  const { error } = await supabase.from('budget_categories').insert(categoryRecords);
+  const { error } = await supabase.from('budget_categories').upsert(categoryRecords, {
+    onConflict: 'user_id,name',
+    ignoreDuplicates: true,
+  });
   
   if (error) {
-    // Ignore duplicate key errors (category already exists)
-    if (error.code !== '23505') {
-      console.error('[syncTransactionCategoriesToBudget] Error:', error);
-    }
+    console.error('[syncTransactionCategoriesToBudget] Error:', error);
   }
 }
 

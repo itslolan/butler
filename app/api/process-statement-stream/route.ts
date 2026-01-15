@@ -7,6 +7,7 @@ import { generateSuggestedActions } from '@/lib/action-generator';
 import { v4 as uuidv4 } from 'uuid';
 import { refreshFixedExpensesCache } from '@/lib/fixed-expenses';
 import { getBudgetCategories, syncTransactionCategoriesToBudget } from '@/lib/budget-utils';
+import { normalizeCategoryNameKey, normalizeCategoryDisplayName } from '@/lib/category-normalization';
 
 export const runtime = 'nodejs';
 
@@ -714,6 +715,15 @@ export async function POST(request: NextRequest) {
         const documentId = insertedDoc.id!;
 
         if (transactionsToInsert.length > 0) {
+          // Canonicalize category strings to match existing budget category names (case/spacing-insensitive).
+          const budgetCategories = await getBudgetCategories(userId).catch(() => []);
+          const existingBudgetByKey = new Map<string, string>(
+            budgetCategories
+              .map(c => (typeof c?.name === 'string' ? normalizeCategoryDisplayName(c.name) : null))
+              .filter((n): n is string => !!n)
+              .map(n => [normalizeCategoryNameKey(n), n] as const)
+          );
+
           const transactions: Transaction[] = transactionsToInsert.map((txn: any) => ({
             user_id: userId,
             document_id: documentId,
@@ -721,7 +731,10 @@ export async function POST(request: NextRequest) {
             date: txn.date,
             merchant: txn.merchant,
             amount: txn.amount,
-            category: txn.category || null,
+            category:
+              typeof txn.category === 'string' && txn.category.trim()
+                ? existingBudgetByKey.get(normalizeCategoryNameKey(txn.category)) ?? normalizeCategoryDisplayName(txn.category)
+                : null,
             description: txn.description || null,
             transaction_type: txn.transactionType || null,
             spend_classification: txn.spendClassification || null,

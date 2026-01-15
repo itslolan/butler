@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getAllMemories, upsertMemory } from '@/lib/db-tools';
 import { getBudgetCategoryHierarchy, syncTransactionCategoriesToBudget } from '@/lib/budget-utils';
+import { normalizeCategoryNameKey, normalizeCategoryDisplayName } from '@/lib/category-normalization';
 
 const GEMINI_MODEL = 'gemini-2.0-flash';
 
@@ -124,31 +125,34 @@ export async function categorizeTransactions(
     // Build system prompt with budget category guidance
     let systemPrompt = CATEGORIZATION_PROMPT;
     
-    const categoryNameSet = new Set<string>();
-    const superCategoryNameSet = new Set<string>();
+    const categoryKeySet = new Set<string>();
+    const superCategoryKeySet = new Set<string>();
     const superCategoryIdSet = new Set<string>();
     const categoriesBySuper = new Map<string, string[]>();
     const ungroupedNames: string[] = [];
+    const existingCategoryByKey = new Map<string, string>();
 
     if (hierarchy?.categories?.length || hierarchy?.superCategories?.length) {
       for (const superCategory of hierarchy.superCategories || []) {
         const superId = superCategory.id || superCategory.name;
-        superCategoryNameSet.add(superCategory.name.toLowerCase());
+        superCategoryKeySet.add(normalizeCategoryNameKey(superCategory.name));
         superCategoryIdSet.add(superId);
         categoriesBySuper.set(superId, []);
       }
 
       for (const category of hierarchy.categories || []) {
-        const normalizedName = category.name.trim();
-        if (!normalizedName) continue;
-        categoryNameSet.add(normalizedName.toLowerCase());
+        const displayName = normalizeCategoryDisplayName(category.name);
+        if (!displayName) continue;
+        const key = normalizeCategoryNameKey(displayName);
+        categoryKeySet.add(key);
+        existingCategoryByKey.set(key, displayName);
         const superId = category.super_category_id;
         if (superId && superCategoryIdSet.has(superId)) {
           const list = categoriesBySuper.get(superId) || [];
-          list.push(normalizedName);
+          list.push(displayName);
           categoriesBySuper.set(superId, list);
         } else {
-          ungroupedNames.push(normalizedName);
+          ungroupedNames.push(displayName);
         }
       }
 
@@ -209,16 +213,21 @@ Use these memories to help classify transactions accurately.`;
       const llmResult = parsed.transactions?.find((r: any) => r.index === index);
       let resolvedCategory = llmResult?.category || t.category || null;
       if (resolvedCategory && typeof resolvedCategory === 'string') {
-        const trimmed = resolvedCategory.trim();
-        const lower = trimmed.toLowerCase();
-        if (trimmed) {
-          if (!categoryNameSet.has(lower) && superCategoryNameSet.has(lower)) {
+        const display = normalizeCategoryDisplayName(resolvedCategory);
+        if (!display) {
+          resolvedCategory = null;
+        } else {
+          const key = normalizeCategoryNameKey(display);
+          const canonical = existingCategoryByKey.get(key);
+          if (canonical) {
+            // Reuse the user's existing budget category display name (avoids case/spacing drift).
+            resolvedCategory = canonical;
+          } else if (!categoryKeySet.has(key) && superCategoryKeySet.has(key)) {
+            // Don't allow super-categories to be assigned as a transaction category.
             resolvedCategory = 'Uncategorized';
           } else {
-            resolvedCategory = trimmed;
+            resolvedCategory = display;
           }
-        } else {
-          resolvedCategory = null;
         }
       }
 
