@@ -7,26 +7,15 @@ export interface WelcomeSummaryMetrics {
   currentMonth: string; // YYYY-MM
   lastMonth?: string; // YYYY-MM
   incomeVsExpensesLast3?: Array<{ month: string; income: number; expenses: number }>;
-  currentBudget?: {
-    income: number;
-    totalBudgeted: number;
-    totalSpent: number;
-    readyToAssign: number;
-    overspentCount: number;
-  };
-  budgetIsSet?: boolean;
   categoryBreakdownCurrent?: Array<{ category: string; total: number; count: number }>;
   categoryBreakdownLastMonth?: Array<{ category: string; total: number; count: number }>;
-  overspentCategories?: Array<{
-    name: string;
-    budgeted: number;
-    spent: number;
-    overspent: number;
-    transactionCount: number;
-    largeTransactionsTotal: number;
-    largeTransactionsCount: number;
-  }>;
 }
+
+export type WelcomeSummaryContext = {
+  displayName?: string | null;
+  dayPeriod?: string | null;
+  localTimeISO?: string | null;
+};
 
 // Lazy init (avoid throwing during build trace)
 let _model: GenerativeModel | null = null;
@@ -62,154 +51,119 @@ function formatUsd0(n: number): string {
   }).format(Math.round(n));
 }
 
-function clamp(n: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, n));
-}
-
 function getTop<T>(items: T[], n: number, score: (x: T) => number): T[] {
   return [...items].sort((a, b) => score(b) - score(a)).slice(0, n);
 }
 
-function classifyOverspendPattern(cat: {
-  spent: number;
-  transactionCount: number;
-  largeTransactionsTotal: number;
-  largeTransactionsCount: number;
-}): 'few_large' | 'many_small' | 'mixed' {
-  const spent = Math.max(0, safeNum(cat.spent));
-  const txCount = Math.max(0, Math.floor(safeNum(cat.transactionCount)));
-  const largeTotal = Math.max(0, safeNum(cat.largeTransactionsTotal));
-  const largeCount = Math.max(0, Math.floor(safeNum(cat.largeTransactionsCount)));
-
-  if (spent <= 0) return 'mixed';
-
-  const largeShare = largeTotal / spent;
-  const looksFewLarge =
-    (largeCount > 0 && largeShare >= 0.5) ||
-    (largeCount > 0 && largeCount <= 3 && largeShare >= 0.35);
-
-  const looksManySmall =
-    (txCount >= 10 && largeShare <= 0.2) ||
-    (txCount >= 14 && largeCount === 0);
-
-  if (looksFewLarge && !looksManySmall) return 'few_large';
-  if (looksManySmall && !looksFewLarge) return 'many_small';
-  return 'mixed';
+function normalizeCategoryName(name: string | null | undefined): string {
+  return (name || '').trim().toLowerCase();
 }
 
-export function generateWelcomeSummaryFallback(metrics: WelcomeSummaryMetrics): string {
-  const cur = metrics.currentBudget;
-  const ive = metrics.incomeVsExpensesLast3 || [];
-  const last = ive.length ? ive[ive.length - 1] : undefined;
-  const income = safeNum(last?.income ?? cur?.income ?? 0);
-  const expenses = safeNum(last?.expenses ?? cur?.totalSpent ?? 0);
-  const savings = income - expenses;
-
-  const parts: string[] = [];
-
-  const budgetIsSet = Boolean(metrics.budgetIsSet ?? (cur && safeNum(cur.totalBudgeted) > 0));
-  const overspent = (metrics.overspentCategories || []).filter(c => safeNum(c.overspent) > 0);
-
-  // If no spending data at all, keep it simple.
-  const hasAnySpend =
-    expenses > 0 ||
-    (metrics.categoryBreakdownCurrent || []).some(c => safeNum(c.total) > 0);
-  if (!hasAnySpend) {
-    return `Upload more transaction data to unlock your personalized spending snapshot.`;
+function normalizeDayPeriod(dayPeriod?: string | null): 'morning' | 'afternoon' | 'evening' | 'night' | null {
+  const value = (dayPeriod || '').trim().toLowerCase();
+  if (value === 'morning' || value === 'afternoon' || value === 'evening' || value === 'night') {
+    return value;
   }
+  return null;
+}
 
-  // 1) Budget set: focus ONLY on categories that breached budget.
-  if (budgetIsSet) {
-    if (overspent.length === 0) {
-      parts.push(`No categories have breached your budget yet this month — nice work staying on track.`);
-      return parts.join(' ');
-    }
+function buildGreeting(context?: WelcomeSummaryContext): string {
+  const dayPeriod = normalizeDayPeriod(context?.dayPeriod);
+  const name = (context?.displayName || '').trim();
+  const greetingByPeriod: Record<'morning' | 'afternoon' | 'evening' | 'night', string> = {
+    morning: 'Good morning',
+    afternoon: 'Good afternoon',
+    evening: 'Good evening',
+    night: 'Good evening',
+  };
+  const greeting = dayPeriod ? greetingByPeriod[dayPeriod] : 'Hello';
+  return name ? `${greeting}, ${name}.` : `${greeting}.`;
+}
 
-    const top = getTop(overspent, 3, c => safeNum(c.overspent));
-    const lines = top.map(c => {
-      const name = c.name;
-      const spentStr = formatUsd0(safeNum(c.spent));
-      const budgetStr = formatUsd0(safeNum(c.budgeted));
-      const overStr = formatUsd0(safeNum(c.overspent));
-
-      const pattern = classifyOverspendPattern({
-        spent: safeNum(c.spent),
-        transactionCount: safeNum(c.transactionCount),
-        largeTransactionsTotal: safeNum(c.largeTransactionsTotal),
-        largeTransactionsCount: safeNum(c.largeTransactionsCount),
-      });
-
-      const txCount = Math.max(0, Math.floor(safeNum(c.transactionCount)));
-      const largeCount = Math.max(0, Math.floor(safeNum(c.largeTransactionsCount)));
-      const largeTotal = safeNum(c.largeTransactionsTotal);
-      const largeSharePct = spentStr && safeNum(c.spent) > 0 ? Math.round((largeTotal / safeNum(c.spent)) * 100) : 0;
-
-      let why = '';
-      if (pattern === 'few_large') {
-        why =
-          largeCount > 0
-            ? `mostly from ${largeCount} larger purchase${largeCount === 1 ? '' : 's'} (~${clamp(largeSharePct, 0, 100)}% of the category spend).`
-            : `mostly from a few larger purchases.`;
-      } else if (pattern === 'many_small') {
-        why = txCount > 0 ? `mostly from many smaller charges (${txCount} transactions).` : `mostly from many smaller charges.`;
-      } else {
-        why = `a mix of bigger and smaller purchases.`;
-      }
-
-      return `${name} is over budget: ${spentStr} spent vs ${budgetStr} budgeted (${overStr} over) — ${why}`;
-    });
-
-    parts.push(lines.join(' '));
-    return parts.join(' ');
-  }
-
-  // 2) No budget set: compare current vs last month for top categories.
+export function generateWelcomeSummaryFallback(
+  metrics: WelcomeSummaryMetrics,
+  context?: WelcomeSummaryContext
+): string {
+  const greeting = buildGreeting(context);
   const curCats = (metrics.categoryBreakdownCurrent || []).filter(c => safeNum(c.total) > 0);
   const lastCats = metrics.categoryBreakdownLastMonth || [];
-  const lastByName = new Map(lastCats.map(c => [c.category, safeNum(c.total)]));
+  const lastByName = new Map(lastCats.map(c => [normalizeCategoryName(c.category), safeNum(c.total)]));
 
-  const topCur = getTop(curCats, 3, c => safeNum(c.total));
-  if (topCur.length === 0) {
-    parts.push(`This month you’ve spent about ${formatUsd0(expenses)} so far — set up a budget to see which categories are trending up.`);
-    return parts.join(' ');
+  const hasAnySpend = curCats.length > 0;
+  if (!hasAnySpend) {
+    return `${greeting} I don't see any transactions yet this month. Connect an account or upload a statement to get your personalized snapshot.`;
   }
 
-  const increased: string[] = [];
-  const comparisons = topCur.map(c => {
-    const name = c.category;
-    const curTotal = safeNum(c.total);
-    const prevTotal = safeNum(lastByName.get(name) ?? 0);
-    const delta = curTotal - prevTotal;
-    const direction = delta > 0 ? 'up' : delta < 0 ? 'down' : 'flat';
+  const totalSpent = curCats.reduce((sum, c) => sum + safeNum(c.total), 0);
+  const topCur = getTop(curCats, 2, c => safeNum(c.total));
+  const topPhrase = topCur
+    .map((c) => `${c.category} (${formatUsd0(safeNum(c.total))})`)
+    .join(topCur.length === 2 ? ' and ' : '');
+
+  const sentences: string[] = [];
+  const firstSentence = topPhrase
+    ? `${greeting} You've spent about ${formatUsd0(totalSpent)} so far this month, with ${topPhrase} leading the way.`
+    : `${greeting} You've spent about ${formatUsd0(totalSpent)} so far this month.`;
+  sentences.push(firstSentence);
+
+  const leadCat = topCur[0];
+  if (leadCat) {
+    const prevTotal = safeNum(lastByName.get(normalizeCategoryName(leadCat.category)) ?? 0);
+    const delta = safeNum(leadCat.total) - prevTotal;
     const deltaAbs = Math.abs(delta);
-    if (delta > 0) increased.push(name);
-    return `${name}: ${formatUsd0(curTotal)} this month, ${direction} ${formatUsd0(deltaAbs)} vs last month (${formatUsd0(prevTotal)}).`;
-  });
-
-  parts.push(comparisons.join(' '));
-  if (increased.length > 0) {
-    parts.push(`A few categories are trending up — set up your budget for this month to keep those increases in check.`);
+    if (prevTotal > 0 || deltaAbs > 0) {
+      const direction = delta > 0 ? 'up' : delta < 0 ? 'down' : 'flat';
+      const compareSentence =
+        direction === 'flat'
+          ? `${leadCat.category} is flat versus last month at ${formatUsd0(prevTotal)}.`
+          : `${leadCat.category} is ${direction} ${formatUsd0(deltaAbs)} vs last month (${formatUsd0(prevTotal)}).`;
+      sentences.push(compareSentence);
+    }
   }
 
-  return parts.join(' ');
+  const increased = topCur
+    .map((c) => {
+      const prev = safeNum(lastByName.get(normalizeCategoryName(c.category)) ?? 0);
+      return safeNum(c.total) - prev > 0 ? c.category : null;
+    })
+    .filter((c): c is string => Boolean(c));
+  if (increased.length > 0 && sentences.length < 3) {
+    const list = increased.slice(0, 2).join(increased.length > 1 ? ' and ' : '');
+    sentences.push(`Keep an eye on ${list} if it keeps trending up.`);
+  }
+
+  return sentences.join(' ');
 }
 
 /**
  * Generate a short, bold welcome summary using Gemini.
  * Returns a plain-text string (UI controls styling).
  */
-export async function generateWelcomeSummaryLLM(metrics: WelcomeSummaryMetrics): Promise<{ text: string; model: string }> {
+export async function generateWelcomeSummaryLLM(
+  metrics: WelcomeSummaryMetrics,
+  context: WelcomeSummaryContext = {}
+): Promise<{ text: string; model: string }> {
   const model = getModel();
+  const dayPeriod = normalizeDayPeriod(context.dayPeriod);
+  const name = (context.displayName || '').trim();
+  const dayPeriodInstruction = dayPeriod
+    ? `Start with a greeting that matches the user's local time of day (${dayPeriod}).`
+    : 'Start with a friendly greeting.';
+  const nameInstruction = name
+    ? `Address the user by name (${name}).`
+    : 'If the name is missing, use a generic greeting.';
 
   const prompt = `You are a financial dashboard assistant.
 
-Write a brief, bold, motivating "welcome summary" for the user's dashboard.
+Write a brief, conversational "welcome summary" for the user's dashboard in markdown.
 
 Constraints:
 - 1–3 sentences total.
 - No emojis.
 - No bullet points.
-- Mention expenses, savings, and budgets if possible.
+- ${dayPeriodInstruction}
+- ${nameInstruction}
+- Use only the provided transaction metrics; do not mention budgets or user-entered values.
 - Be concrete with numbers when present.
 - If data is sparse, say what to do next (upload/sync).
 

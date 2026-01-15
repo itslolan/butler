@@ -1,6 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 type Availability = {
   startMonth: string | null; // YYYY-MM
@@ -30,6 +32,16 @@ function displayNameFallback(displayName?: string | null) {
   return trimmed.split(/\s+/)[0];
 }
 
+type DayPeriod = 'morning' | 'afternoon' | 'evening' | 'night';
+
+function getDayPeriod(date: Date): DayPeriod {
+  const hour = date.getHours();
+  if (hour >= 5 && hour < 12) return 'morning';
+  if (hour >= 12 && hour < 17) return 'afternoon';
+  if (hour >= 17 && hour < 21) return 'evening';
+  return 'night';
+}
+
 export default function DashboardWelcomeSummary({
   userId,
   displayName,
@@ -48,8 +60,14 @@ export default function DashboardWelcomeSummary({
 
   const fetchSummary = useCallback(async (force: boolean) => {
     setError(null);
+    const now = new Date();
+    const dayPeriod = getDayPeriod(now);
     const qs = new URLSearchParams({
       userId,
+      ...(name ? { displayName: name } : {}),
+      dayPeriod,
+      localTimeISO: now.toISOString(),
+      tzOffsetMinutes: String(now.getTimezoneOffset()),
       ...(force ? { force: '1' } : {}),
       _ts: String(Date.now()),
     });
@@ -62,7 +80,7 @@ export default function DashboardWelcomeSummary({
       throw new Error(body?.error || `HTTP ${res.status}`);
     }
     setData(body);
-  }, [userId]);
+  }, [userId, name]);
 
   useEffect(() => {
     let cancelled = false;
@@ -101,10 +119,7 @@ export default function DashboardWelcomeSummary({
       <div className="p-5 sm:p-6">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-              {name ? `Welcome back, ${name}` : 'Welcome back'}
-            </div>
-            <div className="mt-2 text-lg sm:text-xl font-semibold leading-snug text-slate-900 dark:text-white">
+            <div className="text-base sm:text-lg leading-snug text-slate-900 dark:text-white">
               {loading ? (
                 <div className="space-y-2">
                   <div className="h-5 w-11/12 bg-slate-100 dark:bg-slate-800 rounded animate-pulse" />
@@ -114,8 +129,14 @@ export default function DashboardWelcomeSummary({
                 <span className="text-red-600 dark:text-red-400">
                   {error}
                 </span>
+              ) : data?.summaryText ? (
+                <div className="prose prose-slate dark:prose-invert max-w-none">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {data.summaryText}
+                  </ReactMarkdown>
+                </div>
               ) : (
-                data?.summaryText || 'Your dashboard summary will appear here once we have data.'
+                'Your dashboard summary will appear here once we have data.'
               )}
             </div>
           </div>

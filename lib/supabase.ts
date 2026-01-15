@@ -194,6 +194,7 @@ export interface BudgetCategory {
   name: string;
   is_custom: boolean;
   super_category_id?: string | null;
+  is_fixed_expense_category?: boolean;
   display_order?: number;
   created_at?: Date | string;
 }

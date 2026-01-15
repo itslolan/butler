@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
-import { getBudgetHealthAnalysis, getCategoryBreakdown, getCurrentBudget, getIncomeVsExpenses } from '@/lib/assistant-functions';
+import { getCategoryBreakdown, getIncomeVsExpenses } from '@/lib/assistant-functions';
+import { getFixedExpenseCategoryNames } from '@/lib/budget-utils';
 import {
   getDashboardWelcomeSummaryCache,
   upsertDashboardWelcomeSummaryCache,
 } from '@/lib/db-tools';
 import {
   generateWelcomeSummaryFallback,
+  generateWelcomeSummaryLLM,
   type WelcomeSummaryMetrics,
 } from '@/lib/llm-dashboard-welcome-summary';
 
@@ -125,24 +127,44 @@ function buildAvailabilityOneLiner(a: Availability): string {
   return `Data availability: ${range} · ${gaps} gap${gaps === 1 ? '' : 's'}`;
 }
 
+function normalizeCategoryName(name: string | null | undefined): string {
+  return (name || '').trim().toLowerCase();
+}
+
+type DayPeriod = 'morning' | 'afternoon' | 'evening' | 'night';
+
+function dayPeriodFromHour(hour: number): DayPeriod {
+  if (hour >= 5 && hour < 12) return 'morning';
+  if (hour >= 12 && hour < 17) return 'afternoon';
+  if (hour >= 17 && hour < 21) return 'evening';
+  return 'night';
+}
+
+function dayPeriodFromIsoWithOffset(iso: string, tzOffsetMinutes: number): DayPeriod | null {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const localMs = d.getTime() - tzOffsetMinutes * 60 * 1000;
+  const localHour = new Date(localMs).getUTCHours();
+  return dayPeriodFromHour(localHour);
+}
+
 async function buildMetrics(userId: string): Promise<WelcomeSummaryMetrics> {
   const now = new Date();
   const currentMonth = now.toISOString().slice(0, 7);
   const lastMonth = addMonths(now, -1).toISOString().slice(0, 7);
 
-  const [ive3, budget, currentBreakdown, lastBreakdown] = await Promise.all([
+  const [ive3, currentBreakdown, lastBreakdown, fixedCategories] = await Promise.all([
     getIncomeVsExpenses(userId, { months: 3 }),
-    getCurrentBudget(userId, currentMonth).catch(() => null),
     getCategoryBreakdown(userId, { month: currentMonth }).catch(() => []),
     getCategoryBreakdown(userId, { month: lastMonth }).catch(() => []),
+    getFixedExpenseCategoryNames(userId).catch(() => []),
   ]);
 
-  const overspentCount = budget?.categories?.filter((c: any) => c.isOverBudget)?.length || 0;
-  const budgetIsSet = Boolean(budget && Number(budget.totalBudgeted) > 0);
-
-  const budgetHealth = budgetIsSet
-    ? await getBudgetHealthAnalysis(userId, currentMonth).catch(() => null)
-    : null;
+  const fixedSet = new Set(
+    (fixedCategories || []).map((name) => normalizeCategoryName(name))
+  );
+  const filterFixed = (items: Array<{ category: string; total: number; count: number }>) =>
+    items.filter((c) => !fixedSet.has(normalizeCategoryName(c.category)));
 
   return {
     currentMonth,
@@ -154,40 +176,23 @@ async function buildMetrics(userId: string): Promise<WelcomeSummaryMetrics> {
           expenses: Number(r.expenses) || 0,
         }))
       : undefined,
-    currentBudget: budget
-      ? {
-          income: Number(budget.income) || 0,
-          totalBudgeted: Number(budget.totalBudgeted) || 0,
-          totalSpent: Number(budget.totalSpent) || 0,
-          readyToAssign: Number(budget.readyToAssign) || 0,
-          overspentCount,
-        }
-      : undefined,
-    budgetIsSet,
     categoryBreakdownCurrent: Array.isArray(currentBreakdown)
-      ? currentBreakdown.map((c: any) => ({
-          category: String(c.category),
-          total: Number(c.total) || 0,
-          count: Number(c.count) || 0,
-        }))
+      ? filterFixed(
+          currentBreakdown.map((c: any) => ({
+            category: String(c.category),
+            total: Number(c.total) || 0,
+            count: Number(c.count) || 0,
+          }))
+        )
       : [],
     categoryBreakdownLastMonth: Array.isArray(lastBreakdown)
-      ? lastBreakdown.map((c: any) => ({
-          category: String(c.category),
-          total: Number(c.total) || 0,
-          count: Number(c.count) || 0,
-        }))
-      : [],
-    overspentCategories: budgetHealth?.overspentCategories
-      ? budgetHealth.overspentCategories.map((c: any) => ({
-          name: String(c.name),
-          budgeted: Number(c.budgeted) || 0,
-          spent: Number(c.spent) || 0,
-          overspent: Number(c.overspent) || 0,
-          transactionCount: Number(c.transactionCount) || 0,
-          largeTransactionsTotal: Number(c.largeTransactionsTotal) || 0,
-          largeTransactionsCount: Number(c.largeTransactionsCount) || 0,
-        }))
+      ? filterFixed(
+          lastBreakdown.map((c: any) => ({
+            category: String(c.category),
+            total: Number(c.total) || 0,
+            count: Number(c.count) || 0,
+          }))
+        )
       : [],
   };
 }
@@ -197,6 +202,10 @@ export async function GET(request: NextRequest) {
     const sp = request.nextUrl.searchParams;
     const userId = sp.get('userId') || '';
     const force = sp.get('force') === '1' || sp.get('force') === 'true';
+    const displayName = sp.get('displayName') || '';
+    const dayPeriod = (sp.get('dayPeriod') || '').toLowerCase();
+    const localTimeISO = sp.get('localTimeISO') || '';
+    const tzOffsetMinutes = Number(sp.get('tzOffsetMinutes') || '0');
 
     if (!userId) {
       return NextResponse.json({ error: 'Missing userId' }, { status: 400 });
@@ -213,7 +222,12 @@ export async function GET(request: NextRequest) {
     const cacheMonth = cache?.generated_at ? monthKeyFromIso(cache.generated_at) : '';
     const currentMonth = new Date().toISOString().slice(0, 7);
     const cacheIsFreshForThisMonth = cacheMonth === currentMonth;
-    if (cache?.summary_text && !force && cacheIsFreshForThisMonth) {
+    const cacheDayPeriod = cache?.generated_at
+      ? dayPeriodFromIsoWithOffset(cache.generated_at, tzOffsetMinutes)
+      : null;
+    const cacheMatchesDayPeriod = dayPeriod ? cacheDayPeriod === dayPeriod : true;
+
+    if (cache?.summary_text && !force && cacheIsFreshForThisMonth && cacheMatchesDayPeriod) {
       return NextResponse.json({
         summaryText: cache.summary_text,
         fromCache: true,
@@ -227,12 +241,30 @@ export async function GET(request: NextRequest) {
 
     let summaryText = '';
     let model: string | null = null;
-    summaryText = generateWelcomeSummaryFallback(metrics);
-    model = null;
+    try {
+      const llm = await generateWelcomeSummaryLLM(metrics, {
+        displayName,
+        dayPeriod,
+        localTimeISO,
+      });
+      summaryText = llm.text;
+      model = llm.model;
+    } catch (e) {
+      summaryText = generateWelcomeSummaryFallback(metrics, {
+        displayName,
+        dayPeriod,
+        localTimeISO,
+      });
+      model = null;
+    }
 
     // Ensure we always have something reasonable
     if (!summaryText) {
-      summaryText = generateWelcomeSummaryFallback(metrics);
+      summaryText = generateWelcomeSummaryFallback(metrics, {
+        displayName,
+        dayPeriod,
+        localTimeISO,
+      });
     }
 
     await upsertDashboardWelcomeSummaryCache(userId, summaryText, model);

@@ -257,6 +257,26 @@ export async function getBudgetCategories(userId: string): Promise<BudgetCategor
 }
 
 /**
+ * Get the names of categories that are marked as fixed expenses.
+ */
+export async function getFixedExpenseCategoryNames(userId: string): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('budget_categories')
+    .select('name, is_fixed_expense_category')
+    .eq('user_id', userId)
+    .eq('is_fixed_expense_category', true)
+    .order('name', { ascending: true });
+
+  if (error) {
+    throw new Error(`Failed to get fixed expense categories: ${error.message}`);
+  }
+
+  return (data || [])
+    .map((row) => (row as BudgetCategory).name)
+    .filter((name): name is string => typeof name === 'string' && name.trim().length > 0);
+}
+
+/**
  * Check if user has any budget categories set up
  */
 export async function hasBudgetCategories(userId: string): Promise<boolean> {
