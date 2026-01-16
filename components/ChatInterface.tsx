@@ -382,8 +382,45 @@ Successfully mapped **${result.transactions_updated} transaction${result.transac
 
     const userMessage = content.trim();
 
-    // No client-side inference - let LLM handle it via resolve_todo tool
-    // Just track that we have an active clarification and pass it to the LLM
+    // If we are in an active transaction-clarification flow, resolve deterministically.
+    // Relying on the LLM to call resolve_todo is fragile and can leave todos stuck.
+    if (activeClarifyTransactionId) {
+      const inferred = inferTransactionTypeFromText(userMessage);
+      if (inferred) {
+        setInput('');
+        setIsLoading(true);
+        const newMessages = [...messages, { role: 'user' as const, content: userMessage }];
+        setMessages(newMessages);
+
+        // Show an immediate assistant response and resolve the todo in the background.
+        const assistantMessageIndex = newMessages.length;
+        setMessages([
+          ...newMessages,
+          {
+            role: 'assistant',
+            content: `Got it — I’ll mark that transaction as **${inferred}** and clear the todo.`,
+            isStreaming: false,
+          },
+        ]);
+
+        try {
+          await resolveTransactionTodo(activeClarifyTransactionId, inferred);
+          setActiveClarifyTransactionId(null);
+          if (onTodoResolved) onTodoResolved();
+        } catch (e: any) {
+          console.error('[ChatInterface] Failed to resolve transaction todo:', e?.message || e);
+          setMessages(prev => [
+            ...prev,
+            { role: 'system' as const, content: `❌ Failed to resolve todo: ${e?.message || 'unknown error'}` },
+          ]);
+        } finally {
+          setIsLoading(false);
+        }
+        return;
+      }
+      // If we can't infer, fall through to normal LLM chat (it may ask a follow-up).
+    }
+
     setInput('');
     
     // Increment question count for demo mode

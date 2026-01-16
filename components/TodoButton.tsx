@@ -217,7 +217,7 @@ export default function TodoButton({ userId, onSelectTodo, refreshTrigger = 0 }:
                 {/* Dismiss button */}
                 <button
                   onClick={(e) => handleDismiss(e, todo)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors opacity-0 group-hover:opacity-100"
+                  className="absolute right-2 top-1/2 z-10 -translate-y-1/2 p-1.5 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors opacity-100 lg:opacity-0 lg:group-hover:opacity-100"
                   title="Dismiss without resolving"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
