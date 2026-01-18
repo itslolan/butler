@@ -17,11 +17,20 @@ export default function SankeyRenderer({ config, height = 400, className }: Sank
     return <div className="flex items-center justify-center h-full">No data</div>;
   }
 
-  // Find total income for percentage calculation
-  const incomeNode = sankeyData.nodes.find(n => n.name === 'Income');
-  const totalIncome = incomeNode?.value || 
-    sankeyData.links.filter(l => l.target === sankeyData.nodes.findIndex(n => n.name === 'Income'))
-      .reduce((sum, l) => sum + l.value, 0);
+  // Calculate total income for percentage calculation
+  // Sum all left-stage (depth=0) nodes EXCEPT "Overspend"
+  const totalIncome = sankeyData.nodes
+    .filter(n => n.depth === 0 && n.name !== 'Overspend')
+    .reduce((sum, n) => {
+      // If node has explicit value, use it
+      if (n.value !== undefined) return sum + n.value;
+      // For source nodes (income), sum OUTGOING links (they have no incoming links)
+      const nodeIdx = sankeyData.nodes.indexOf(n);
+      const outgoingValue = sankeyData.links
+        .filter(l => l.source === nodeIdx)
+        .reduce((s, l) => s + l.value, 0);
+      return sum + outgoingValue;
+    }, 0);
 
   const nodeWidth = 12;
 
@@ -31,9 +40,14 @@ export default function SankeyRenderer({ config, height = 400, className }: Sank
     const depth = payload.depth;
     const isLeft = depth === 0;
     const isMiddle = depth === 1;
+    const isOverspend = payload.name === 'Overspend';
+    const isSavings = payload.name === 'Savings';
+    const isIncomeSource = isLeft && !isOverspend; // Income sources on the left
     
-    const value = payload.value;
-    const percent = totalIncome > 0 ? (value / totalIncome) * 100 : 0;
+    // Use the node's value directly (no boosting, so it's the actual value)
+    const displayValue = payload.value;
+    
+    const percent = totalIncome > 0 ? (displayValue / totalIncome) * 100 : 0;
     const percentStr = `${percent.toFixed(1)}%`;
 
     // Position text based on node depth
@@ -48,8 +62,72 @@ export default function SankeyRenderer({ config, height = 400, className }: Sank
       textX = x + width + 8;
     }
     
-    // Skip text for very small nodes
-    const showText = height >= 20;
+    // With larger nodePadding (32px), we have ample gap between nodes for labels
+    // Show labels for all nodes
+    const showText = true;
+
+    // Determine label background color and text color
+    // Only Overspend and Savings get colored backgrounds
+    let labelBgColor = 'transparent';
+    let labelTextColor = '#374151';
+    let labelValueColor = '#111827';
+    
+    if (isOverspend) {
+      labelBgColor = '#ef4444'; // Red-500
+      labelTextColor = '#ffffff';
+      labelValueColor = '#ffffff';
+    } else if (isSavings) {
+      labelBgColor = '#10b981'; // Emerald-500
+      labelTextColor = '#ffffff';
+      labelValueColor = '#ffffff';
+    }
+    // Income sources no longer get blue background - keep them clean
+
+    // Calculate label background dimensions (approximate)
+    const labelPadding = 14; // Padding inside the background around text
+    const nodeGap = 8; // Gap between node and colored background
+    
+    // Estimate width based on BOTH lines of text (name and value)
+    // Value line format: "$X.XK (XX.X%)" - typically 14-16 chars
+    const valueLineLength = 16; // Approximate length of value line
+    const longestLineLength = Math.max(payload.name.length, valueLineLength);
+    const estimatedLabelWidth = Math.max(
+      longestLineLength * 8 + labelPadding * 2, // Use 8px per char for bold text
+      120
+    );
+    const labelHeight = 50; // Height for background
+    
+    // For colored backgrounds, we need proper positioning:
+    // - Gap between node edge and background
+    // - Uniform padding inside background around text
+    const hasColoredBg = isOverspend || isSavings;
+    
+    let labelX: number;
+    let actualTextX = textX; // Text position (may differ from base textX for colored backgrounds)
+    
+    if (isLeft) {
+      // Left-side: text ends at textX (textAnchor='end')
+      // Background ends at node edge - gap, so background ends at x - nodeGap
+      // Text should end at (background end - labelPadding) = x - nodeGap - labelPadding
+      if (hasColoredBg) {
+        actualTextX = x - nodeGap - labelPadding;
+        labelX = actualTextX - estimatedLabelWidth + labelPadding; // Background starts further left
+      } else {
+        labelX = textX - estimatedLabelWidth;
+      }
+    } else {
+      // Right-side: text starts at textX (textAnchor='start')
+      // Background starts at node edge + gap, so background starts at x + width + nodeGap
+      // Text should start at (background start + labelPadding)
+      if (hasColoredBg) {
+        labelX = x + width + nodeGap;
+        actualTextX = labelX + labelPadding;
+      } else {
+        labelX = textX;
+      }
+    }
+    
+    const labelY = y + height / 2 - labelHeight / 2;
 
     return (
       <Layer key={`custom-node-${index}`}>
@@ -61,32 +139,50 @@ export default function SankeyRenderer({ config, height = 400, className }: Sank
           fill={payload.color || '#3b82f6'}
           fillOpacity={1}
           rx={1}
+          stroke={isOverspend ? '#dc2626' : 'none'}
+          strokeWidth={isOverspend ? 2 : 0}
+          strokeDasharray={isOverspend ? '4 2' : '0'}
         />
         
         {showText && (
-          <text
-            x={textX}
-            y={y + height / 2}
-            textAnchor={textAnchor}
-            dominantBaseline="middle"
-            className="pointer-events-none"
-            style={{ fontSize: '12px', fontFamily: 'system-ui, sans-serif' }}
-          >
-            <tspan 
-              x={textX} 
-              dy="-0.6em" 
-              style={{ fill: '#374151', fontWeight: 600 }}
+          <>
+            {/* Colored background for special node types (Overspend and Savings only) */}
+            {(isOverspend || isSavings) && (
+              <rect
+                x={labelX}
+                y={labelY}
+                width={estimatedLabelWidth}
+                height={labelHeight}
+                fill={labelBgColor}
+                rx={4}
+                opacity={0.95}
+              />
+            )}
+            
+            <text
+              x={actualTextX}
+              y={y + height / 2}
+              textAnchor={textAnchor}
+              dominantBaseline="middle"
+              className="pointer-events-none"
+              style={{ fontSize: '12px', fontFamily: 'system-ui, sans-serif' }}
             >
-              {payload.name}
-            </tspan>
-            <tspan 
-              x={textX} 
-              dy="1.4em" 
-              style={{ fill: '#111827', fontWeight: 700, fontSize: '13px' }}
-            >
-              {currency ? formatCompactCurrency(value) : value} ({percentStr})
-            </tspan>
-          </text>
+              <tspan 
+                x={actualTextX} 
+                dy="-0.6em" 
+                style={{ fill: labelTextColor, fontWeight: 600 }}
+              >
+                {payload.name}
+              </tspan>
+              <tspan 
+                x={actualTextX} 
+                dy="1.4em" 
+                style={{ fill: labelValueColor, fontWeight: 700, fontSize: '13px' }}
+              >
+                {currency ? formatCompactCurrency(displayValue) : displayValue} ({percentStr})
+              </tspan>
+            </text>
+          </>
         )}
       </Layer>
     );
@@ -144,16 +240,16 @@ export default function SankeyRenderer({ config, height = 400, className }: Sank
           data={sankeyData}
           node={renderNode}
           link={renderLink}
-          nodePadding={12}
+          nodePadding={32}
           nodeWidth={nodeWidth}
           iterations={64}
-          margin={{ top: 10, right: 140, bottom: 10, left: 140 }}
+          margin={{ top: 10, right: 180, bottom: 10, left: 180 }}
         >
           <Tooltip 
              content={({ active, payload }) => {
                if (!active || !payload || !payload.length) return null;
                const data = payload[0];
-               const isLink = data.payload.source && data.payload.target;
+               const isLink = data?.payload?.source !== undefined && data?.payload?.target !== undefined;
                
                if (isLink) {
                  const sourceName = data.payload.source.name;

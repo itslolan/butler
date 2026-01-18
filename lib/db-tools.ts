@@ -1363,13 +1363,55 @@ export async function getCashFlowSankeyData(
     return { nodes: [], links: [] };
   }
 
+  // Heuristic: older rows (or misclassified rows) may mark credit-card payments / internal
+  // transfers as expenses. Those should not count as "spending" because they'd double-count
+  // purchases that already appear on the card.
+  const isLikelyInternalTransfer = (txn: { merchant?: any; category?: any; transaction_type?: any }) => {
+    const merchant = typeof txn?.merchant === 'string' ? txn.merchant.toLowerCase() : '';
+    const category = typeof txn?.category === 'string' ? txn.category.toLowerCase() : '';
+    if (!merchant && !category) return false;
+
+    // If the category was explicitly set to transfer, treat as transfer even if transaction_type drifted.
+    if (category.includes('transfer')) return true;
+
+    // Credit card payment keywords (conservative: require "payment" plus card/network context)
+    const hasPaymentWord =
+      merchant.includes('payment') ||
+      merchant.includes('e-payment') ||
+      merchant.includes('epayment') ||
+      merchant.includes('auto payment') ||
+      merchant.includes('autopay');
+    const hasCardContext =
+      merchant.includes('credit card') ||
+      merchant.includes('card payment') ||
+      merchant.includes('visa') ||
+      merchant.includes('mastercard') ||
+      merchant.includes('amex') ||
+      merchant.includes('american express') ||
+      merchant.includes('discover');
+
+    if (hasPaymentWord && hasCardContext) return true;
+
+    // Generic internal transfer keywords
+    if (
+      merchant.includes('transfer to') ||
+      merchant.includes('transfer from') ||
+      merchant.includes('internal transfer') ||
+      merchant.includes('account transfer')
+    ) {
+      return true;
+    }
+
+    return false;
+  };
+
   // 1. Process Income
   const incomeSources = new Map<string, number>();
-  let totalIncome = 0;
+  let sankeyTotalIncome = 0;
   
   // 2. Process Expenses
   const expenseCategories = new Map<string, number>();
-  let totalExpenses = 0;
+  let sankeyTotalExpenses = 0;
 
   for (const txn of deduplicatedData) {
     // Exclude synthetic "user provided" income rows from derived charts/metrics.
@@ -1384,12 +1426,12 @@ export async function getCashFlowSankeyData(
     else if (amount > 0) isIncome = true;
     else isIncome = false;
 
-    // Skip transfers/internal movements if we can detect them, but for now include all
-    if (txn.transaction_type === 'transfer') continue;
+    // Skip transfers/internal movements (including likely credit card payments)
+    if (txn.transaction_type === 'transfer' || isLikelyInternalTransfer(txn as any)) continue;
 
     if (isIncome) {
       const absAmount = Math.abs(amount);
-      totalIncome += absAmount;
+      sankeyTotalIncome += absAmount;
       
       // Group by category if available (e.g. "Paycheck"), otherwise merchant
       // If neither, "Other Income"
@@ -1404,126 +1446,194 @@ export async function getCashFlowSankeyData(
       incomeSources.set(sourceName, (incomeSources.get(sourceName) || 0) + absAmount);
     } else {
       const absAmount = Math.abs(amount);
-      totalExpenses += absAmount;
+      sankeyTotalExpenses += absAmount;
       
       const category = txn.category || 'Uncategorized';
       expenseCategories.set(category, (expenseCategories.get(category) || 0) + absAmount);
     }
   }
 
-  // Calculate Savings
-  const savings = Math.max(0, totalIncome - totalExpenses);
+  // Get the OFFICIAL income vs expenses values to match summary metrics
+  // This ensures the Sankey's savings/overspend matches the dashboard's Net Result
+  const officialMetrics = await getIncomeVsExpenses(userId, months, specificMonth);
+  const totalIncome = officialMetrics.reduce((sum, m) => sum + m.income, 0);
+  const totalExpenses = officialMetrics.reduce((sum, m) => sum + m.expenses, 0);
   
-  // Build Nodes and Links
-  const nodes: Array<{ name: string; color?: string; depth?: number }> = [];
+  // Calculate surplus and deficit from official metrics
+  const savings = Math.max(0, totalIncome - totalExpenses);
+  const overspend = Math.max(0, totalExpenses - totalIncome);
+  
+  // Build Nodes and Links for 3-stage flow:
+  // Stage 0 (left): Income sources + Overspend (if deficit)
+  // Stage 1 (middle): Total Expenses
+  // Stage 2 (right): Expense categories + Savings (if surplus)
+  const nodes: Array<{ name: string; color?: string; depth?: number; value?: number; rank?: number }> = [];
   const links: Array<{ source: number; target: number; value: number; color?: string }> = [];
 
-  // --- Level 0: Income Sources ---
-  // Sort income sources and take top 2, group rest as "Other Income"
+  // --- Stage 0: Income Sources (left) ---
+  // Show ALL income sources (no grouping), sorted by amount
   const sortedIncome = Array.from(incomeSources.entries()).sort((a, b) => b[1] - a[1]);
   const incomeNodesStartIdx = 0;
   
-  const MAX_INCOME_SOURCES = 2;
-  let incomeSourcesToShow: Array<[string, number]> = [];
-  let otherIncomeTotal = 0;
-
-  if (sortedIncome.length > MAX_INCOME_SOURCES) {
-    incomeSourcesToShow = sortedIncome.slice(0, MAX_INCOME_SOURCES);
-    otherIncomeTotal = sortedIncome.slice(MAX_INCOME_SOURCES).reduce((sum, item) => sum + item[1], 0);
-  } else {
-    incomeSourcesToShow = sortedIncome;
-  }
-  
-  // Add main income sources
-  incomeSourcesToShow.forEach(([name, val], idx) => {
-    nodes.push({ name, color: '#0891b2', depth: 0 }); // Cyan-600 for sources
+  // Add all income source nodes
+  sortedIncome.forEach(([name, val]) => {
+    nodes.push({ name, color: '#0891b2', depth: 0 }); // Cyan-600 for income sources
   });
 
-  // Add "Other Income" if there are more sources
-  if (otherIncomeTotal > 0) {
-    nodes.push({ name: 'Other Income', color: '#0891b2', depth: 0 });
-    incomeSourcesToShow.push(['Other Income', otherIncomeTotal]);
+  // Add Overspend node if deficit (red shading)
+  let overspendNodeIdx = -1;
+  if (overspend > 0) {
+    overspendNodeIdx = nodes.length;
+    nodes.push({ name: 'Overspend', color: '#fca5a5', depth: 0 }); // Red-300 (light red) for overspend node
   }
 
-  // --- Level 1: Total Income ---
-  const totalIncomeNodeIdx = nodes.length;
-  nodes.push({ name: 'Income', color: '#059669', depth: 1 }); // Emerald-600 for total income
+  // --- Stage 1: Total Expenses (middle) ---
+  const totalExpensesNodeIdx = nodes.length;
+  nodes.push({ name: 'Total Expenses', color: '#f59e0b', depth: 1 }); // Amber-500 for total expenses
 
-  // Links Level 0 -> Level 1
-  incomeSourcesToShow.forEach(([_, val], idx) => {
-    links.push({
-      source: incomeNodesStartIdx + idx,
-      target: totalIncomeNodeIdx,
-      value: val,
-      color: '#99f6e4' // Teal-200 for links
-    });
-  });
-
-  // --- Level 2: Expenses & Savings ---
-  const expenseNodesStartIdx = nodes.length;
+  // --- Stage 2: Expense Categories + Savings (right) ---
   
-  // Add Savings Node first (if > 0)
-  if (savings > 0) {
-    nodes.push({ name: 'Savings', color: '#10b981', depth: 2 }); // Emerald-500 for savings
-    links.push({
-      source: totalIncomeNodeIdx,
-      target: expenseNodesStartIdx,
-      value: savings,
-      color: '#a7f3d060' // Emerald-300 semi-transparent
-    });
-  }
-
-  // Add Expense Categories
   const sortedExpenses = Array.from(expenseCategories.entries()).sort((a, b) => b[1] - a[1]);
   
-  // Limit to top 8 expenses for cleaner UI, group rest into "Other Expenses"
-  const MAX_EXPENSE_NODES = 8;
+  // Limit to top 7 categories, group rest into "Across X categories"
+  const MAX_EXPENSE_NODES = 7;
   let expensesToShow = sortedExpenses;
   let otherExpensesTotal = 0;
+  let otherExpensesCount = 0;
 
   if (sortedExpenses.length > MAX_EXPENSE_NODES) {
     expensesToShow = sortedExpenses.slice(0, MAX_EXPENSE_NODES);
-    otherExpensesTotal = sortedExpenses.slice(MAX_EXPENSE_NODES).reduce((sum, item) => sum + item[1], 0);
+    const remainingCategories = sortedExpenses.slice(MAX_EXPENSE_NODES);
+    otherExpensesTotal = remainingCategories.reduce((sum, item) => sum + item[1], 0);
+    otherExpensesCount = remainingCategories.length;
   }
   
   // Color palette for expenses - vibrant and distinct colors
   const expenseColors = [
-    '#6366f1', // Indigo-500 for Housing
-    '#8b5cf6', // Violet-500 for Shopping
-    '#ec4899', // Pink-500 for Food & Dining
+    '#6366f1', // Indigo-500
+    '#8b5cf6', // Violet-500
+    '#ec4899', // Pink-500
     '#f43f5e', // Rose-500 
     '#f97316', // Orange-500
     '#eab308', // Yellow-500
     '#84cc16', // Lime-500
     '#06b6d4', // Cyan-500
+    '#14b8a6', // Teal-500
+    '#a855f7', // Purple-500
   ];
 
+  // Build a combined list of all right-side items (top categories + grouped others + savings)
+  const rightSideItems: Array<{ name: string; value: number; color: string; isSavings?: boolean; rank?: number }> = [];
+  
+  // Add top expense categories
   expensesToShow.forEach(([name, val], idx) => {
-    const nodeIdx = nodes.length;
-    const color = expenseColors[idx % expenseColors.length];
-    
-    nodes.push({ name, color, depth: 2 });
-    
-    links.push({
-      source: totalIncomeNodeIdx,
-      target: nodeIdx,
+    rightSideItems.push({
+      name,
       value: val,
-      color: color + '60' // More transparent for softer look
+      color: expenseColors[idx % expenseColors.length],
     });
   });
 
-  // Add "Other Expenses" node if needed
+  // Add "Across X categories" if there are more categories
   if (otherExpensesTotal > 0) {
-    const nodeIdx = nodes.length;
-    nodes.push({ name: 'Other Expenses', color: '#94a3b8', depth: 2 }); // Slate-400 for Other
-    
-    links.push({
-      source: totalIncomeNodeIdx,
-      target: nodeIdx,
+    rightSideItems.push({
+      name: `Across ${otherExpensesCount} categories`,
       value: otherExpensesTotal,
-      color: '#cbd5e160' // Slate-300 semi-transparent
+      color: '#94a3b8', // Slate-400
     });
   }
+
+  // Add Savings if there's actual savings (treated like any other category, sorted by value)
+  let savingsNodeIdx = -1;
+  if (savings > 0) {
+    rightSideItems.push({
+      name: 'Savings',
+      value: savings,
+      color: '#10b981', // Emerald-500 for savings
+      isSavings: true,
+    });
+  }
+  
+  // Sort all right-side items by value (largest first) and assign ranks
+  rightSideItems.sort((a, b) => b.value - a.value);
+  rightSideItems.forEach((item, idx) => {
+    item.rank = idx; // 0 = largest, 1 = second largest, etc.
+  });
+  
+  // Add nodes and track Savings index
+  const rightNodesStartIdx = nodes.length;
+  rightSideItems.forEach((item) => {
+    if (item.isSavings) {
+      savingsNodeIdx = nodes.length;
+    }
+    // Include rank in node for label visibility logic
+    nodes.push({ name: item.name, color: item.color, depth: 2, value: item.value, rank: item.rank });
+  });
+
+  // --- Create Links ---
+  
+  // Links: Income sources -> Total Expenses (and optionally -> Savings if surplus)
+  if (savings > 0 && totalIncome > 0) {
+    // Surplus case: split each income source proportionally between Total Expenses and Savings
+    sortedIncome.forEach(([name, val], idx) => {
+      const toExpenses = val * (totalExpenses / totalIncome);
+      const toSavings = val - toExpenses;
+      
+      // Link: Income source -> Total Expenses
+      links.push({
+        source: incomeNodesStartIdx + idx,
+        target: totalExpensesNodeIdx,
+        value: toExpenses,
+        color: '#99f6e460' // Teal-200 semi-transparent
+      });
+      
+      // Link: Income source -> Savings
+      if (toSavings > 0) {
+        links.push({
+          source: incomeNodesStartIdx + idx,
+          target: savingsNodeIdx,
+          value: toSavings,
+          color: '#a7f3d060' // Emerald-300 semi-transparent
+        });
+      }
+    });
+  } else {
+    // No savings (or deficit): all income goes directly to Total Expenses
+    sortedIncome.forEach(([name, val], idx) => {
+      links.push({
+        source: incomeNodesStartIdx + idx,
+        target: totalExpensesNodeIdx,
+        value: val,
+        color: '#99f6e460' // Teal-200 semi-transparent
+      });
+    });
+  }
+
+  // Link: Overspend -> Total Expenses (if deficit)
+  if (overspendNodeIdx >= 0 && overspend > 0) {
+    links.push({
+      source: overspendNodeIdx,
+      target: totalExpensesNodeIdx,
+      value: overspend,
+      color: '#fca5a560' // Red-300 semi-transparent
+    });
+  }
+
+  // Links: Total Expenses -> Right-side nodes (expense categories and Other Expenses, but NOT Savings)
+  // Savings gets direct links from income sources, not from Total Expenses
+  rightSideItems.forEach((item, idx) => {
+    // Skip Savings - it's linked directly from income sources
+    if (item.isSavings) return;
+    
+    const nodeIdx = rightNodesStartIdx + idx;
+    
+    links.push({
+      source: totalExpensesNodeIdx,
+      target: nodeIdx,
+      value: item.value,
+      color: item.color + '60' // More transparent for softer look
+    });
+  });
 
   return { nodes, links };
 }
@@ -2592,3 +2702,4 @@ export function generateUploadName(): string {
     hour12: true
   })}`;
 }
+
