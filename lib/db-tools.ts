@@ -1453,13 +1453,12 @@ export async function getCashFlowSankeyData(
     }
   }
 
-  // Get the OFFICIAL income vs expenses values to match summary metrics
-  // This ensures the Sankey's savings/overspend matches the dashboard's Net Result
-  const officialMetrics = await getIncomeVsExpenses(userId, months, specificMonth);
-  const totalIncome = officialMetrics.reduce((sum, m) => sum + m.income, 0);
-  const totalExpenses = officialMetrics.reduce((sum, m) => sum + m.expenses, 0);
+  // Use the Sankey's own totals for calculating savings/overspend
+  // This ensures visual consistency: what you see is what you get
+  const totalIncome = sankeyTotalIncome;
+  const totalExpenses = sankeyTotalExpenses;
   
-  // Calculate surplus and deficit from official metrics
+  // Calculate surplus and deficit from the actual income/expense shown in visual
   const savings = Math.max(0, totalIncome - totalExpenses);
   const overspend = Math.max(0, totalExpenses - totalIncome);
   

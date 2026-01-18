@@ -15,6 +15,7 @@ export default function TodoList({ userId, onSelectTodo, refreshTrigger = 0 }: T
   const [isLoading, setIsLoading] = useState(false);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false); // Collapsed by default
 
   const fetchTodos = async (showLoadingSpinner = true) => {
     if (!userId) return;
@@ -133,16 +134,34 @@ export default function TodoList({ userId, onSelectTodo, refreshTrigger = 0 }: T
             </div>
           </div>
           
-          {/* Subtle refresh indicator */}
-          {isRefreshing && (
-            <div className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
-              <div className="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-pulse"></div>
-              <span className="text-[10px]">Updating...</span>
-            </div>
-          )}
+          <div className="flex items-center gap-3">
+            {/* Subtle refresh indicator */}
+            {isRefreshing && (
+              <div className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+                <div className="w-1.5 h-1.5 bg-yellow-500 rounded-full animate-pulse"></div>
+                <span className="text-[10px]">Updating...</span>
+              </div>
+            )}
+            
+            {/* Expand/Collapse Button */}
+            <button
+              onClick={() => setIsExpanded(!isExpanded)}
+              className="p-1.5 rounded-lg hover:bg-yellow-100 dark:hover:bg-yellow-900/30 transition-colors"
+              title={isExpanded ? 'Collapse' : 'Expand'}
+            >
+              <svg 
+                className={`w-5 h-5 text-slate-600 dark:text-slate-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} 
+                fill="none" 
+                stroke="currentColor" 
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+          </div>
         </div>
 
-        {isLoading ? (
+        {isExpanded && (isLoading ? (
           <div className="flex items-center justify-center py-8">
             <div className="animate-spin rounded-full h-6 w-6 border-2 border-yellow-500 border-t-transparent"></div>
           </div>
@@ -228,7 +247,7 @@ export default function TodoList({ userId, onSelectTodo, refreshTrigger = 0 }: T
               ))}
             </div>
           </div>
-        )}
+        ))}
       </div>
     </div>
   );

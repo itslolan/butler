@@ -259,69 +259,41 @@ export default function Home() {
           {/* Left Column: Visualization & Data (65%) - Full width on mobile */}
           <div className="col-span-12 lg:col-span-8 flex flex-col h-full lg:border-r border-slate-200 dark:border-slate-800 overflow-y-auto bg-slate-50/50 dark:bg-black/5 p-4 lg:p-6 pb-20 lg:pb-6">
             <div className="max-w-5xl w-full mx-auto space-y-4 lg:space-y-6">
-              {/* Date Range Controls */}
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Dashboard</h2>
-                
-                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-                  {/* Month Dropdown */}
-                  <select
-                    value={selectedMonth}
-                    onChange={(e) => {
-                      setSelectedMonth(e.target.value);
-                      // When a specific month is selected, clear the date range
-                      if (e.target.value !== 'all') {
-                        setDateRange(null);
-                      } else {
-                        // When "All Time" is selected, default to 6M
-                        setDateRange(6);
-                      }
-                    }}
-                    className="px-3 py-1.5 text-xs font-medium bg-white dark:bg-gray-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-700 dark:text-slate-300 cursor-pointer"
-                  >
-                    <option value="all">All Time</option>
-                    {monthOptions.map((month) => (
-                      <option key={month.value} value={month.value}>
-                        {month.label}
-                      </option>
-                    ))}
-                  </select>
-
-                  {/* Date Range Selector */}
-                  <div className="inline-flex bg-white dark:bg-gray-900 rounded-lg p-1 border border-slate-200 dark:border-slate-800 shadow-sm">
-                    {[3, 6, 12].map((months) => (
-                      <button
-                        key={months}
-                        onClick={() => {
-                          setDateRange(months);
-                          // When a date range is selected, clear the month filter
-                          setSelectedMonth('all');
-                        }}
-                        className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
-                          dateRange === months && selectedMonth === 'all'
-                            ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-sm'
-                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
-                        }`}
-                      >
-                        {months}M
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Welcome Summary (cached, regeneratable) */}
+              {/* Welcome Summary with integrated date controls */}
               <DashboardWelcomeSummary
                 userId={user?.id || 'default-user'}
                 displayName={(user?.user_metadata as any)?.full_name || user?.email || null}
                 refreshTrigger={chartRefreshKey}
+                dateRange={dateRange}
+                selectedMonth={selectedMonth}
+                monthOptions={monthOptions}
+                onDateRangeChange={(months) => {
+                  setDateRange(months);
+                  setSelectedMonth('all');
+                }}
+                onMonthChange={(month) => {
+                  setSelectedMonth(month);
+                  if (month !== 'all') {
+                    setDateRange(null);
+                  } else {
+                    setDateRange(6);
+                  }
+                }}
               />
               
-              {/* Todo List - Prominent placement above charts */}
+              {/* Todo List - Collapsible action required panel */}
               <TodoList 
                 userId={user?.id || 'default-user'} 
                 onSelectTodo={handleTodoSelect}
                 refreshTrigger={chartRefreshKey}
+              />
+              
+              {/* Visualization Panel - KPIs and Charts */}
+              <VisualizationPanel 
+                key={chartRefreshKey} 
+                userId={user?.id || 'default-user'}
+                dateRange={dateRange}
+                selectedMonth={selectedMonth}
               />
               
               {/* Budget & Connected Banks Panels - Side by side on desktop */}
@@ -339,13 +311,6 @@ export default function Home() {
                 userId={user?.id || 'default-user'}
                 refreshTrigger={chartRefreshKey}
                 currency="USD"
-              />
-              
-              <VisualizationPanel 
-                key={chartRefreshKey} 
-                userId={user?.id || 'default-user'}
-                dateRange={dateRange}
-                selectedMonth={selectedMonth}
               />
             </div>
           </div>

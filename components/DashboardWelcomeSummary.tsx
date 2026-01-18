@@ -46,10 +46,20 @@ export default function DashboardWelcomeSummary({
   userId,
   displayName,
   refreshTrigger,
+  dateRange,
+  selectedMonth,
+  onDateRangeChange,
+  onMonthChange,
+  monthOptions,
 }: {
   userId: string;
   displayName?: string | null;
   refreshTrigger?: number;
+  dateRange?: number | null;
+  selectedMonth?: string;
+  onDateRangeChange?: (months: number) => void;
+  onMonthChange?: (month: string) => void;
+  monthOptions?: Array<{ value: string; label: string }>;
 }) {
   const [data, setData] = useState<WelcomeSummaryResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -117,39 +127,19 @@ export default function DashboardWelcomeSummary({
   return (
     <div className="bg-white dark:bg-gray-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
       <div className="p-5 sm:p-6">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <div className="text-base sm:text-lg leading-snug text-slate-900 dark:text-white">
-              {loading ? (
-                <div className="space-y-2">
-                  <div className="h-5 w-11/12 bg-slate-100 dark:bg-slate-800 rounded animate-pulse" />
-                  <div className="h-5 w-9/12 bg-slate-100 dark:bg-slate-800 rounded animate-pulse" />
-                </div>
-              ) : error ? (
-                <span className="text-red-600 dark:text-red-400">
-                  {error}
-                </span>
-              ) : data?.summaryText ? (
-                <div className="prose prose-slate dark:prose-invert max-w-none">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {data.summaryText}
-                  </ReactMarkdown>
-                </div>
-              ) : (
-                'Your dashboard summary will appear here once we have data.'
-              )}
-            </div>
-          </div>
-
-          <button
-            onClick={onRegenerate}
-            disabled={loading || regenerating}
-            aria-label="Regenerate summary"
-            title="Regenerate summary"
-            className="shrink-0 inline-flex items-center justify-center w-10 h-10 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-gray-900 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
+        {/* Date Range Controls with Regenerate button - Float on the right */}
+        {monthOptions && onDateRangeChange && onMonthChange && (
+          <div className="float-right ml-4 mb-2 flex flex-wrap items-center gap-2">
+            {/* Regenerate button - first in the ribbon */}
+            <button
+              onClick={onRegenerate}
+              disabled={loading || regenerating}
+              aria-label="Regenerate summary"
+              title="Regenerate summary"
+              className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-gray-900 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+            >
             <svg
-              className={`w-5 h-5 text-slate-700 dark:text-slate-200 ${regenerating ? 'animate-spin' : ''}`}
+              className={`w-4 h-4 text-slate-700 dark:text-slate-200 ${regenerating ? 'animate-spin' : ''}`}
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -158,11 +148,70 @@ export default function DashboardWelcomeSummary({
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 strokeWidth={2}
-                d="M4 4v6h6M20 20v-6h-6M5.5 18.5A8 8 0 0018.5 5.5"
+                d="M21 12a9 9 0 11-2.64-6.36M21 3v6h-6"
               />
             </svg>
-          </button>
-        </div>
+            </button>
+            
+            {/* Month Dropdown */}
+            <select
+              value={selectedMonth || 'all'}
+              onChange={(e) => {
+                onMonthChange(e.target.value);
+              }}
+              className="px-3 py-1.5 text-xs font-medium bg-white dark:bg-gray-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-700 dark:text-slate-300 cursor-pointer"
+            >
+              <option value="all">All Time</option>
+              {monthOptions.map((month) => (
+                <option key={month.value} value={month.value}>
+                  {month.label}
+                </option>
+              ))}
+            </select>
+
+            {/* Date Range Selector */}
+            <div className="inline-flex bg-white dark:bg-gray-900 rounded-lg p-1 border border-slate-200 dark:border-slate-800 shadow-sm">
+              {[3, 6, 12].map((months) => (
+                <button
+                  key={months}
+                  onClick={() => onDateRangeChange(months)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                    dateRange === months && selectedMonth === 'all'
+                      ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-sm'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  {months}M
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        
+        {/* Summary text - no wrapper div so it can wrap around float */}
+        {loading ? (
+          <div className="space-y-2 text-base sm:text-lg clear-none">
+            <div className="h-5 w-11/12 bg-slate-100 dark:bg-slate-800 rounded animate-pulse" />
+            <div className="h-5 w-9/12 bg-slate-100 dark:bg-slate-800 rounded animate-pulse" />
+          </div>
+        ) : error ? (
+          <p className="text-base sm:text-lg text-red-600 dark:text-red-400 clear-none">
+            {error}
+          </p>
+        ) : data?.summaryText ? (
+          <div className="prose prose-slate dark:prose-invert max-w-none text-base sm:text-lg leading-relaxed prose-p:clear-none prose-p:mt-0 prose-p:mb-4 [&>*]:text-slate-900 [&>*]:dark:text-white">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {data.summaryText}
+            </ReactMarkdown>
+          </div>
+        ) : (
+          <p className="text-base sm:text-lg leading-relaxed text-slate-900 dark:text-white clear-none">
+            Your dashboard summary will appear here once we have data.
+          </p>
+        )}
+        
+        {/* Clear floats */}
+        <div className="clear-both"></div>
 
         <div className="mt-4">
           <details className="group">
