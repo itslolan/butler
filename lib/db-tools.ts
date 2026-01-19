@@ -16,6 +16,29 @@ import {
   ProcessingJobProgress,
 } from './supabase';
 import { isUserProvidedIncomeTransaction } from './financial-figure-sources';
+import { classifyTransaction } from './transaction-classifier';
+
+/**
+ * Extract YYYY-MM month key from a transaction date in a timezone-stable way.
+ *
+ * IMPORTANT: Do NOT use `new Date('YYYY-MM-DD').getMonth()` for bucketing, because
+ * JS parses date-only strings as UTC but `getMonth()` is local-time, which can
+ * shift boundary-day transactions into the previous/next month depending on TZ.
+ */
+function monthKeyFromTxnDate(date: unknown): string | null {
+  if (typeof date === 'string') {
+    // Fast path for ISO-like strings: "YYYY-MM-DD" or "YYYY-MM-..."
+    const m = date.match(/^(\d{4}-\d{2})/);
+    if (m?.[1]) return m[1];
+  }
+  try {
+    const d = new Date(date as any);
+    if (Number.isNaN(d.getTime())) return null;
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+  } catch {
+    return null;
+  }
+}
 
 export interface DocumentFilter {
   documentType?: string;
@@ -671,12 +694,13 @@ export async function getMonthlySpendingTrend(
   }
   
   // Get all expense transactions in the date range using pagination
+  // Include category for internal transfer detection
   const data = await fetchAllTransactions(userId, {
     transactionTypes: ['expense', 'other'],
     inferMissingTypesByAmountSign: true,
     startDate,
     endDate,
-    selectFields: 'id, date, amount, transaction_type, merchant',
+    selectFields: 'id, date, amount, transaction_type, merchant, category',
   });
   
   // DEDUPLICATION TEMPORARILY DISABLED
@@ -704,14 +728,18 @@ export async function getMonthlySpendingTrend(
     return result;
   }
 
-  // Aggregate by month
+  // Aggregate by month, using unified classifier to filter out internal transfers
   const monthlyMap = new Map<string, number>();
   
   for (const txn of deduplicatedData) {
-    const date = new Date(txn.date);
-    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+    // Use unified classifier to filter out internal transfers
+    const classification = classifyTransaction(txn);
+    if (classification.isExcluded) continue;
+    
+    const monthKey = monthKeyFromTxnDate((txn as any).date);
+    if (!monthKey) continue;
     const current = monthlyMap.get(monthKey) || 0;
-    monthlyMap.set(monthKey, current + Math.abs(Number(txn.amount)));
+    monthlyMap.set(monthKey, current + classification.absAmount);
   }
   
   if (specificMonth) {
@@ -848,22 +876,25 @@ export async function getCategoryBreakdown(
   // }
   const deduplicatedData = data; // Using raw data without deduplication
 
-  // Aggregate by category
+  // Aggregate by category, using unified classifier to filter out internal transfers
   const categoryMap = new Map<string, { total: number; count: number; spend_classification?: string | null }>();
   let grandTotal = 0;
   
   for (const txn of deduplicatedData) {
+    // Use unified classifier to filter out internal transfers
+    const classification = classifyTransaction(txn);
+    if (classification.isExcluded) continue;
+    
     const category = txn.category || 'Uncategorized';
-    const absAmount = Math.abs(Number(txn.amount));
     
     const current = categoryMap.get(category) || { total: 0, count: 0, spend_classification: txn.spend_classification };
     categoryMap.set(category, {
-      total: current.total + absAmount,
+      total: current.total + classification.absAmount,
       count: current.count + 1,
       spend_classification: current.spend_classification || txn.spend_classification, // Use first non-null value
     });
     
-    grandTotal += absAmount;
+    grandTotal += classification.absAmount;
   }
   
   // Convert to array and calculate percentages
@@ -1231,10 +1262,11 @@ export async function getIncomeVsExpenses(
   }
   
   // Get all transactions in the date range using pagination
+  // Include category for internal transfer detection
   const data = await fetchAllTransactions(userId, {
     startDate,
     endDate,
-    selectFields: 'id, date, amount, transaction_type, merchant',
+    selectFields: 'id, date, amount, transaction_type, merchant, category',
   });
   
   // DEDUPLICATION TEMPORARILY DISABLED
@@ -1262,44 +1294,39 @@ export async function getIncomeVsExpenses(
   }
 
   if (deduplicatedData && deduplicatedData.length > 0) {
-    // Aggregate transactions
+    // Aggregate transactions using unified classifier
     for (const txn of deduplicatedData) {
       // Exclude synthetic "user provided" income rows from derived charts/metrics.
       if (isUserProvidedIncomeTransaction(txn as any)) continue;
 
-      const date = new Date(txn.date);
-      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      // For a specific month query, everything we fetched is already in-range,
+      // so bucket directly into that month to avoid timezone bucketing issues.
+      const monthKey = specificMonth || monthKeyFromTxnDate((txn as any).date);
+      if (!monthKey) continue;
+      
+      // Use unified classifier for consistent classification
+      const classification = classifyTransaction(txn);
+      
+      // Skip transfers and excluded transactions
+      if (classification.isExcluded) continue;
       
       const current = monthlyData.get(monthKey);
       
       // If month is in our pre-filled map, update it
       if (current) {
-        const absAmount = Math.abs(Number(txn.amount));
-
-        // Backward-compat: infer missing transaction_type from amount sign.
-        // Our ingestion convention is: positive = credits/deposits (income), negative = debits/charges (expense).
-        const inferredType =
-          txn.transaction_type ||
-          (Number(txn.amount) > 0 ? 'income' : Number(txn.amount) < 0 ? 'expense' : null);
-
-        if (inferredType === 'income') {
-          current.income += absAmount;
-        } else if (inferredType === 'expense' || inferredType === 'other') {
-          current.expenses += absAmount;
+        if (classification.type === 'income') {
+          current.income += classification.absAmount;
+        } else if (classification.type === 'expense') {
+          current.expenses += classification.absAmount;
         }
       } else if (!specificMonth) {
         // If not in map and we're in range mode, add it (edge case for data outside expected range)
-        const absAmount = Math.abs(Number(txn.amount));
         const newEntry = { income: 0, expenses: 0 };
 
-        const inferredType =
-          txn.transaction_type ||
-          (Number(txn.amount) > 0 ? 'income' : Number(txn.amount) < 0 ? 'expense' : null);
-
-        if (inferredType === 'income') {
-          newEntry.income = absAmount;
-        } else if (inferredType === 'expense' || inferredType === 'other') {
-          newEntry.expenses = absAmount;
+        if (classification.type === 'income') {
+          newEntry.income = classification.absAmount;
+        } else if (classification.type === 'expense') {
+          newEntry.expenses = classification.absAmount;
         }
         
         monthlyData.set(monthKey, newEntry);
@@ -1348,7 +1375,6 @@ export async function getCashFlowSankeyData(
     startDate,
     endDate,
     selectFields: 'id, category, merchant, amount, transaction_type, date',
-    inferMissingTypesByAmountSign: true
   });
   
   // DEDUPLICATION TEMPORARILY DISABLED
@@ -1363,48 +1389,6 @@ export async function getCashFlowSankeyData(
     return { nodes: [], links: [] };
   }
 
-  // Heuristic: older rows (or misclassified rows) may mark credit-card payments / internal
-  // transfers as expenses. Those should not count as "spending" because they'd double-count
-  // purchases that already appear on the card.
-  const isLikelyInternalTransfer = (txn: { merchant?: any; category?: any; transaction_type?: any }) => {
-    const merchant = typeof txn?.merchant === 'string' ? txn.merchant.toLowerCase() : '';
-    const category = typeof txn?.category === 'string' ? txn.category.toLowerCase() : '';
-    if (!merchant && !category) return false;
-
-    // If the category was explicitly set to transfer, treat as transfer even if transaction_type drifted.
-    if (category.includes('transfer')) return true;
-
-    // Credit card payment keywords (conservative: require "payment" plus card/network context)
-    const hasPaymentWord =
-      merchant.includes('payment') ||
-      merchant.includes('e-payment') ||
-      merchant.includes('epayment') ||
-      merchant.includes('auto payment') ||
-      merchant.includes('autopay');
-    const hasCardContext =
-      merchant.includes('credit card') ||
-      merchant.includes('card payment') ||
-      merchant.includes('visa') ||
-      merchant.includes('mastercard') ||
-      merchant.includes('amex') ||
-      merchant.includes('american express') ||
-      merchant.includes('discover');
-
-    if (hasPaymentWord && hasCardContext) return true;
-
-    // Generic internal transfer keywords
-    if (
-      merchant.includes('transfer to') ||
-      merchant.includes('transfer from') ||
-      merchant.includes('internal transfer') ||
-      merchant.includes('account transfer')
-    ) {
-      return true;
-    }
-
-    return false;
-  };
-
   // 1. Process Income
   const incomeSources = new Map<string, number>();
   let sankeyTotalIncome = 0;
@@ -1417,21 +1401,14 @@ export async function getCashFlowSankeyData(
     // Exclude synthetic "user provided" income rows from derived charts/metrics.
     if (isUserProvidedIncomeTransaction(txn as any)) continue;
 
-    const amount = Number(txn.amount);
+    // Use unified classifier for consistent classification
+    const classification = classifyTransaction(txn);
     
-    // Determine type (income or expense)
-    let isIncome = false;
-    if (txn.transaction_type === 'income') isIncome = true;
-    else if (txn.transaction_type === 'expense') isIncome = false;
-    else if (amount > 0) isIncome = true;
-    else isIncome = false;
+    // Skip transfers and excluded transactions
+    if (classification.isExcluded) continue;
 
-    // Skip transfers/internal movements (including likely credit card payments)
-    if (txn.transaction_type === 'transfer' || isLikelyInternalTransfer(txn as any)) continue;
-
-    if (isIncome) {
-      const absAmount = Math.abs(amount);
-      sankeyTotalIncome += absAmount;
+    if (classification.type === 'income') {
+      sankeyTotalIncome += classification.absAmount;
       
       // Group by category if available (e.g. "Paycheck"), otherwise merchant
       // If neither, "Other Income"
@@ -1443,13 +1420,12 @@ export async function getCashFlowSankeyData(
         sourceName = 'Interest';
       }
       
-      incomeSources.set(sourceName, (incomeSources.get(sourceName) || 0) + absAmount);
-    } else {
-      const absAmount = Math.abs(amount);
-      sankeyTotalExpenses += absAmount;
+      incomeSources.set(sourceName, (incomeSources.get(sourceName) || 0) + classification.absAmount);
+    } else if (classification.type === 'expense') {
+      sankeyTotalExpenses += classification.absAmount;
       
       const category = txn.category || 'Uncategorized';
-      expenseCategories.set(category, (expenseCategories.get(category) || 0) + absAmount);
+      expenseCategories.set(category, (expenseCategories.get(category) || 0) + classification.absAmount);
     }
   }
 

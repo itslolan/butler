@@ -1,3 +1,16 @@
+/**
+ * Budget Utilities
+ * 
+ * NOTE: Transaction classification in SQL queries follows the same logic as
+ * lib/transaction-classifier.ts:
+ * 
+ * - Expenses: transaction_type IN ('expense', 'other') OR (transaction_type IS NULL AND amount < 0)
+ * - Income: transaction_type = 'income' OR (transaction_type IS NULL AND amount > 0)
+ * - Transfers: Excluded from totals (transaction_type = 'transfer' or internal transfer patterns)
+ * 
+ * For complex post-processing or internal transfer detection, use the 
+ * classifyTransaction() function from lib/transaction-classifier.ts.
+ */
 import { supabase, BudgetCategory, Budget, BudgetSuperCategory } from './supabase';
 import { USER_PROVIDED_INCOME_MERCHANT } from './financial-figure-sources';
 import { normalizeCategoryNameKey, normalizeCategoryDisplayName, uniqueCategoryNamesByKey } from './category-normalization';

@@ -3,13 +3,27 @@ import { getBudgetCategoryHierarchy, getFixedExpenseCategoryNames } from '@/lib/
 import { normalizeCategoryNameKey } from '@/lib/category-normalization';
 import { tagFixedExpensesWithLLM } from '@/lib/llm-fixed-expense-transaction-tagger';
 import { matchUserFixedExpensesToTransactions } from '@/lib/llm-fixed-expense-input-matcher';
+import { classifyTransaction } from '@/lib/transaction-classifier';
 
-function isExpenseLike(t: Pick<Transaction, 'transaction_type' | 'amount'>): boolean {
-  if (t.transaction_type === 'expense' || t.transaction_type === 'other') return true;
-  if (t.transaction_type === 'income' || t.transaction_type === 'transfer') return false;
-  // Backward-compat inference (repo has mixed conventions). We treat either sign as potentially expense-like,
-  // but avoid classifying zeros. Positive/negative ambiguity is handled by LLM prompts using merchant/description.
-  return Number(t.amount) !== 0;
+/**
+ * Checks if a transaction is potentially expense-like for fixed expense detection.
+ * This is intentionally more inclusive than the standard expense classification
+ * because we want to catch edge cases (refunds, adjustments) for LLM analysis.
+ * Uses the unified classifier for core logic but allows more candidates.
+ */
+function isExpenseLike(t: Pick<Transaction, 'transaction_type' | 'amount' | 'merchant' | 'category'>): boolean {
+  const classification = classifyTransaction(t);
+  
+  // Explicit income or transfers are never expense-like
+  if (classification.type === 'income' || classification.type === 'transfer') return false;
+  
+  // Expense and other types are expense-like
+  if (classification.type === 'expense' || classification.type === 'other') return true;
+  
+  // For unknown types with non-zero amounts, include as candidates for LLM analysis
+  // This is more inclusive than standard classification because the LLM will determine
+  // the actual nature of these transactions
+  return classification.absAmount !== 0;
 }
 
 function normalizeCategoryKeySafe(category?: string | null): string | null {
