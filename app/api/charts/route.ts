@@ -1,10 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import {
-  getCategoryBreakdown,
-  getMonthlySpendingTrend,
-  getIncomeVsExpenses,
-  getCashFlowData,
-} from '@/lib/assistant-functions';
+import { executeToolCall } from '@/lib/chat-tool-executor';
 import {
   getPieChart,
   getLineChart,
@@ -27,11 +22,11 @@ export const dynamic = 'force-dynamic';
  * 
  * Architecture:
  * - Client components (VisualizationPanel) → call this API endpoint
- * - This endpoint → calls @/lib/assistant-functions (canonical data)
- * - This endpoint → calls @/lib/visualization-functions (canonical charts)
- * - Chat tools → directly call the same canonical functions
- * 
- * This ensures Dashboard and Chat always show identical data!
+ * - This endpoint → calls chat tool executor for data-only tools
+ * - This endpoint → renders charts locally from that data
+ * - Chat tools → use the same data tools for answers
+ *
+ * This ensures Dashboard and Chat always show identical data for the same time ranges.
  * 
  * Response format:
  * {
@@ -72,7 +67,7 @@ export async function GET(request: NextRequest) {
       timePeriodParams.months = months;
     }
     // If neither specified, assistant functions default to current month
-    
+
     // Build params object for reproducibility
     const params: any = {
       type,
@@ -84,10 +79,23 @@ export async function GET(request: NextRequest) {
     let chartConfig: ChartConfig;
     let rawData: any;
 
+    const toolArgs = {
+      specificMonth: timePeriodParams.month,
+      months: timePeriodParams.months,
+    };
+
     switch (type) {
       case 'spending-trend': {
-        // Call canonical assistant function
-        rawData = await getMonthlySpendingTrend(userId, timePeriodParams);
+        // Call canonical chat data tool
+        rawData = await executeToolCall(
+          'get_monthly_spending_trend',
+          toolArgs,
+          userId,
+          request.url
+        );
+        if (rawData?.error) {
+          throw new Error(rawData.error);
+        }
         // Transform and create chart using pure visualization function
         const chartData = transformMonthlySpendingToChartData(rawData);
         chartConfig = getLineChart(chartData, {
@@ -99,9 +107,17 @@ export async function GET(request: NextRequest) {
       }
 
       case 'category-breakdown': {
-        // Call canonical assistant function
+        // Call canonical chat data tool
         console.log('[DASHBOARD category-breakdown] Calling with:', { userId, timePeriodParams });
-        rawData = await getCategoryBreakdown(userId, timePeriodParams);
+        rawData = await executeToolCall(
+          'get_category_breakdown',
+          toolArgs,
+          userId,
+          request.url
+        );
+        if (rawData?.error) {
+          throw new Error(rawData.error);
+        }
         console.log('[DASHBOARD category-breakdown] Result count:', rawData?.length);
         const foodResult = rawData?.find((c: any) => c.category?.toLowerCase().includes('food'));
         console.log('[DASHBOARD category-breakdown] Food & Dining result:', foodResult);
@@ -116,8 +132,16 @@ export async function GET(request: NextRequest) {
       }
 
       case 'income-vs-expenses': {
-        // Call canonical assistant function
-        rawData = await getIncomeVsExpenses(userId, timePeriodParams);
+        // Call canonical chat data tool
+        rawData = await executeToolCall(
+          'get_income_vs_expenses',
+          toolArgs,
+          userId,
+          request.url
+        );
+        if (rawData?.error) {
+          throw new Error(rawData.error);
+        }
         // Transform and create chart using pure visualization function
         const chartData = transformIncomeVsExpensesToChartData(rawData);
         chartConfig = getBarChart(chartData, {
@@ -129,8 +153,16 @@ export async function GET(request: NextRequest) {
       }
 
       case 'cash-flow': {
-        // Call canonical assistant function
-        rawData = await getCashFlowData(userId, timePeriodParams);
+        // Call canonical chat data tool
+        rawData = await executeToolCall(
+          'get_cash_flow_data',
+          toolArgs,
+          userId,
+          request.url
+        );
+        if (rawData?.error) {
+          throw new Error(rawData.error);
+        }
         // Create chart using pure visualization function
         chartConfig = getSankeyChart(
           rawData.nodes || [],

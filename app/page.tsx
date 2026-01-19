@@ -267,6 +267,10 @@ export default function Home() {
                 dateRange={dateRange}
                 selectedMonth={selectedMonth}
                 monthOptions={monthOptions}
+                showAccountsPanel={true}
+                onSyncComplete={() => setChartRefreshKey(prev => prev + 1)}
+                onFileUpload={handleFileUpload}
+                isProcessing={isProcessing}
                 onDateRangeChange={(months) => {
                   setDateRange(months);
                   setSelectedMonth('all');
@@ -304,6 +308,7 @@ export default function Home() {
                 isProcessing={isProcessing}
                 chatInterfaceRef={chatInterfaceRef}
                 onOpenMobileChat={() => setIsMobileChatOpen(true)}
+                showAccountsPanel={false}
               />
               
               {/* Subscriptions Panel - Shows auto-detected subscriptions from fixed expenses */}

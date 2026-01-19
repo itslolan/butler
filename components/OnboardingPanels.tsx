@@ -11,6 +11,7 @@ interface OnboardingPanelsProps {
   isProcessing?: boolean;
   chatInterfaceRef?: React.RefObject<any>;
   onOpenMobileChat?: () => void;
+  showAccountsPanel?: boolean;
 }
 
 interface CategorySummary {
@@ -27,6 +28,7 @@ export default function OnboardingPanels({
   isProcessing = false,
   chatInterfaceRef,
   onOpenMobileChat,
+  showAccountsPanel = true,
 }: OnboardingPanelsProps) {
   const router = useRouter();
   const [hasBudgets, setHasBudgets] = useState<boolean>(false);
@@ -313,6 +315,14 @@ Please provide a detailed analysis with specific recommendations.`;
       />
     </div>
   );
+
+  if (!showAccountsPanel) {
+    return (
+      <div className="mb-6">
+        {hasBudgets ? <BudgetSummaryPanel /> : <BudgetCTAPanel />}
+      </div>
+    );
+  }
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">

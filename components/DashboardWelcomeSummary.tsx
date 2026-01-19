@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import ConnectedAccounts from './ConnectedAccounts';
 
 type Availability = {
   startMonth: string | null; // YYYY-MM
@@ -51,6 +52,10 @@ export default function DashboardWelcomeSummary({
   onDateRangeChange,
   onMonthChange,
   monthOptions,
+  showAccountsPanel,
+  onSyncComplete,
+  onFileUpload,
+  isProcessing,
 }: {
   userId: string;
   displayName?: string | null;
@@ -60,6 +65,10 @@ export default function DashboardWelcomeSummary({
   onDateRangeChange?: (months: number) => void;
   onMonthChange?: (month: string) => void;
   monthOptions?: Array<{ value: string; label: string }>;
+  showAccountsPanel?: boolean;
+  onSyncComplete?: () => void;
+  onFileUpload?: (files: File[]) => void;
+  isProcessing?: boolean;
 }) {
   const [data, setData] = useState<WelcomeSummaryResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -289,6 +298,16 @@ export default function DashboardWelcomeSummary({
             </div>
           </details>
         </div>
+
+        {showAccountsPanel && (
+          <div className="mt-4 border-t border-slate-100 dark:border-slate-800 pt-4">
+            <ConnectedAccounts
+              onSyncComplete={onSyncComplete}
+              onFileUpload={onFileUpload}
+              isProcessing={isProcessing}
+            />
+          </div>
+        )}
       </div>
 
       {/* Subtle emphasis bar */}

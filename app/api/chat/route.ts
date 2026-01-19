@@ -1,57 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
-import { 
-  searchDocuments, 
-  searchTransactions, 
-  getAllMetadata,
-  getAccountSnapshots,
-  calculateNetWorth,
-  getDistinctCategories,
-  getDistinctMerchants,
-  getDistinctAccountNames,
-  bulkUpdateTransactionsByMerchant,
-  bulkUpdateTransactionsByCategory,
-  bulkUpdateTransactionsByFilters,
-  getCategoryBreakdown,
-  getMonthlySpendingTrend,
-  getAllMemories,
-  upsertMemory
-} from '@/lib/db-tools';
-import { getBudgetData, analyzeBudgetHealth, adjustBudgetAllocations } from '@/lib/budget-utils';
-import { createClient } from '@supabase/supabase-js';
-import {
-  getCategoryBreakdown as getAssistantCategoryBreakdown,
-  getMonthlySpendingTrend as getAssistantMonthlySpending,
-  getIncomeVsExpenses as getAssistantIncomeVsExpenses,
-  getCashFlowData as getAssistantCashFlow,
-  getCurrentBudget as getAssistantCurrentBudget,
-  getBudgetHealthAnalysis as getAssistantBudgetHealth,
-  getFixedExpenses as getAssistantFixedExpenses,
-} from '@/lib/assistant-functions';
-import {
-  getPieChart,
-  getLineChart,
-  getBarChart,
-  getAreaChart,
-  getSankeyChart,
-} from '@/lib/visualization-functions';
+import { getAllMemories, upsertMemory } from '@/lib/db-tools';
+import { executeToolCall } from '@/lib/chat-tool-executor';
+import { transformCategoryBreakdownToChartData } from '@/lib/visualization-functions';
 
-/**
- * Lazy Supabase admin client.
- *
- * Next.js may import/trace route files during build ("Collecting page data").
- * Avoid creating clients (or throwing) at module load time.
- */
-let _supabaseAdmin: ReturnType<typeof createClient<any>> | null = null;
-function getSupabaseAdmin() {
-  if (_supabaseAdmin) return _supabaseAdmin;
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url) throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL environment variable');
-  if (!key) throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY environment variable');
-  _supabaseAdmin = createClient<any>(url, key);
-  return _supabaseAdmin;
-}
 
 export const runtime = 'nodejs';
 
@@ -291,348 +243,6 @@ Provide clear, detailed, data-rich answers with tables and breakdowns based on t
 interface Message {
   role: 'user' | 'model';
   parts: { text: string }[];
-}
-
-// Helper function to execute a tool call
-async function executeToolCall(name: string, args: any, effectiveUserId: string, requestUrl?: string) {
-  let functionResult;
-  
-  try {
-    if (name === 'search_documents') {
-      functionResult = await searchDocuments(effectiveUserId, args);
-    } else if (name === 'search_transactions') {
-      functionResult = await searchTransactions(effectiveUserId, args);
-    } else if (name === 'get_all_metadata') {
-      functionResult = await getAllMetadata(effectiveUserId);
-    } else if (name === 'categorize_transaction') {
-      // Call the clarify-transaction API
-      // Construct URL from request to ensure we call the same server instance
-      // This is critical - if we use an absolute URL, we might hit a different server/database
-      let fullApiUrl: string;
-      
-      if (requestUrl) {
-        // Use the provided request URL to construct the API endpoint
-        const url = new URL(requestUrl);
-        fullApiUrl = `${url.protocol}//${url.host}/api/clarify-transaction`;
-      } else {
-        // Fallback: try to construct from environment or use localhost
-        const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 
-                       process.env.NEXT_PUBLIC_BASE_URL || 
-                       'http://localhost:3000';
-        fullApiUrl = `${baseUrl}/api/clarify-transaction`;
-      }
-      
-      try {
-        const response = await fetch(fullApiUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            transaction_id: args.transaction_id,
-            transaction_type: args.transaction_type,
-          }),
-        });
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error('[chat API] categorize_transaction failed:', response.status, errorText);
-          functionResult = { 
-            error: `API error: ${response.status} ${response.statusText}`,
-            details: errorText,
-          };
-        } else {
-          functionResult = await response.json();
-        }
-      } catch (fetchError: any) {
-        console.error('[chat API] categorize_transaction fetch error:', fetchError.message);
-        functionResult = { 
-          error: `Fetch failed: ${fetchError.message}`,
-          error_type: fetchError.name,
-        };
-      }
-    } else if (name === 'resolve_todo') {
-      // Call resolve logic directly instead of making HTTP request
-      // This avoids URL construction issues in different deployment environments
-      try {
-        const supabase = getSupabaseAdmin();
-        const { updateTransactionType } = await import('@/lib/db-tools');
-        const todoType = args.todo_type;
-        const todoId = args.todo_id;
-        const action = args.action;
-
-        if (todoType === 'transaction_clarification') {
-          const transactionId = todoId;
-
-          if (action === 'dismiss') {
-            const { error } = await supabase
-              .from('transactions')
-              .update({
-                is_dismissed: true,
-                needs_clarification: false,
-                clarification_question: null,
-              })
-              .eq('id', transactionId)
-              .eq('user_id', effectiveUserId);
-
-            if (error) {
-              functionResult = { error: error.message, success: false };
-            } else {
-              functionResult = { success: true, dismissed: true };
-            }
-          } else {
-            // resolve action
-            const transactionType = args.transaction_type;
-            if (!transactionType || !['income', 'expense', 'transfer', 'other'].includes(transactionType)) {
-              functionResult = {
-                error: 'transaction_type is required for resolving transaction_clarification todos',
-                success: false
-              };
-            } else {
-              await updateTransactionType(transactionId, transactionType);
-              functionResult = { 
-                success: true, 
-                resolved: true, 
-                transaction_id: transactionId, 
-                transaction_type: transactionType 
-              };
-            }
-          }
-        } else if (todoType === 'account_selection') {
-          // Handle account selection todos
-          functionResult = {
-            error: 'Account selection not implemented in direct call yet. Use /api/todos/resolve endpoint.',
-            success: false
-          };
-        } else {
-          functionResult = { error: 'Invalid todoType', success: false };
-        }
-      } catch (resolveError: any) {
-        console.error('[chat API] resolve_todo error:', resolveError.message);
-        functionResult = {
-          error: `Resolution failed: ${resolveError.message}`,
-          error_type: resolveError.name,
-          success: false
-        };
-      }
-    } else if (name === 'get_account_snapshots') {
-      functionResult = await getAccountSnapshots(
-        effectiveUserId,
-        args.accountName,
-        args.startDate,
-        args.endDate
-      );
-    } else if (name === 'calculate_net_worth') {
-      functionResult = await calculateNetWorth(effectiveUserId, args.date);
-    } else if (name === 'render_chart') {
-      // Validate and return chart config
-      const { validateChartConfig } = await import('@/lib/chart-types');
-      if (validateChartConfig(args)) {
-        functionResult = { 
-          success: true, 
-          chartConfig: args,
-          message: 'Chart configuration is valid and will be rendered'
-        };
-      } else {
-        functionResult = { 
-          success: false, 
-          error: 'Invalid chart configuration'
-        };
-      }
-    } else if (name === 'get_pie_chart') {
-      // Create pie chart from data
-      const chartConfig = getPieChart(args.data || [], {
-        title: args.title,
-        description: args.description,
-        currency: args.currency,
-      });
-      functionResult = {
-        success: true,
-        chartConfig,
-      };
-    } else if (name === 'get_line_chart') {
-      // Create line chart from data
-      const chartConfig = getLineChart(args.data || [], {
-        title: args.title,
-        description: args.description,
-        currency: args.currency,
-        xAxisLabel: args.xAxisLabel,
-        yAxisLabel: args.yAxisLabel,
-      });
-      functionResult = {
-        success: true,
-        chartConfig,
-      };
-    } else if (name === 'get_bar_chart') {
-      // Create bar chart from data
-      const chartConfig = getBarChart(args.data || [], {
-        title: args.title,
-        description: args.description,
-        currency: args.currency,
-        xAxisLabel: args.xAxisLabel,
-        yAxisLabel: args.yAxisLabel,
-      });
-      functionResult = {
-        success: true,
-        chartConfig,
-      };
-    } else if (name === 'get_area_chart') {
-      // Create area chart from data
-      const chartConfig = getAreaChart(args.data || [], {
-        title: args.title,
-        description: args.description,
-        currency: args.currency,
-        xAxisLabel: args.xAxisLabel,
-        yAxisLabel: args.yAxisLabel,
-      });
-      functionResult = {
-        success: true,
-        chartConfig,
-      };
-    } else if (name === 'get_distinct_categories') {
-      functionResult = await getDistinctCategories(effectiveUserId, {
-        startDate: args.startDate,
-        endDate: args.endDate,
-        transactionType: args.transactionType,
-      });
-    } else if (name === 'get_distinct_merchants') {
-      functionResult = await getDistinctMerchants(effectiveUserId, {
-        startDate: args.startDate,
-        endDate: args.endDate,
-        category: args.category,
-      });
-    } else if (name === 'get_distinct_account_names') {
-      functionResult = await getDistinctAccountNames(effectiveUserId);
-    } else if (name === 'bulk_update_transactions_by_merchant') {
-      functionResult = await bulkUpdateTransactionsByMerchant(
-        effectiveUserId,
-        args.merchant,
-        {
-          category: args.category,
-          transactionType: args.transactionType,
-          spendClassification: args.spendClassification,
-        },
-        {
-          startDate: args.startDate,
-          endDate: args.endDate,
-        }
-      );
-    } else if (name === 'bulk_update_transactions_by_category') {
-      functionResult = await bulkUpdateTransactionsByCategory(
-        effectiveUserId,
-        args.oldCategory,
-        args.newCategory,
-        {
-          startDate: args.startDate,
-          endDate: args.endDate,
-        }
-      );
-    } else if (name === 'bulk_update_transactions_by_filters') {
-      functionResult = await bulkUpdateTransactionsByFilters(
-        effectiveUserId,
-        args.filters || {},
-        args.updates || {}
-      );
-    } else if (name === 'get_category_breakdown') {
-      // Call canonical assistant function
-      console.log('[CHAT get_category_breakdown] Args:', args);
-      const params = { month: args.specificMonth, months: args.months };
-      console.log('[CHAT get_category_breakdown] Calling with params:', params);
-      functionResult = await getAssistantCategoryBreakdown(
-        effectiveUserId,
-        params
-      );
-      console.log('[CHAT get_category_breakdown] Result count:', functionResult?.length);
-      const foodResult = functionResult?.find((cat: any) => cat.category?.toLowerCase().includes('food'));
-      console.log('[CHAT get_category_breakdown] Food & Dining result:', foodResult);
-    } else if (name === 'get_monthly_spending_trend') {
-      // Call canonical assistant function
-      functionResult = await getAssistantMonthlySpending(
-        effectiveUserId,
-        { month: args.specificMonth, months: args.months }
-      );
-    } else if (name === 'get_current_budget') {
-      // Call canonical assistant function
-      functionResult = await getAssistantCurrentBudget(effectiveUserId, args.month);
-    } else if (name === 'get_budget_health_analysis') {
-      // Call canonical assistant function
-      const analysis = await getAssistantBudgetHealth(effectiveUserId, args.month);
-      
-      functionResult = {
-        healthStatus: analysis.healthStatus,
-        healthLabel: analysis.healthStatus === 'on_track' ? 'On Track' : 
-                     analysis.healthStatus === 'at_risk' ? 'At Risk' : 'Off Track',
-        totalBudgeted: analysis.totalBudgeted,
-        totalSpent: analysis.totalSpent,
-        utilizationPercentage: Math.round(analysis.utilizationPercentage),
-        firstCategoryOverBudget: analysis.firstCategoryOverBudget,
-        overspentCategories: analysis.overspentCategories.map((cat: any) => ({
-          name: cat.name,
-          budgeted: cat.budgeted,
-          spent: cat.spent,
-          overspent: cat.overspent,
-          overspentPercentage: Math.round((cat.overspent / cat.budgeted) * 100),
-          firstOverspentDate: cat.firstOverspentDate,
-          largeTransactions: cat.largeTransactions,
-        })),
-      };
-    } else if (name === 'adjust_budget_allocations') {
-      // Adjust budget allocations based on user's conversational request
-      const now = new Date();
-      const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-      
-      const result = await adjustBudgetAllocations(
-        effectiveUserId,
-        currentMonth,
-        args.adjustments || []
-      );
-      
-      functionResult = result;
-    } else if (name === 'get_visual') {
-      // Fetch canonical chart visual from same endpoint as dashboard
-      let fullApiUrl: string;
-      
-      if (requestUrl) {
-        const url = new URL(requestUrl);
-        fullApiUrl = `${url.protocol}//${url.host}/api/charts`;
-      } else {
-        const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 
-                       process.env.NEXT_PUBLIC_BASE_URL || 
-                       'http://localhost:3000';
-        fullApiUrl = `${baseUrl}/api/charts`;
-      }
-      
-      try {
-        const params = new URLSearchParams({
-          userId: effectiveUserId,
-          type: args.type || 'category-breakdown',
-        });
-        
-        if (args.month) {
-          params.append('month', args.month);
-        } else if (args.months) {
-          params.append('months', args.months.toString());
-        }
-        
-        const response = await fetch(`${fullApiUrl}?${params}`);
-        
-        if (!response.ok) {
-          const errorData = await response.json();
-          functionResult = { error: errorData.error || 'Failed to fetch visual' };
-        } else {
-          const envelope = await response.json();
-          // Return the full envelope: { chartConfig, rawData, params }
-          functionResult = envelope;
-        }
-      } catch (error: any) {
-        functionResult = { error: error.message || 'Failed to fetch visual' };
-      }
-    } else {
-      functionResult = { error: 'Unknown function' };
-    }
-  } catch (error: any) {
-    functionResult = { error: error.message };
-  }
-
-  return functionResult;
 }
 
 /**
@@ -1477,6 +1087,50 @@ When answering questions, use these memories to provide context-aware responses.
             },
           },
           {
+            name: 'get_income_vs_expenses',
+            description: 'Get monthly income vs expenses totals. Use for data-only queries (no visual). If showing a chart, use get_visual instead and explain using its rawData to avoid number mismatches.',
+            parameters: {
+              type: SchemaType.OBJECT,
+              properties: {
+                reasoning: {
+                  type: SchemaType.STRING,
+                  description: 'Explain why you are calling this function and what you plan to do with the results (max 50 words)',
+                },
+                months: {
+                  type: SchemaType.NUMBER,
+                  description: 'Number of months to analyze. If omitted, defaults to current month only (matching dashboard).',
+                },
+                specificMonth: {
+                  type: SchemaType.STRING,
+                  description: 'Optional: Get income vs expenses for a specific month (YYYY-MM format)',
+                },
+              },
+              required: ['reasoning'],
+            },
+          },
+          {
+            name: 'get_cash_flow_data',
+            description: 'Get cash flow nodes/links for sankey visuals. Use for data-only queries (no visual). If showing a chart, use get_visual instead and explain using its rawData to avoid number mismatches.',
+            parameters: {
+              type: SchemaType.OBJECT,
+              properties: {
+                reasoning: {
+                  type: SchemaType.STRING,
+                  description: 'Explain why you are calling this function and what you plan to do with the results (max 50 words)',
+                },
+                months: {
+                  type: SchemaType.NUMBER,
+                  description: 'Number of months to analyze. If omitted, defaults to current month only (matching dashboard).',
+                },
+                specificMonth: {
+                  type: SchemaType.STRING,
+                  description: 'Optional: Get cash flow for a specific month (YYYY-MM format)',
+                },
+              },
+              required: ['reasoning'],
+            },
+          },
+          {
             name: 'get_current_budget',
             description: 'Get the user\'s current month budget with all categories, budgeted amounts, and spent amounts. Use this when the user asks about their budget status or wants to see how they\'re tracking against their budget.',
             parameters: {
@@ -1589,6 +1243,8 @@ When answering questions, use these memories to provide context-aware responses.
           let functionCallCount = 0;
           const maxFunctionCalls = 10;
           let chartConfig = null;
+          let lastCategoryBreakdown: Array<{ category: string; total: number; percentage?: number; count?: number }> | null = null;
+          let lastCategoryBreakdownMonth: string | null = null;
 
           // Handle function calls in a loop
           while (result.response.functionCalls && result.response.functionCalls() && functionCallCount < maxFunctionCalls) {
@@ -1606,9 +1262,20 @@ When answering questions, use these memories to provide context-aware responses.
                 reasoning: (args as any)?.reasoning 
               });
 
+              if (name === 'get_pie_chart' && lastCategoryBreakdown) {
+                // Use canonical breakdown data for chart generation
+                (args as any).data = transformCategoryBreakdownToChartData(lastCategoryBreakdown);
+              }
+
               const startTime = Date.now();
               const functionResult = await executeToolCall(name, args, effectiveUserId, request.url);
               const duration = Date.now() - startTime;
+
+              // Track canonical category breakdown for deterministic chat summaries
+              if (name === 'get_category_breakdown' && Array.isArray(functionResult)) {
+                lastCategoryBreakdown = functionResult;
+                lastCategoryBreakdownMonth = (args as any)?.specificMonth || null;
+              }
 
               // Send tool result event
               sendEvent('tool_result', { 
@@ -1655,7 +1322,26 @@ When answering questions, use these memories to provide context-aware responses.
           }
 
           // Stream the final text response
-          const responseText = result.response.text();
+          let responseText = result.response.text();
+          const wantsCategoryBreakdown =
+            typeof lastMessage?.content === 'string' &&
+            /category/i.test(lastMessage.content) &&
+            /(breakdown|by category)/i.test(lastMessage.content);
+
+          if (wantsCategoryBreakdown && lastCategoryBreakdown && lastCategoryBreakdown.length > 0) {
+            const total = lastCategoryBreakdown.reduce((sum, row) => sum + (Number(row.total) || 0), 0);
+            const monthLabel = lastCategoryBreakdownMonth ? ` for ${lastCategoryBreakdownMonth}` : '';
+            const header = `Here is your spending breakdown${monthLabel}.`;
+            const tableHeader = `| Category | Amount | % of Total |\n|---|---:|---:|`;
+            const rows = lastCategoryBreakdown
+              .map((row) => {
+                const amount = Number(row.total) || 0;
+                const pct = total > 0 ? ((amount / total) * 100).toFixed(1) : '0.0';
+                return `| ${row.category} | $${amount.toFixed(2)} | ${pct}% |`;
+              })
+              .join('\n');
+            responseText = `${header}\n\nYou spent a total of **$${total.toFixed(2)}** across ${lastCategoryBreakdown.length} categories.\n\n${tableHeader}\n${rows}`;
+          }
           
           // Split text into chunks and stream them
           const CHUNK_SIZE = 50; // Characters per chunk
