@@ -4,10 +4,6 @@ interface ReadyToAssignProps {
   amount: number;
   income: number;
   totalBudgeted: number;
-  incomeMonth?: string;
-  currentMonth?: string;
-  onAmountChange?: (newAmount: number) => void; // DEPRECATED: No longer used for amount editing
-  onIncomeChange?: (newIncome: number) => void; // NEW: For editing income directly
   onAutoAssign?: () => void;
   isAutoAssigning?: boolean;
   hasAiAssigned?: boolean; // True if AI has assigned budgets at least once
@@ -15,17 +11,13 @@ interface ReadyToAssignProps {
   onSave?: () => void;
   isSaving?: boolean;
   hasUnsavedChanges?: boolean;
-  isReadOnly?: boolean; // True for past months
+  isLoading?: boolean;
 }
 
 export default function ReadyToAssign({ 
   amount, 
   income, 
   totalBudgeted,
-  incomeMonth,
-  currentMonth,
-  onAmountChange, // DEPRECATED: No longer used
-  onIncomeChange, // NEW: For editing income
   onAutoAssign,
   isAutoAssigning = false,
   hasAiAssigned = false,
@@ -33,27 +25,24 @@ export default function ReadyToAssign({
   onSave,
   isSaving = false,
   hasUnsavedChanges = false,
-  isReadOnly = false,
+  isLoading = false,
 }: ReadyToAssignProps) {
   const isPositive = amount >= 0;
   const isOverbudgeted = amount < 0;
   const isFullyAssigned = amount === 0 && totalBudgeted > 0;
-  const isUsingMedianIncome = incomeMonth === 'median';
-  const isUsingDifferentMonth = incomeMonth && currentMonth && incomeMonth !== currentMonth && incomeMonth !== 'median';
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',
       minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(value);
   };
-
-  const formatMonth = (monthStr: string) => {
-    const [year, month] = monthStr.split('-');
-    const date = new Date(parseInt(year), parseInt(month) - 1);
-    return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-  };
+  const displayAmount = formatCurrency(Math.abs(amount));
+  const statusLabel = isOverbudgeted
+    ? `${displayAmount} overbudgeted`
+    : `${displayAmount} remaining to budget`;
 
   return (
     <div
@@ -67,131 +56,106 @@ export default function ReadyToAssign({
     >
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-white/80 text-sm font-medium mb-1">
-            {isFullyAssigned
-              ? 'All Money Assigned!'
-              : isPositive
-              ? 'Ready to Assign'
-              : 'Overbudgeted'}
-          </p>
+          <p className="text-white/80 text-sm font-medium mb-1">Budget status</p>
           {/* Ready to Assign Amount - Not Editable, Calculated */}
           <div className="flex items-center gap-2">
-            <span className="text-white/90 text-3xl font-bold">$</span>
             <span className="text-4xl font-bold text-white tracking-tight">
-              {formatCurrency(Number.isFinite(amount) ? Number(amount.toFixed(2)) : 0).replace('$', '')}
+              {isLoading ? 'Loading budget data...' : (isFullyAssigned ? 'All money assigned' : statusLabel)}
             </span>
           </div>
-          {/* Income Breakdown - Income is editable */}
           <div className="text-white/70 text-sm mt-2 flex items-center gap-1.5">
-            <span className="text-white/90">$</span>
-            {isReadOnly ? (
-              <span className="font-medium">{income.toFixed(2)}</span>
+            {isLoading ? (
+              <span>Fetching totals…</span>
             ) : (
-              <input
-                type="number"
-                step="any"
-                min="0"
-                value={Number.isFinite(income) ? income : ''}
-                onChange={(e) => onIncomeChange?.(parseFloat(e.target.value) || 0)}
-                className="w-20 font-medium text-white/90 bg-transparent border-b border-white/30 hover:border-white/50 focus:border-white/70 focus:outline-none transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                aria-label="Monthly income"
-                placeholder="0.00"
-              />
+              <>
+                <span className="font-medium">{formatCurrency(income)}</span>
+                <span>income</span>
+                <span>−</span>
+                <span className="font-medium">{formatCurrency(totalBudgeted)}</span>
+                <span>budgeted</span>
+              </>
             )}
-            <span>{isUsingMedianIncome ? 'median income' : 'income'}</span>
-            <span>−</span>
-            <span className="font-medium">${totalBudgeted.toFixed(2)}</span>
-            <span>budgeted</span>
           </div>
-          {isUsingMedianIncome && (
-            <p className="text-white/60 text-xs mt-1 italic">
-              Using your median monthly income for budgeting
-            </p>
-          )}
-          {isUsingDifferentMonth && (
-            <p className="text-white/60 text-xs mt-1 italic">
-              Using income from {formatMonth(incomeMonth)} (no income in current month)
-            </p>
-          )}
         </div>
 
         <div className="flex flex-col items-end gap-2">
-          {/* Read-only indicator for past months */}
-          {isReadOnly ? (
-            <div className="flex items-center gap-2 bg-white/20 px-4 py-2 rounded-full">
-              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <span className="text-white text-sm font-medium">Historical Data</span>
-            </div>
-          ) : (
-            <>
-              {/* Auto/Re-assign AI Button - shows when not fully assigned and not overbudgeted */}
-              {!isFullyAssigned && !isOverbudgeted && (
-                <button 
-                  onClick={onAutoAssign}
-                  disabled={isAutoAssigning || !onAutoAssign}
-                  className="flex items-center gap-2 bg-white/20 hover:bg-white/30 disabled:bg-white/10 px-4 py-2 rounded-full transition-colors disabled:cursor-not-allowed"
-                >
-                  {isAutoAssigning ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      <span className="text-white text-sm font-medium">Analyzing...</span>
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                      </svg>
-                      <span className="text-white text-sm font-medium">
-                        {hasAiAssigned ? 'Re-assign using AI' : 'Auto Assign using AI'}
-                      </span>
-                    </>
-                  )}
-                </button>
-              )}
-
-              {/* Over Budget Warning */}
-              {isOverbudgeted && (
-                <div className="flex items-center gap-2 bg-white/20 px-3 py-1.5 rounded-full">
-                  <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+          {/* Auto/Re-assign AI Button - shows when not fully assigned and not overbudgeted */}
+          {!isFullyAssigned && !isOverbudgeted && (
+            <button 
+              onClick={onAutoAssign}
+              disabled={isLoading || isAutoAssigning || !onAutoAssign}
+              className="flex items-center gap-2 bg-white/20 hover:bg-white/30 disabled:bg-white/10 px-4 py-2 rounded-full transition-colors disabled:cursor-not-allowed"
+            >
+              {isAutoAssigning ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <span className="text-white text-sm font-medium">Analyzing...</span>
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                   </svg>
-                  <span className="text-white text-sm font-medium">Over Budget</span>
-                </div>
+                  <span className="text-white text-sm font-medium">
+                    {hasAiAssigned ? 'Re-assign using AI' : 'Auto Assign using AI'}
+                  </span>
+                </>
               )}
+            </button>
+          )}
 
-              {/* Save Button - always visible, enabled when there are unsaved changes */}
-              <button
-                onClick={onSave}
-                disabled={isSaving || isAutoAssigning || !onSave || !hasUnsavedChanges}
-                className="flex items-center gap-2 bg-white/20 hover:bg-white/30 disabled:bg-white/10 px-4 py-2 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {isSaving ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <span className="text-white text-sm font-medium">Saving...</span>
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    <span className="text-white text-sm font-medium">Save Budget</span>
-                  </>
-                )}
-              </button>
-
-              {/* Reset Button */}
-              {onReset && (
-                <button
-                  onClick={onReset}
-                  className="text-white/50 hover:text-white/80 text-xs font-medium px-2 py-1 transition-colors mt-1"
-                >
-                  Reset Setup
-                </button>
+          {/* Fix Now Button */}
+          {isOverbudgeted && (
+            <button
+              onClick={onAutoAssign}
+              disabled={isLoading || isAutoAssigning || !onAutoAssign}
+              className="flex items-center gap-2 bg-white/20 hover:bg-white/30 disabled:bg-white/10 px-4 py-2 rounded-full transition-colors disabled:cursor-not-allowed"
+            >
+              {isAutoAssigning ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <span className="text-white text-sm font-medium">Fixing...</span>
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12h18M12 3v18" />
+                  </svg>
+                  <span className="text-white text-sm font-medium">Fix now</span>
+                </>
               )}
-            </>
+            </button>
+          )}
+
+          {/* Save Button - always visible, enabled when there are unsaved changes */}
+          <button
+            onClick={onSave}
+            disabled={isLoading || isSaving || isAutoAssigning || !onSave || !hasUnsavedChanges || income <= 0}
+            className="flex items-center gap-2 bg-white/20 hover:bg-white/30 disabled:bg-white/10 px-4 py-2 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isSaving ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <span className="text-white text-sm font-medium">Saving...</span>
+              </>
+            ) : (
+              <>
+                <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                <span className="text-white text-sm font-medium">Save Budget</span>
+              </>
+            )}
+          </button>
+
+          {/* Reset Button */}
+          {onReset && (
+            <button
+              onClick={onReset}
+              className="text-white/50 hover:text-white/80 text-xs font-medium px-2 py-1 transition-colors mt-1"
+            >
+              Reset
+            </button>
           )}
         </div>
       </div>

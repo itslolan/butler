@@ -8,8 +8,7 @@ import ChatInterface from '@/components/ChatInterface';
 import MobileChatModal from '@/components/MobileChatModal';
 import BudgetTable from '@/components/BudgetTable';
 import ReadyToAssign from '@/components/ReadyToAssign';
-import BudgetQuestionnaire from '@/components/BudgetQuestionnaire';
-import BudgetExplainer from '@/components/BudgetExplainer';
+import EstimatedIncomeInput from '@/components/EstimatedIncomeInput';
 import { useAuth } from '@/components/AuthProvider';
 
 export default function BudgetPage() {
@@ -43,13 +42,7 @@ export default function BudgetPage() {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   };
 
-  // Month comparison utilities
   const currentMonth = getCurrentMonth();
-  const isCurrentMonth = (month: string) => month === currentMonth;
-  const isPastMonth = (month: string) => month < currentMonth;
-  const isFutureMonth = (month: string) => month > currentMonth;
-
-  const [selectedMonth, setSelectedMonth] = useState(currentMonth);
 
   // Budget data state
   const [budgetData, setBudgetData] = useState<{
@@ -101,12 +94,7 @@ export default function BudgetPage() {
   // Track if there are unsaved changes
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
-  const [showQuestionnaire, setShowQuestionnaire] = useState(false);
   const [isInitialLoadComplete, setIsInitialLoadComplete] = useState(false);
-  const [questionnaireCompleted, setQuestionnaireCompleted] = useState(false);
-  
-  // User-entered rent from questionnaire (to pass to auto-assign)
-  const [rentOverride, setRentOverride] = useState<number | null>(null);
   
   // Budgeted amounts override (from AI auto-assign, before saving)
   const [budgetedOverrides, setBudgetedOverrides] = useState<Record<string, number> | null>(null);
@@ -114,30 +102,6 @@ export default function BudgetPage() {
   // Track user-manually-set budget amounts (to preserve during AI auto-assign)
   const [userSetBudgets, setUserSetBudgets] = useState<Record<string, number>>({});
   
-  // Track if user has any income history (for determining if manual override is allowed)
-  const [hasIncomeHistory, setHasIncomeHistory] = useState<boolean>(false);
-  
-  // Read-only mode for past months
-  const isReadOnly = isPastMonth(selectedMonth);
-
-  // Generate month options (last 12 months + next 1 month)
-  const monthOptions = Array.from({ length: 13 }, (_, i) => {
-    const d = new Date();
-    d.setMonth(d.getMonth() - i + 1);
-    const value = d.toISOString().slice(0, 7);
-    const baseLabel = d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-    
-    // Add visual indicator for month type
-    let label = baseLabel;
-    if (value === currentMonth) {
-      label = `${baseLabel} (Current)`;
-    } else if (value < currentMonth) {
-      label = `${baseLabel} (Past)`;
-    }
-    
-    return { value, label };
-  });
-
   const handleBudgetDataLoaded = useCallback((data: typeof budgetData) => {
     if (!data) {
       setBudgetData(null);
@@ -157,14 +121,11 @@ export default function BudgetPage() {
     // The API now handles income priority (median > month-specific)
     // We just use what the API sends us
     const effectiveIncome = anyData.income || 0;
-    const hasHistory = effectiveIncome > 0;
-    setHasIncomeHistory(hasHistory);
-    
     const effectiveReadyToAssign = anyData.readyToAssign;
 
     setBudgetData({
       income: effectiveIncome,
-      incomeMonth: anyData.incomeMonth || selectedMonth,
+      incomeMonth: anyData.incomeMonth || currentMonth,
       totalBudgeted: anyData.totalBudgeted,
       readyToAssign: effectiveReadyToAssign,
       categories: anyData.categories,
@@ -182,54 +143,8 @@ export default function BudgetPage() {
       setHasUnsavedChanges(true);
     }
 
-    // Only show questionnaire for current month with no budgets
-    // Never show for past months (read-only) or future months (will get carryover)
-    // Compare selectedMonth directly with currentMonth to avoid function dependency
-    if (data && data.totalBudgeted === 0 && !questionnaireCompleted && selectedMonth === currentMonth) {
-      setShowQuestionnaire(true);
-    }
-    
     setIsInitialLoadComplete(true);
-  }, [questionnaireCompleted, selectedMonth, currentMonth]);
-
-  const handleQuestionnaireComplete = async (data: { income: number; rent?: number }) => {
-    if (!budgetData || !user) return;
-
-    // Store rent if provided (for auto-assign)
-    if (data.rent && data.rent > 0) {
-      setRentOverride(data.rent);
-    }
-    
-    // ALWAYS save user-entered income - user's explicit choice takes priority
-    if (data.income > 0) {
-      try {
-        // Save the user-provided income to the database
-        await fetch('/api/budget/income', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userId: user.id,
-            month: selectedMonth,
-            amount: data.income,
-          }),
-        });
-      } catch (error) {
-        console.error('Failed to save user-provided income:', error);
-      }
-    }
-    
-    // Use the user-entered income (their explicit choice overrides median/history)
-    const effectiveIncome = data.income;
-    
-    setBudgetData({
-      ...budgetData,
-      income: effectiveIncome,
-      incomeMonth: selectedMonth,
-      readyToAssign: effectiveIncome - budgetData.totalBudgeted,
-    });
-    setQuestionnaireCompleted(true);
-    setShowQuestionnaire(false);
-  };
+  }, [currentMonth]);
 
   const handleBudgetChange = useCallback((update: {
     categories: Array<{
@@ -298,38 +213,27 @@ export default function BudgetPage() {
   }, [budgetData]);
 
   // New handler for direct income editing
-  const handleIncomeChange = useCallback(async (newIncome: number) => {
-    if (!budgetData || !user) return;
-    
-    // ALWAYS save user's manual income changes - their explicit choice takes priority
-      try {
-        // Save the manually adjusted income to the database
-        await fetch('/api/budget/income', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userId: user.id,
-            month: selectedMonth,
-            amount: newIncome,
-          }),
-        });
-      } catch (error) {
-        console.error('Failed to save income:', error);
-    }
-    
+  const handleIncomeChange = useCallback((newIncome: number) => {
+    if (!budgetData) return;
+
     // Update budget data with new income and recalculate ready to assign
     const newReadyToAssign = newIncome - budgetData.totalBudgeted;
     
     setBudgetData({
       ...budgetData,
       income: newIncome,
-      incomeMonth: selectedMonth,
+      incomeMonth: currentMonth,
       readyToAssign: newReadyToAssign,
     });
-  }, [budgetData, selectedMonth, user]);
+    setHasUnsavedChanges(true);
+  }, [budgetData, currentMonth]);
 
   const handleSave = async () => {
     if (!budgetData || !user) return;
+    if (budgetData.income <= 0) {
+      setSaveMessage({ type: 'error', text: 'Set your income before saving the budget.' });
+      return;
+    }
 
     setIsSaving(true);
     setSaveMessage(null);
@@ -346,19 +250,35 @@ export default function BudgetPage() {
           amount: superCategory.budgeted,
         }));
 
-      const res = await fetch('/api/budget', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          month: selectedMonth,
-          budgets,
-          superBudgets,
+      const [incomeRes, budgetRes] = await Promise.all([
+        fetch('/api/budget/income', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            month: currentMonth,
+            amount: budgetData.income,
+          }),
         }),
-      });
+        fetch('/api/budget', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            month: currentMonth,
+            budgets,
+            superBudgets,
+          }),
+        }),
+      ]);
 
-      if (!res.ok) {
-        const data = await res.json();
+      if (!incomeRes.ok) {
+        const data = await incomeRes.json();
+        throw new Error(data.error || 'Failed to save income');
+      }
+
+      if (!budgetRes.ok) {
+        const data = await budgetRes.json();
         throw new Error(data.error || 'Failed to save');
       }
 
@@ -396,9 +316,8 @@ export default function BudgetPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: user.id,
-          month: selectedMonth,
+          month: currentMonth,
           income: budgetData.income,
-          rent: rentOverride,
           existingAllocations,
           isReassign: hasAiAssigned,
           userSetBudgets, // Pass user-set budgets to preserve them
@@ -479,9 +398,6 @@ export default function BudgetPage() {
 
   const handleResetBudget = async () => {
     if (!budgetData || !user) return;
-    
-    // Only allow reset for current month
-    if (!isCurrentMonth(selectedMonth)) return;
 
     // Zero out all categories locally
     const updatedCategories = budgetData.categories.map(cat => ({
@@ -513,8 +429,7 @@ export default function BudgetPage() {
       totalBudgeted: 0,
       readyToAssign: budgetData.income,
     });
-    
-    setShowQuestionnaire(true);
+    setHasUnsavedChanges(false);
 
     // Save the zeroed budget to server
     try {
@@ -528,7 +443,7 @@ export default function BudgetPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: user.id,
-          month: selectedMonth,
+          month: currentMonth,
           budgets,
           superBudgets: [],
         }),
@@ -547,48 +462,6 @@ export default function BudgetPage() {
   const handleCategoryDeleted = () => {
     setRefreshKey(prev => prev + 1);
   };
-
-  // Reset states when month changes
-  useEffect(() => {
-    setRentOverride(null);
-    setBudgetedOverrides(null);
-    setUserSetBudgets({});
-    setHasAiAssigned(false);
-    setHasUnsavedChanges(false);
-    setIsInitialLoadComplete(false);
-    setShowQuestionnaire(false);
-    setQuestionnaireCompleted(false);
-    
-    // Trigger budget carryover for future months
-    // Compare selectedMonth directly to avoid function dependency
-    if (selectedMonth > currentMonth && user) {
-      (async () => {
-        try {
-          const res = await fetch('/api/budget/carryover', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              userId: user.id,
-              targetMonth: selectedMonth,
-            }),
-          });
-          
-          if (!res.ok) {
-            console.error('Failed to carry over budgets');
-            return;
-          }
-          
-          const data = await res.json();
-          if (data.copied) {
-            // Trigger a refresh to show the copied budgets
-            setRefreshKey(prev => prev + 1);
-          }
-        } catch (error) {
-          console.error('Error carrying over budgets:', error);
-        }
-      })();
-    }
-  }, [selectedMonth, currentMonth, user]);
 
   if (loading) {
     return null;
@@ -613,19 +486,6 @@ export default function BudgetPage() {
             </button>
             <div className="flex items-center gap-2">
               <h1 className="font-semibold text-lg tracking-tight">Budget</h1>
-              {/* Month toggle: desktop only (moved into left panel on mobile) */}
-              <span className="hidden lg:inline text-slate-400 dark:text-slate-600">/</span>
-              <select
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(e.target.value)}
-                className="hidden lg:block text-sm font-medium bg-transparent border-none focus:outline-none focus:ring-0 text-slate-700 dark:text-slate-300 cursor-pointer"
-              >
-                {monthOptions.map(opt => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
             </div>
           </div>
           
@@ -652,84 +512,12 @@ export default function BudgetPage() {
             {/* Left Column: Budget Management (65%) */}
             <div className="col-span-12 lg:col-span-8 flex flex-col h-full lg:border-r border-slate-200 dark:border-slate-800 overflow-y-auto bg-slate-50/50 dark:bg-black/5 p-4 lg:p-6 pb-20 lg:pb-6">
               <div className="max-w-4xl w-full mx-auto space-y-4">
-                {/* Mobile controls (moved from top bar) */}
-                <div className="lg:hidden bg-white dark:bg-gray-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <select
-                      value={selectedMonth}
-                      onChange={(e) => setSelectedMonth(e.target.value)}
-                      className="flex-1 min-w-0 px-3 py-2 text-sm font-medium bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                    >
-                      {monthOptions.map(opt => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
-
-                    <button
-                      onClick={handleSave}
-                      disabled={isSaving || isAutoAssigning || !budgetData || !hasUnsavedChanges}
-                      className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-400 text-white font-medium text-sm rounded-xl transition-colors shadow-sm disabled:cursor-not-allowed shrink-0"
-                    >
-                      {isSaving ? (
-                        <>
-                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                          Saving...
-                        </>
-                      ) : (
-                        <>
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
-                          Save
-                        </>
-                      )}
-                    </button>
-                  </div>
-
-                  {saveMessage && (
-                    <div className="mt-3">
-                      <span className={`text-sm font-medium ${
-                        saveMessage.type === 'success'
-                          ? 'text-emerald-600 dark:text-emerald-400'
-                          : 'text-red-600 dark:text-red-400'
-                      }`}>
-                        {saveMessage.text}
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Questionnaire */}
-                {isInitialLoadComplete && showQuestionnaire && (
-                  <BudgetQuestionnaire 
-                    onComplete={handleQuestionnaireComplete}
-                    onUpload={() => router.push('/')}
-                    initialIncome={budgetData?.income || 0}
+                <div>
+                  <EstimatedIncomeInput
+                    income={budgetData?.income || 0}
                     incomeStats={budgetMeta?.incomeStats}
-                  />
-                )}
-
-                {/* Loading state before initial data is ready */}
-                {!isInitialLoadComplete && (
-                  <div className="flex items-center justify-center py-20">
-                    <div className="flex items-center gap-3 text-slate-500">
-                      <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                      </svg>
-                      <span className="text-sm font-medium">Loading budget...</span>
-                    </div>
-                  </div>
-                )}
-
-                <div className={(!isInitialLoadComplete || showQuestionnaire) ? 'hidden' : 'block'}>
-                  {/* Budget Explainer Panel */}
-                  <BudgetExplainer 
-                    medianIncome={budgetMeta?.incomeStats?.medianMonthlyIncome}
-                    monthsAnalyzed={budgetMeta?.incomeStats?.monthsIncluded}
-                    currentIncome={budgetData?.income || 0}
+                    onIncomeChange={handleIncomeChange}
+                    isLoading={!isInitialLoadComplete}
                   />
 
                   {/* Ready to Assign Panel */}
@@ -737,8 +525,6 @@ export default function BudgetPage() {
                     amount={budgetData?.readyToAssign || 0}
                     income={budgetData?.income || 0}
                     totalBudgeted={budgetData?.totalBudgeted || 0}
-                    incomeMonth={budgetData?.incomeMonth}
-                    currentMonth={selectedMonth}
                     onIncomeChange={handleIncomeChange}
                     onAutoAssign={handleAutoAssign}
                     isAutoAssigning={isAutoAssigning}
@@ -747,20 +533,20 @@ export default function BudgetPage() {
                     onSave={handleSave}
                     isSaving={isSaving}
                     hasUnsavedChanges={hasUnsavedChanges}
-                    isReadOnly={isReadOnly}
+                    isLoading={!isInitialLoadComplete}
                   />
 
                   {/* Budget Table */}
                   <BudgetTable
                     key={refreshKey}
                     userId={user.id}
-                    month={selectedMonth}
+                    month={currentMonth}
                     onDataLoaded={handleBudgetDataLoaded}
                     onBudgetChange={handleBudgetChange}
                     onCategoryAdded={handleCategoryAdded}
                     onCategoryDeleted={handleCategoryDeleted}
                     budgetedOverrides={budgetedOverrides}
-                    isReadOnly={isReadOnly}
+                    isReadOnly={false}
                   />
                 </div>
               </div>

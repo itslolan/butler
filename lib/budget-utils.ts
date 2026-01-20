@@ -61,58 +61,71 @@ function guessIsFixedExpenseCategoryName(name: string): boolean {
 // Default category hierarchy for new users
 export const DEFAULT_CATEGORY_HIERARCHY: Array<{
   name: string;
+  categoryType: 'income' | 'expense' | 'savings';
   categories: string[];
 }> = [
   // Income
   {
     name: 'Primary Income',
+    categoryType: 'income',
     categories: ['Salary / Wages', 'Contract Income', 'Freelance Income'],
   },
   {
     name: 'Variable Income',
+    categoryType: 'income',
     categories: ['Bonuses', 'Commissions', 'Overtime', 'Tips'],
   },
   {
     name: 'Business Income',
+    categoryType: 'income',
     categories: ['Client Payments', 'Project-Based Income', 'Retainers'],
   },
   {
     name: 'Other Income',
+    categoryType: 'income',
     categories: ['Interest', 'Dividends', 'Rental Income', 'Refunds & Reimbursements', 'Gifts', 'Other Income'],
   },
   // Expenses
   {
     name: 'Housing',
+    categoryType: 'expense',
     categories: ['Rent / Mortgage', 'Property Taxes', 'Home Insurance', 'Maintenance & Repairs', 'HOA Fees'],
   },
   {
     name: 'Utilities',
+    categoryType: 'expense',
     categories: ['Electricity', 'Water', 'Gas', 'Internet', 'Mobile Phone'],
   },
   {
     name: 'Food & Dining',
+    categoryType: 'expense',
     categories: ['Groceries', 'Restaurants', 'Coffee & Snacks', 'Food Delivery'],
   },
   {
     name: 'Transportation',
+    categoryType: 'expense',
     categories: ['Fuel', 'Public Transit', 'Ride Share / Taxi', 'Vehicle Maintenance', 'Parking & Tolls', 'Vehicle Insurance'],
   },
   {
     name: 'Shopping',
+    categoryType: 'expense',
     categories: ['Clothing', 'Electronics', 'Household Items', 'Personal Purchases'],
   },
   // Financial
   {
     name: 'Debt & Credit',
+    categoryType: 'expense',
     categories: ['Credit Card Payments', 'Personal Loans', 'Student Loans', 'Auto Loans'],
   },
   {
     name: 'Savings & Investments',
+    categoryType: 'savings',
     categories: ['Emergency Fund', 'Retirement Contributions', 'Investments', 'High-Yield Savings'],
   },
   // Business
   {
     name: 'Business Expenses',
+    categoryType: 'expense',
     categories: [
       'Software & Tools',
       'Hardware & Equipment',
@@ -126,28 +139,34 @@ export const DEFAULT_CATEGORY_HIERARCHY: Array<{
   // Taxes
   {
     name: 'Taxes',
+    categoryType: 'expense',
     categories: ['Income Tax', 'Self-Employment Tax', 'VAT / GST', 'Estimated Taxes'],
   },
   // Lifestyle
   {
     name: 'Health & Wellness',
+    categoryType: 'expense',
     categories: ['Health Insurance', 'Medical', 'Dental', 'Vision', 'Fitness'],
   },
   {
     name: 'Personal & Family',
+    categoryType: 'expense',
     categories: ['Childcare', 'Education', 'Personal Care', 'Pet Expenses'],
   },
   {
     name: 'Entertainment',
+    categoryType: 'expense',
     categories: ['Streaming Services', 'Events & Hobbies', 'Games'],
   },
   {
     name: 'Travel',
+    categoryType: 'expense',
     categories: ['Flights', 'Accommodation', 'Local Transport'],
   },
   // Miscellaneous
   {
     name: DEFAULT_MISC_SUPER_CATEGORY,
+    categoryType: 'expense',
     categories: ['Cash Withdrawals', 'Transfers', 'Fees & Charges', 'Charitable Donations', 'Uncategorized'],
   },
 ];
@@ -227,6 +246,7 @@ async function getMiscSuperCategoryId(userId: string): Promise<string> {
       user_id: userId,
       name: DEFAULT_MISC_SUPER_CATEGORY,
       display_order: nextOrder,
+      category_type: 'expense',
     })
     .select()
     .single();
@@ -243,6 +263,7 @@ async function ensureDefaultBudgetHierarchy(userId: string): Promise<void> {
     user_id: userId,
     name: superCategory.name,
     display_order: index,
+    category_type: superCategory.categoryType,
   }));
 
   const { error: superCategoryError } = await supabase
@@ -273,6 +294,7 @@ async function ensureDefaultBudgetHierarchy(userId: string): Promise<void> {
         display_order: index,
         super_category_id: superCategoryId,
         is_fixed_expense_category: guessIsFixedExpenseCategoryName(name),
+        category_type: superCategory.categoryType,
       });
     });
   }
@@ -329,6 +351,114 @@ export async function getFixedExpenseCategoryNames(userId: string): Promise<stri
   return (data || [])
     .map((row) => (row as BudgetCategory).name)
     .filter((name): name is string => typeof name === 'string' && name.trim().length > 0);
+}
+
+function getMonthRange(month: string): { start: string; end: string; endDay: number } {
+  const [yearStr, monthStr] = month.split('-');
+  const year = Number(yearStr);
+  const monthIndex = Number(monthStr) - 1;
+  const startDate = new Date(Date.UTC(year, monthIndex, 1));
+  const endDate = new Date(Date.UTC(year, monthIndex + 1, 0));
+  const start = startDate.toISOString().split('T')[0];
+  const end = endDate.toISOString().split('T')[0];
+  return { start, end, endDay: endDate.getUTCDate() };
+}
+
+function getPreviousMonth(month: string): string {
+  const [yearStr, monthStr] = month.split('-');
+  const year = Number(yearStr);
+  const monthIndex = Number(monthStr) - 1;
+  const d = new Date(Date.UTC(year, monthIndex - 1, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+async function hasFullMonthExpenseData(userId: string, month: string): Promise<boolean> {
+  const { start, end, endDay } = getMonthRange(month);
+
+  const { data: datesData, error: datesError } = await supabase
+    .from('transactions')
+    .select('date')
+    .eq('user_id', userId)
+    .gte('date', start)
+    .lte('date', end);
+
+  if (datesError || !datesData || datesData.length === 0) {
+    return false;
+  }
+
+  const days = datesData
+    .map(row => new Date(row.date).getUTCDate())
+    .filter(day => Number.isFinite(day));
+
+  const distinctDays = new Set(days);
+  const minDay = Math.min(...days);
+  const maxDay = Math.max(...days);
+  const minDistinctDays = 10;
+
+  // Treat a month as "full" only if it spans most of the month
+  // and has enough distinct transaction days to avoid partial imports.
+  return minDay <= 3 && maxDay >= endDay - 3 && distinctDays.size >= minDistinctDays;
+}
+
+export async function getFixedExpensePrefillByCategory(
+  userId: string,
+  month: string
+): Promise<Record<string, number>> {
+  const fixedExpenseCategories = await getFixedExpenseCategoryNames(userId);
+  console.log('[FixedExpensePrefill] Fixed expense categories:', fixedExpenseCategories.length);
+  if (fixedExpenseCategories.length === 0) {
+    console.log('[FixedExpensePrefill] No fixed expense categories found.');
+  }
+
+  const lastMonth = getPreviousMonth(month);
+  const useLastMonth = await hasFullMonthExpenseData(userId, lastMonth);
+  const targetMonth = useLastMonth ? lastMonth : month;
+  const { start, end } = getMonthRange(targetMonth);
+  console.log('[FixedExpensePrefill] Target month:', targetMonth, 'range:', start, end);
+
+  const { data: transactions, error } = await supabase
+    .from('transactions')
+    .select('category, amount, fixed_expense_status, is_fixed_expense, transaction_type')
+    .eq('user_id', userId)
+    .gte('date', start)
+    .lte('date', end)
+    .or('fixed_expense_status.eq.fixed,fixed_expense_status.eq.maybe,is_fixed_expense.eq.true')
+    .in('transaction_type', ['expense', 'other'])
+    .not('category', 'is', null);
+
+  if (error || !transactions) {
+    console.error('[getFixedExpensePrefillByCategory] Error:', error?.message || error);
+    return {};
+  }
+  console.log('[FixedExpensePrefill] Candidate fixed-expense txns:', transactions.length);
+
+  const fixedSet = new Set(fixedExpenseCategories.map((name) => name.toLowerCase()));
+  const totals: Record<string, number> = {};
+  for (const txn of transactions) {
+    if (!txn.category || typeof txn.category !== 'string') continue;
+    const categoryName = txn.category.trim();
+    if (!categoryName) continue;
+    if (fixedSet.size > 0 && !fixedSet.has(categoryName.toLowerCase())) continue;
+    const amount = Math.abs(Number(txn.amount)) || 0;
+    totals[categoryName] = (totals[categoryName] || 0) + amount;
+  }
+  if (fixedSet.size === 0) {
+    const distinctCategories = new Set<string>();
+    const statusCounts = { fixed: 0, maybe: 0, legacy: 0 };
+    for (const txn of transactions) {
+      if (txn.category && typeof txn.category === 'string') {
+        distinctCategories.add(txn.category.trim());
+      }
+      if (txn.fixed_expense_status === 'fixed') statusCounts.fixed += 1;
+      else if (txn.fixed_expense_status === 'maybe') statusCounts.maybe += 1;
+      else if (txn.is_fixed_expense) statusCounts.legacy += 1;
+    }
+    console.log('[FixedExpensePrefill] Fallback fixed-expense categories:', distinctCategories.size);
+    console.log('[FixedExpensePrefill] Fallback status counts:', statusCounts);
+  }
+  console.log('[FixedExpensePrefill] Prefill categories:', Object.keys(totals).length);
+
+  return totals;
 }
 
 /**
@@ -419,7 +549,8 @@ function median(values: number[]): number {
 
 async function fetchAllIncomeTransactionsInRange(
   userId: string,
-  startDate: string
+  startDate: string,
+  endDate?: string
 ): Promise<Array<{ date: string; amount: number }>> {
   const PAGE_SIZE = 1000;
   const MAX_TRANSACTIONS = 5000; // Cap at 5000 transactions to prevent memory issues
@@ -439,6 +570,7 @@ async function fetchAllIncomeTransactionsInRange(
       // Exclude synthetic "user provided" income rows from median calculation.
       .neq('merchant', USER_PROVIDED_INCOME_MERCHANT)
       .gte('date', startDate)
+      .lte('date', endDate ?? new Date().toISOString().split('T')[0])
       .order('date', { ascending: true })
       .range(from, to);
 
@@ -472,10 +604,12 @@ export async function getMedianMonthlyIncome(
   monthsBack: number = 12
 ): Promise<{ medianMonthlyIncome: number; monthsIncluded: number }> {
   const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth() - monthsBack + 1, 1);
+  const end = new Date(now.getFullYear(), now.getMonth(), 0);
+  const endDate = end.toISOString().split('T')[0];
+  const start = new Date(end.getFullYear(), end.getMonth() - monthsBack + 1, 1);
   const startDate = start.toISOString().split('T')[0];
 
-  const txns = await fetchAllIncomeTransactionsInRange(userId, startDate);
+  const txns = await fetchAllIncomeTransactionsInRange(userId, startDate, endDate);
   if (txns.length === 0) {
     return { medianMonthlyIncome: 0, monthsIncluded: 0 };
   }
@@ -540,6 +674,7 @@ export async function addCustomCategory(userId: string, name: string): Promise<B
       display_order: maxOrder + 1,
       super_category_id: superCategoryId,
       is_fixed_expense_category: guessIsFixedExpenseCategoryName(name),
+      category_type: 'expense',
     })
     .select()
     .single();
@@ -596,6 +731,7 @@ export async function syncTransactionCategoriesToBudget(
     display_order: maxOrder + idx + 1,
     super_category_id: miscSuperCategoryId,
     is_fixed_expense_category: guessIsFixedExpenseCategoryName(rawName),
+    category_type: 'expense',
   }));
   
   const { error } = await supabase.from('budget_categories').upsert(categoryRecords, {

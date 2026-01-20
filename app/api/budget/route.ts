@@ -7,6 +7,7 @@ import {
   hasBudgetCategories,
   hasTransactions,
   getMedianMonthlyIncome,
+  getFixedExpensePrefillByCategory,
   getCategoriesWithTransactions,
   getMostRecentBudgetMonth,
   getAllBudgetsForMonth,
@@ -90,6 +91,7 @@ export async function GET(request: NextRequest) {
       categoriesWithTransactions,
       historicalSpending,
       fixedExpensesByCategory,
+      fixedExpensePrefillByCategory,
       superCategories,
       superBudgets,
     ] = await Promise.all([
@@ -98,6 +100,7 @@ export async function GET(request: NextRequest) {
       getCategoriesWithTransactions(userId),
       getHistoricalSpendingBreakdown(userId, 3), // Reduced from 6 to 3 months
       getFixedExpensesByCategory(userId),
+      getFixedExpensePrefillByCategory(userId, month),
       getBudgetSuperCategories(userId),
       getSuperBudgetsForMonth(userId, month),
     ]);
@@ -160,22 +163,38 @@ export async function GET(request: NextRequest) {
         user_id: userId,
         name: DEFAULT_MISC_SUPER_CATEGORY,
         display_order: superCategoryList.length,
+        category_type: 'expense',
       });
     }
 
     // Transform data for frontend
-    const categoryBudgets = data.categories.map((category) => {
+    const allowedCategoryTypes = new Set(['expense', 'savings']);
+    const filteredSuperCategories = superCategoryList.filter(
+      superCategory => allowedCategoryTypes.has((superCategory as any).category_type ?? 'expense')
+    );
+    const allowedSuperCategoryIds = new Set(
+      filteredSuperCategories.map(superCategory => superCategory.id as string)
+    );
+    const filteredCategories = data.categories.filter(
+      category => allowedCategoryTypes.has((category as any).category_type ?? 'expense')
+    );
+
+    const categoryBudgets = filteredCategories.map((category) => {
       const categoryId = category.id ?? '';
       const resolvedSuperCategoryId = category.super_category_id || miscSuperCategoryId || '';
+      const normalizedSuperCategoryId = allowedSuperCategoryIds.has(resolvedSuperCategoryId)
+        ? resolvedSuperCategoryId
+        : (miscSuperCategoryId || resolvedSuperCategoryId);
       const hasSuperOverride =
-        resolvedSuperCategoryId ? superBudgetOverrides.has(resolvedSuperCategoryId) : false;
+        normalizedSuperCategoryId ? superBudgetOverrides.has(normalizedSuperCategoryId) : false;
       const budget = data.budgets.find(b => b.category_id === categoryId);
       const spent = data.spending[category.name] || 0;
       const historicalAverage = historicalSpending.categoryAverages[category.name] || 0;
-      const fixedExpenseAmount = fixedExpensesByCategory[category.name] || 0;
+      const fixedExpensePrefillAmount = fixedExpensePrefillByCategory[category.name] || 0;
+      const fixedExpenseAmount =
+        fixedExpensePrefillAmount || fixedExpensesByCategory[category.name] || 0;
       
-      // Suggested budget: max of historical average and fixed expenses
-      // This ensures fixed expenses are always covered
+      // Suggested budget: max of historical average and fixed expenses (for hints only)
       const suggestedBudget = Math.max(historicalAverage, fixedExpenseAmount);
       
       // Use actual budget if exists, otherwise use baseline budget for past months
@@ -184,10 +203,16 @@ export async function GET(request: NextRequest) {
         (isBaselineData ? (baselineBudgets[categoryId] ?? 0) : 0);
 
       if (!hasSuperOverride) {
-        // Pre-fill with suggested budget if no budget is set and we have a suggestion
-        // Round UP to whole dollars for cleaner budgeting
-        if (budgeted === 0 && suggestedBudget > 0 && !isPastMonth) {
-          budgeted = Math.ceil(suggestedBudget);
+        // Pre-fill fixed expenses only when no budget exists yet (current month)
+        if (budgeted === 0 && fixedExpensePrefillAmount > 0 && !isPastMonth && !isBaselineData) {
+          if (process.env.NODE_ENV !== 'production') {
+            console.log('[Budget Prefill] Applying fixed expense prefill', {
+              category: category.name,
+              fixedExpensePrefillAmount,
+              month,
+            });
+          }
+          budgeted = Math.ceil(fixedExpensePrefillAmount);
         }
       } else {
         budgeted = 0;
@@ -198,7 +223,7 @@ export async function GET(request: NextRequest) {
       return {
         id: categoryId,
         name: category.name,
-        superCategoryId: resolvedSuperCategoryId,
+        superCategoryId: normalizedSuperCategoryId,
         displayOrder: category.display_order ?? 0,
         isCustom: category.is_custom,
         hasTransactions: categoriesWithTransactions.has(category.name),
@@ -221,7 +246,7 @@ export async function GET(request: NextRequest) {
       categoriesBySuperCategory.set(superCategoryId, current);
     }
 
-    const superCategoryBudgets = superCategoryList.map((superCategory) => {
+    const superCategoryBudgets = filteredSuperCategories.map((superCategory) => {
       const superCategoryId = superCategory.id || '';
       const categories = categoriesBySuperCategory.get(superCategoryId) || [];
 
@@ -253,9 +278,8 @@ export async function GET(request: NextRequest) {
 
     // Determine effective income with proper priority:
     // 1. User-provided income (highest priority - user's explicit choice)
-    // 2. Other income from transactions (salary deposits, etc.)
-    // 3. Median income (calculated from history)
-    // 4. Zero (fallback)
+    // 2. Median income (calculated from history, excludes current month)
+    // 3. Zero (fallback)
     const medianIncome = incomeStats?.medianMonthlyIncome || 0;
     let effectiveIncome = 0;
     let effectiveIncomeMonth = month;
@@ -266,11 +290,6 @@ export async function GET(request: NextRequest) {
       effectiveIncome = data.userProvidedIncome;
       effectiveIncomeMonth = month;
       incomeSource = 'user_entered';
-    } else if (data.income > 0) {
-      // User has income from transactions (deposits, salary, etc.)
-      effectiveIncome = data.income;
-      effectiveIncomeMonth = data.incomeMonth;
-      incomeSource = 'transactions';
     } else if (medianIncome > 0) {
       // Fall back to median income calculated from history
       effectiveIncome = medianIncome;

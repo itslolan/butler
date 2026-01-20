@@ -201,6 +201,7 @@ export interface BudgetCategory {
   user_id: string;
   name: string;
   is_custom: boolean;
+  category_type?: 'income' | 'expense' | 'savings';
   super_category_id?: string | null;
   is_fixed_expense_category?: boolean;
   display_order?: number;
@@ -211,6 +212,7 @@ export interface BudgetSuperCategory {
   id?: string;
   user_id: string;
   name: string;
+  category_type?: 'income' | 'expense' | 'savings';
   display_order?: number;
   created_at?: Date | string;
 }

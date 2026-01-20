@@ -153,7 +153,8 @@ export default function BudgetTable({
   }, [budgetedOverrides]);
 
   const handleCategoryBudgetInput = (categoryId: string, value: string) => {
-    const numValue = parseFloat(value) || 0;
+    const parsed = parseFloat(value);
+    const numValue = Number.isFinite(parsed) ? roundCurrency(parsed) : 0;
 
     setSuperCategories(prev => {
       const updated = prev.map(superCategory => {
@@ -203,7 +204,8 @@ export default function BudgetTable({
   };
 
   const handleSuperCategoryBudgetInput = (superCategoryId: string, value: string) => {
-    const numValue = parseFloat(value) || 0;
+    const parsed = parseFloat(value);
+    const numValue = Number.isFinite(parsed) ? roundCurrency(parsed) : 0;
 
     setSuperCategories(prev => {
       const updated = prev.map(superCategory => {
@@ -313,8 +315,10 @@ export default function BudgetTable({
       style: 'currency',
       currency: 'USD',
       minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(value);
   };
+  const roundCurrency = (value: number) => Math.round(value * 100) / 100;
 
   const rows = superCategories.flatMap(superCategory => {
     const isExpanded = expandedSuperCategories[superCategory.id] ?? false;
@@ -426,7 +430,8 @@ export default function BudgetTable({
                       <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
                       <input
                         type="number"
-                        value={budgeted || ''}
+                        step="0.01"
+                        value={budgeted ? budgeted.toFixed(2) : ''}
                         onChange={(e) => handleSuperCategoryBudgetInput(row.superCategory.id, e.target.value)}
                         placeholder="0.00"
                         disabled={isReadOnly}
@@ -493,7 +498,8 @@ export default function BudgetTable({
                     <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-sm">$</span>
                     <input
                       type="number"
-                      value={budgeted || ''}
+                      step="0.01"
+                      value={budgeted ? budgeted.toFixed(2) : ''}
                       onChange={(e) => handleCategoryBudgetInput(row.category.id, e.target.value)}
                       placeholder="0.00"
                       disabled={isReadOnly}
