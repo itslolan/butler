@@ -335,7 +335,7 @@ export default function ConnectedAccounts({ onSyncComplete, onFileUpload, isProc
         multiple
       />
 
-      <div className={`grid ${isPlaidEnabled ? 'grid-cols-2' : 'grid-cols-1'} gap-2 flex-1 min-h-[140px]`}>
+      <div className={`grid ${isPlaidEnabled ? 'grid-cols-3' : 'grid-cols-2'} gap-2 flex-1 min-h-[140px]`}>
         {/* Connect Bank Button - Only shown when Plaid is enabled */}
         {isPlaidEnabled && (
           <PlaidLinkButton
@@ -349,8 +349,8 @@ export default function ConnectedAccounts({ onSyncComplete, onFileUpload, isProc
               </svg>
             </div>
             <div className="text-center">
-              <span className="block text-xs font-bold">Connect Bank</span>
-              <span className="block text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 font-medium">Automatic sync</span>
+              <span className="block text-sm font-semibold">Connect Bank</span>
+              <span className="block text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-semibold">Automatic sync</span>
             </div>
           </PlaidLinkButton>
         )}
@@ -407,8 +407,8 @@ export default function ConnectedAccounts({ onSyncComplete, onFileUpload, isProc
                 </svg>
               </div>
               <div className="text-center relative z-10">
-                <span className="block text-xs font-bold">Upload bank statements</span>
-                <span className="block text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 font-medium leading-tight px-1">
+                <span className="block text-sm font-semibold">Upload bank statements</span>
+                <span className="block text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-semibold leading-tight px-1">
                   Multiple PDFs or<br/>Screenshots
                 </span>
                 <button
@@ -417,7 +417,7 @@ export default function ConnectedAccounts({ onSyncComplete, onFileUpload, isProc
                     e.stopPropagation();
                     setShowHelpModal(true);
                   }}
-                  className="text-[10px] text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 underline mt-1 font-medium"
+                  className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 underline mt-1 font-semibold"
                 >
                   How to take screenshots?
                 </button>
@@ -427,7 +427,7 @@ export default function ConnectedAccounts({ onSyncComplete, onFileUpload, isProc
                     e.stopPropagation();
                     router.push('/uploads');
                   }}
-                  className="text-[10px] text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 underline mt-1 font-medium flex items-center gap-1 mx-auto"
+                  className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 underline mt-1 font-semibold flex items-center gap-1 mx-auto"
                 >
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -438,6 +438,41 @@ export default function ConnectedAccounts({ onSyncComplete, onFileUpload, isProc
             </>
           )}
         </button>
+
+        <a
+          href="https://chromewebstore.google.com/detail/adphex-capture/jplidggbbfhbmipnllkjninbjggnkijl"
+          target="_blank"
+          rel="noreferrer"
+          className="w-full h-full relative group flex flex-col items-center justify-center gap-2 p-3 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-300 rounded-2xl transition-all shadow-sm hover:shadow-md border-2 border-dashed border-slate-200 dark:border-slate-700 hover:border-blue-400 dark:hover:border-blue-500/50 overflow-hidden"
+        >
+          <div className="absolute inset-0 overflow-hidden pointer-events-none">
+            <div className="absolute -right-3 -top-3 opacity-10 dark:opacity-[0.15] transform rotate-12 transition-transform group-hover:scale-110 group-hover:rotate-6">
+              <svg width="64" height="64" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="4" y="6" width="16" height="12" rx="2" stroke="currentColor" strokeWidth="1.5" strokeOpacity="0.8"/>
+                <path d="M8 6l2-2h4l2 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M9 12l2 2 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </div>
+          </div>
+
+          <div className="p-2 bg-slate-100 dark:bg-slate-700 rounded-xl group-hover:scale-110 transition-transform duration-300 group-hover:bg-blue-50 dark:group-hover:bg-blue-900/20 group-hover:text-blue-600 dark:group-hover:text-blue-400 mt-2 relative z-10">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2a3 3 0 013-3h1a3 3 0 003-3V6m-8 6V9a3 3 0 013-3h1m-7 14h8a3 3 0 003-3v-3m-4 4l2 2 4-4" />
+            </svg>
+          </div>
+          <div className="text-center relative z-10">
+            <span className="block text-sm font-semibold">Adphex Capture</span>
+            <span className="block text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-semibold leading-tight px-1">
+              Safely capture full-page transaction screenshots for Adphex.
+            </span>
+            <span className="text-xs text-blue-600 dark:text-blue-400 underline mt-1 font-semibold inline-flex items-center gap-1">
+              Get the extension
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 17l10-10m0 0H7m10 0v10" />
+              </svg>
+            </span>
+          </div>
+        </a>
       </div>
 
       {/* Help Modal */}

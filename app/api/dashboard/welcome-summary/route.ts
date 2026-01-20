@@ -19,15 +19,17 @@ type Availability = {
   startMonth: string | null; // YYYY-MM
   endMonth: string | null;   // YYYY-MM
   missingMonths: string[];   // YYYY-MM
+  startDate: string | null;  // YYYY-MM-DD
+  endDate: string | null;    // YYYY-MM-DD
 };
 
 function monthKey(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
 }
 
 function addMonths(d: Date, delta: number): Date {
   const x = new Date(d);
-  x.setMonth(x.getMonth() + delta);
+  x.setUTCMonth(x.getUTCMonth() + delta);
   return x;
 }
 
@@ -39,8 +41,8 @@ function monthKeyFromIso(iso: string): string {
 
 function monthStartEnd(month: string): { start: string; end: string } {
   const [y, m] = month.split('-').map(Number);
-  const start = new Date(y, m - 1, 1);
-  const end = new Date(y, m, 0); // last day of month
+  const start = new Date(Date.UTC(y, m - 1, 1));
+  const end = new Date(Date.UTC(y, m, 0)); // last day of month
   return {
     start: start.toISOString().slice(0, 10),
     end: end.toISOString().slice(0, 10),
@@ -87,11 +89,13 @@ async function hasTransactionsInMonth(userId: string, month: string): Promise<bo
 async function computeAvailability(userId: string): Promise<Availability> {
   const { startDate, endDate } = await getTransactionDateRange(userId);
   if (!startDate || !endDate) {
-    return { startMonth: null, endMonth: null, missingMonths: [] };
+    return { startMonth: null, endMonth: null, missingMonths: [], startDate: null, endDate: null };
   }
 
-  const start = new Date(`${startDate}T00:00:00Z`);
-  const end = new Date(`${endDate}T00:00:00Z`);
+  const [startY, startM, startD] = startDate.split('-').map(Number);
+  const [endY, endM, endD] = endDate.split('-').map(Number);
+  const start = new Date(Date.UTC(startY, startM - 1, startD));
+  const end = new Date(Date.UTC(endY, endM - 1, endD));
   const startMonth = monthKey(start);
   const endMonth = monthKey(end);
 
@@ -110,7 +114,7 @@ async function computeAvailability(userId: string): Promise<Availability> {
     cur = addMonths(cur, 1);
   }
 
-  return { startMonth, endMonth, missingMonths: missing };
+  return { startMonth, endMonth, missingMonths: missing, startDate, endDate };
 }
 
 function formatMonthForLabel(month: string): string {
@@ -119,12 +123,37 @@ function formatMonthForLabel(month: string): string {
   return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
 }
 
+function formatDurationLabel(startDate: string | null, endDate: string | null): string {
+  if (!startDate || !endDate) return '0 days';
+  const [sy, sm, sd] = startDate.split('-').map(Number);
+  const [ey, em, ed] = endDate.split('-').map(Number);
+  const start = Date.UTC(sy, sm - 1, sd);
+  const end = Date.UTC(ey, em - 1, ed);
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const rawDays = Math.max(0, Math.ceil((end - start) / msPerDay));
+  const days = Math.max(1, rawDays + 1); // inclusive-ish of start/end dates
+
+  if (days < 14) {
+    return `${days} day${days === 1 ? '' : 's'}`;
+  }
+
+  if (days < 56) {
+    const weeks = Math.max(1, Math.round(days / 7));
+    return `${weeks} week${weeks === 1 ? '' : 's'}`;
+  }
+
+  if (days < 730) {
+    const months = Math.max(1, Math.round(days / 30.44));
+    return `${months} month${months === 1 ? '' : 's'}`;
+  }
+
+  const years = Math.max(1, Math.round(days / 365.25));
+  return `${years} year${years === 1 ? '' : 's'}`;
+}
+
 function buildAvailabilityOneLiner(a: Availability): string {
-  if (!a.startMonth || !a.endMonth) return 'Data availability: no transactions yet';
-  const range = `${formatMonthForLabel(a.startMonth)}–${formatMonthForLabel(a.endMonth)}`;
-  const gaps = a.missingMonths.length;
-  if (gaps === 0) return `Data availability: ${range} (no gaps)`;
-  return `Data availability: ${range} · ${gaps} gap${gaps === 1 ? '' : 's'}`;
+  const duration = formatDurationLabel(a.startDate, a.endDate);
+  return `Based on ${duration} of your data.`;
 }
 
 function normalizeCategoryName(name: string | null | undefined): string {

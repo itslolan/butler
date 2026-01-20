@@ -1,0 +1,299 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+
+interface BudgetStatusPanelProps {
+  userId: string;
+  chatInterfaceRef?: React.RefObject<any>;
+  onOpenMobileChat?: () => void;
+}
+
+interface CategorySummary {
+  id: string;
+  name: string;
+  budgeted: number;
+  spent: number;
+}
+
+export default function BudgetStatusPanel({ 
+  userId, 
+  chatInterfaceRef,
+  onOpenMobileChat,
+}: BudgetStatusPanelProps) {
+  const router = useRouter();
+  const [hasBudgets, setHasBudgets] = useState<boolean>(false);
+  const [topCategories, setTopCategories] = useState<CategorySummary[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchBudgetData = async () => {
+      try {
+        const now = new Date();
+        const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        
+        const res = await fetch(`/api/budget?userId=${userId}&month=${currentMonth}`);
+        
+        if (res.ok) {
+          const data = await res.json();
+          
+          if (data.totalBudgeted > 0) {
+            setHasBudgets(true);
+            
+            // Filter categories with budget
+            const categoriesWithBudget = data.categories
+              .filter((c: any) => c.budgeted > 0)
+              .map((c: any) => ({
+                id: c.id,
+                name: c.name,
+                budgeted: c.budgeted,
+                spent: c.spent
+              }));
+            
+            // Separate overspent and non-overspent categories
+            const overspent = categoriesWithBudget
+              .filter((c: any) => c.spent > c.budgeted)
+              .sort((a: any, b: any) => b.spent - a.spent); // Sort by spent (highest first)
+            
+            const notOverspent = categoriesWithBudget
+              .filter((c: any) => c.spent <= c.budgeted)
+              .sort((a: any, b: any) => b.budgeted - a.budgeted); // Sort by budgeted (highest first)
+            
+            // Concatenate: overspent first, then others
+            const sorted = [...overspent, ...notOverspent].slice(0, 5);
+            
+            setTopCategories(sorted);
+          } else {
+            setHasBudgets(false);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching budget data:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchBudgetData();
+  }, [userId]);
+
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(value);
+  };
+
+  if (isLoading) {
+    return (
+      <div className="h-full bg-slate-100 dark:bg-slate-800 rounded-xl animate-pulse min-h-[200px]" />
+    );
+  }
+
+  // Calculate budget health status
+  const calculateHealthStatus = () => {
+    const overspentCount = topCategories.filter(cat => cat.spent > cat.budgeted).length;
+    
+    if (overspentCount === 0) {
+      return { status: 'on_track', label: 'On Track', color: 'emerald' };
+    } else if (overspentCount <= 2) {
+      return { status: 'at_risk', label: 'At Risk', color: 'amber' };
+    } else {
+      return { status: 'off_track', label: 'Off Track', color: 'red' };
+    }
+  };
+
+  const handleExplainBudget = () => {
+    const health = calculateHealthStatus();
+    const overspentCategories = topCategories.filter(cat => cat.spent > cat.budgeted);
+    
+    // Build the message for the chat
+    const message = `**Budget Health Analysis Requested**
+
+Current Status: **${health.label}**
+
+I need you to analyze my budget and explain:
+1. What caused my budget to be ${health.status === 'at_risk' ? 'at risk' : 'off track'}
+2. Which category broke first and why
+3. Were there big transactions or many small expenses?
+4. What adjustments should I make to get back on track?
+
+Overspent categories: ${overspentCategories.map(c => c.name).join(', ')}
+
+Please provide a detailed analysis with specific recommendations.`;
+
+    // Check if mobile
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 1024;
+    
+    if (isMobile && onOpenMobileChat) {
+      // Open mobile chat modal first
+      onOpenMobileChat();
+      // Send message after a brief delay to allow modal to mount
+      setTimeout(() => {
+        chatInterfaceRef?.current?.sendMessage?.(message);
+      }, 100);
+    } else {
+      // Desktop: send message directly
+      chatInterfaceRef?.current?.sendMessage?.(message);
+    }
+  };
+
+  // Budget Summary View (when user has budgets)
+  const BudgetSummaryPanel = () => {
+    const health = calculateHealthStatus();
+    const showExplain = health.status !== 'on_track';
+    
+    return (
+    <div className="bg-white dark:bg-gray-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm h-full flex flex-col">
+      <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+        <h3 className="font-semibold text-slate-900 dark:text-white text-sm">
+          Budget Summary
+        </h3>
+        <button
+          onClick={() => router.push('/budget')}
+          className="text-xs font-medium text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors"
+        >
+          View Full →
+        </button>
+      </div>
+
+      <div className="p-5 flex-1 min-h-0 space-y-4">
+        {/* Health Status Indicator */}
+        <div className="flex items-center justify-between gap-2">
+          <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${
+            health.color === 'emerald' 
+              ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300'
+              : health.color === 'amber'
+              ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300'
+              : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
+          }`}>
+            {health.color === 'emerald' ? (
+              <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+              </svg>
+            ) : health.color === 'amber' ? (
+              <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+            ) : (
+              <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+              </svg>
+            )}
+            {health.label}
+          </div>
+          
+          {showExplain && chatInterfaceRef && (
+            <button
+              onClick={handleExplainBudget}
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              Explain
+            </button>
+          )}
+        </div>
+
+      <div className="space-y-3 flex-1">
+        {topCategories.slice(0, 4).map(category => {
+          const progress = Math.min((category.spent / category.budgeted) * 100, 100);
+          const isOverBudget = category.spent > category.budgeted;
+          
+          return (
+            <div key={category.id} className="space-y-1.5">
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-medium text-slate-700 dark:text-slate-200 truncate pr-2">
+                  {category.name}
+                </span>
+                <span className="text-slate-500 dark:text-slate-400 text-xs whitespace-nowrap">
+                  <span className={isOverBudget ? 'text-red-600 dark:text-red-400 font-medium' : ''}>
+                    {formatCurrency(category.spent)}
+                  </span>
+                  {' / '}
+                  {formatCurrency(category.budgeted)}
+                </span>
+              </div>
+              
+              <div className="h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                <div 
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    isOverBudget 
+                      ? 'bg-red-500' 
+                      : 'bg-emerald-500'
+                  }`}
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      </div>
+    </div>
+  );
+  };
+
+  // Budget CTA Panel (when user doesn't have budgets)
+  const BudgetCTAPanel = () => (
+    <div className="bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl p-5 shadow-sm h-full flex flex-col">
+      <div className="flex items-start gap-3 mb-3">
+        <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center shrink-0">
+          <svg 
+            className="w-4 h-4 text-emerald-600 dark:text-emerald-400" 
+            fill="none" 
+            stroke="currentColor" 
+            viewBox="0 0 24 24"
+          >
+            <path 
+              strokeLinecap="round" 
+              strokeLinejoin="round" 
+              strokeWidth={2} 
+              d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" 
+            />
+          </svg>
+        </div>
+        <div className="flex-1 min-w-0">
+          <h3 className="text-sm font-semibold text-emerald-900 dark:text-emerald-100">
+            Zero-Based Budgeting
+          </h3>
+          <p className="text-xs text-emerald-700 dark:text-emerald-300 mt-0.5 leading-relaxed">
+            Give every dollar a job. Track exactly where your money goes.
+          </p>
+        </div>
+      </div>
+
+      {/* Features */}
+      <div className="flex flex-wrap gap-1.5 mb-3 flex-1">
+        <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/40 px-2 py-0.5 rounded-full">
+          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+          </svg>
+          Assign every dollar
+        </span>
+        <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/40 px-2 py-0.5 rounded-full">
+          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+          </svg>
+          Track spending
+        </span>
+      </div>
+
+      {/* CTA Button */}
+      <button
+        onClick={() => router.push('/budget')}
+        className="mt-auto inline-flex items-center justify-center gap-2 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-sm rounded-lg transition-colors shadow-sm hover:shadow-md w-full"
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+        </svg>
+        Setup your budget in seconds using AI
+      </button>
+    </div>
+  );
+
+  return hasBudgets ? <BudgetSummaryPanel /> : <BudgetCTAPanel />;
+}

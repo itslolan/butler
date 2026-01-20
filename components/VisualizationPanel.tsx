@@ -3,6 +3,7 @@
 import { useState, useEffect, ReactNode, useCallback } from 'react';
 import ChartRenderer from './ChartRenderer';
 import FixedExpensesPanel, { type FixedExpensesData } from './FixedExpensesPanel';
+import BudgetStatusPanel from './BudgetStatusPanel';
 import { ChartConfig } from '@/lib/chart-types';
 import { formatCompactCurrency } from '@/lib/chart-utils';
 
@@ -12,6 +13,8 @@ interface VisualizationPanelProps {
   fixedExpensesDemoData?: FixedExpensesData | null;
   dateRange?: number | null;
   selectedMonth?: string;
+  chatInterfaceRef?: React.RefObject<any>;
+  onOpenMobileChat?: () => void;
 }
 
 export default function VisualizationPanel({ 
@@ -19,7 +22,9 @@ export default function VisualizationPanel({
   refreshTrigger = 0, 
   fixedExpensesDemoData = null,
   dateRange: externalDateRange,
-  selectedMonth: externalSelectedMonth 
+  selectedMonth: externalSelectedMonth,
+  chatInterfaceRef,
+  onOpenMobileChat,
 }: VisualizationPanelProps) {
   const [charts, setCharts] = useState<{
     spendingTrend: ChartConfig | null;
@@ -204,55 +209,67 @@ export default function VisualizationPanel({
   return (
     <div className="space-y-6">
 
-      {/* KPI Summary Row */}
-      {metrics && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <KPICard 
-            label={`Total Income (${selectedMonth !== 'all' ? monthOptions.find(m => m.value === selectedMonth)?.label || 'selected' : dateRange + 'M'})`} 
-            value={metrics.totalIncome} 
-            color="green" 
-          />
-          <KPICard 
-            label={`Total Expenses (${selectedMonth !== 'all' ? monthOptions.find(m => m.value === selectedMonth)?.label || 'selected' : dateRange + 'M'})`} 
-            value={metrics.totalExpenses} 
-            color="red" 
-          />
-          <KPICard  
-            label="Net Result" 
-            value={metrics.netResult} 
-            trend={metrics.netResult >= 0 ? '+ Positive Cashflow' : '- Negative Cashflow'}
-            color={metrics.netResult >= 0 ? 'green' : 'red'} 
-          />
-        </div>
-      )}
-
       {/* Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
-        {/* Cash Flow Sankey - Full Width */}
+        {/* Row 1: Cash Flow - Full Width */}
         {charts.cashFlow && (
           <div className="lg:col-span-2">
-            <ChartCard title="Cash Flow" className="h-[600px]">
-              <ChartRenderer config={charts.cashFlow} height="100%" />
+            <ChartCard title="Cash Flow" className="h-[700px]">
+              <div className="flex flex-col h-full">
+                {/* KPI Summary Row integrated into Cash Flow panel */}
+                {metrics && (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 shrink-0">
+                    <div className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-3 border border-slate-100 dark:border-slate-700/50">
+                      <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                        Total Income ({selectedMonth !== 'all' ? monthOptions.find(m => m.value === selectedMonth)?.label || 'selected' : dateRange + 'M'})
+                      </p>
+                      <h3 className="text-xl font-semibold text-slate-900 dark:text-white mt-1 tracking-tight">
+                        {formatCompactCurrency(metrics.totalIncome, metrics?.currency || 'USD')}
+                      </h3>
+                      <p className="text-xs font-medium mt-1 text-emerald-600">
+                        + Income
+                      </p>
+                    </div>
+
+                    <div className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-3 border border-slate-100 dark:border-slate-700/50">
+                      <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                        Total Expenses ({selectedMonth !== 'all' ? monthOptions.find(m => m.value === selectedMonth)?.label || 'selected' : dateRange + 'M'})
+                      </p>
+                      <h3 className="text-xl font-semibold text-slate-900 dark:text-white mt-1 tracking-tight">
+                        {formatCompactCurrency(metrics.totalExpenses, metrics?.currency || 'USD')}
+                      </h3>
+                      <p className="text-xs font-medium mt-1 text-rose-600">
+                        - Expenses
+                      </p>
+                    </div>
+
+                    <div className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-3 border border-slate-100 dark:border-slate-700/50">
+                      <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Net Result</p>
+                      <h3 className="text-xl font-semibold text-slate-900 dark:text-white mt-1 tracking-tight">
+                        {formatCompactCurrency(metrics.netResult, metrics?.currency || 'USD')}
+                      </h3>
+                      <p className={`text-xs font-medium mt-1 ${metrics.netResult >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                        {metrics.netResult >= 0 ? '+ Positive Cashflow' : '- Negative Cashflow'}
+                      </p>
+                    </div>
+                  </div>
+                )}
+                <div className="flex-1 min-h-0">
+                  <ChartRenderer config={charts.cashFlow} height="100%" />
+                </div>
+              </div>
             </ChartCard>
           </div>
         )}
 
-        {/* Spending Trend - Full Width on mobile, Half on large */}
-        {charts.spendingTrend && (
-          <ChartCard title="Monthly Spending Trend" className="lg:col-span-2 h-80">
-            <ChartRenderer config={charts.spendingTrend} height="100%" />
-          </ChartCard>
-        )}
+        {/* Row 2: Budget Summary | Fixed Expenses */}
+        <BudgetStatusPanel 
+          userId={userId} 
+          chatInterfaceRef={chatInterfaceRef}
+          onOpenMobileChat={onOpenMobileChat}
+        />
 
-        {/* Income vs Expenses - Half Width */}
-        {charts.incomeVsExpenses && (
-          <ChartCard title="Income vs Expenses" className="h-80">
-            <ChartRenderer config={charts.incomeVsExpenses} height="100%" />
-          </ChartCard>
-        )}
-
-        {/* Fixed Expenses Panel - Half Width, side by side with Income vs Expenses */}
         <FixedExpensesPanel 
           userId={userId} 
           refreshTrigger={refreshTrigger}
@@ -261,13 +278,26 @@ export default function VisualizationPanel({
           demoData={fixedExpensesDemoData}
         />
 
-        {/* Category Breakdown - Full Width */}
+        {/* Row 3: Category Breakdown - Full Width */}
         {charts.categoryBreakdown && (
           <div className="lg:col-span-2">
             <ChartCard title="Category Breakdown" className="min-h-[450px]">
               <ChartRenderer config={charts.categoryBreakdown} height={380} showLegend={true} />
             </ChartCard>
           </div>
+        )}
+
+        {/* Row 4: Income vs Expenses | Monthly Spending Trend */}
+        {charts.incomeVsExpenses && (
+          <ChartCard title="Income vs Expenses" className="h-80">
+            <ChartRenderer config={charts.incomeVsExpenses} height="100%" />
+          </ChartCard>
+        )}
+
+        {charts.spendingTrend && (
+          <ChartCard title="Monthly Spending Trend" className="h-80">
+            <ChartRenderer config={charts.spendingTrend} height="100%" />
+          </ChartCard>
         )}
       </div>
     </div>

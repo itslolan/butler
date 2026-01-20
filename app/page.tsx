@@ -298,17 +298,8 @@ export default function Home() {
                 userId={user?.id || 'default-user'}
                 dateRange={dateRange}
                 selectedMonth={selectedMonth}
-              />
-              
-              {/* Budget & Connected Banks Panels - Side by side on desktop */}
-              <OnboardingPanels 
-                userId={user?.id || 'default-user'} 
-                onSyncComplete={() => setChartRefreshKey(prev => prev + 1)}
-                onFileUpload={handleFileUpload}
-                isProcessing={isProcessing}
                 chatInterfaceRef={chatInterfaceRef}
                 onOpenMobileChat={() => setIsMobileChatOpen(true)}
-                showAccountsPanel={false}
               />
               
               {/* Subscriptions Panel - Shows auto-detected subscriptions from fixed expenses */}

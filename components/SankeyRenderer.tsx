@@ -44,6 +44,11 @@ export default function SankeyRenderer({ config, height = 400, className }: Sank
     const isSavings = payload.name === 'Savings';
     const isIncomeSource = isLeft && !isOverspend; // Income sources on the left
     
+    // Override display name for specific nodes
+    let displayName = payload.name;
+    if (isOverspend) displayName = 'OVERSPENDING';
+    if (isSavings) displayName = 'SAVINGS';
+    
     // Use the node's value directly (no boosting, so it's the actual value)
     const displayValue = payload.value;
     
@@ -77,7 +82,7 @@ export default function SankeyRenderer({ config, height = 400, className }: Sank
       labelTextColor = '#ffffff';
       labelValueColor = '#ffffff';
     } else if (isSavings) {
-      labelBgColor = '#10b981'; // Emerald-500
+      labelBgColor = '#eab308'; // Yellow-500 (Gold)
       labelTextColor = '#ffffff';
       labelValueColor = '#ffffff';
     }
@@ -90,7 +95,7 @@ export default function SankeyRenderer({ config, height = 400, className }: Sank
     // Estimate width based on BOTH lines of text (name and value)
     // Value line format: "$X.XK (XX.X%)" - typically 14-16 chars
     const valueLineLength = 16; // Approximate length of value line
-    const longestLineLength = Math.max(payload.name.length, valueLineLength);
+    const longestLineLength = Math.max(displayName.length, valueLineLength);
     const estimatedLabelWidth = Math.max(
       longestLineLength * 8 + labelPadding * 2, // Use 8px per char for bold text
       120
@@ -172,7 +177,7 @@ export default function SankeyRenderer({ config, height = 400, className }: Sank
                 dy="-0.6em" 
                 style={{ fill: labelTextColor, fontWeight: 600 }}
               >
-                {payload.name}
+                {displayName}
               </tspan>
               <tspan 
                 x={actualTextX} 
