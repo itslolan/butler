@@ -552,7 +552,6 @@ export default function BudgetPage() {
                     amount={budgetData?.readyToAssign || 0}
                     income={budgetData?.income || 0}
                     totalBudgeted={budgetData?.totalBudgeted || 0}
-                    onIncomeChange={handleIncomeChange}
                     onAutoAssign={handleAutoAssign}
                     isAutoAssigning={isAutoAssigning}
                     hasAiAssigned={hasAiAssigned}
