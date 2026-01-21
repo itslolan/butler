@@ -2,14 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { 
   getBudgetCategories, 
-  getHistoricalSpendingBreakdown,
   getIncomeForMonth,
   findLastMonthWithIncome,
-  getBudgetData,
   getSpendingByCategory,
-  getBudgetsForMonth
+  getBudgetsForMonth,
+  getSpendingByCategoryForMonth,
+  getFixedExpenseTotalsForMonth,
+  resolveFixBudgetMonth
 } from '@/lib/budget-utils';
-import { getFixedExpensesByCategory } from '@/lib/fixed-expenses';
 
 export const runtime = 'nodejs';
 
@@ -47,11 +47,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get categories, historical spending, fixed expenses, and current spending
-    const [categories, historicalData, fixedExpensesByCategory, currentBudgets, currentSpending] = await Promise.all([
+    // Get categories, current budgets, and current spending
+    const [categories, currentBudgets, currentSpending] = await Promise.all([
       getBudgetCategories(userId),
-      getHistoricalSpendingBreakdown(userId, 6),
-      getFixedExpensesByCategory(userId),
       getBudgetsForMonth(userId, month),
       getSpendingByCategory(userId, month),
     ]);
@@ -109,9 +107,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const now = new Date();
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const lastMonth = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, '0')}`;
+    const targetMonth = await resolveFixBudgetMonth(userId, lastMonth, currentMonth);
+
+    const [lastMonthSpending, lastMonthFixedExpenses] = await Promise.all([
+      getSpendingByCategoryForMonth(userId, targetMonth),
+      getFixedExpenseTotalsForMonth(userId, targetMonth),
+    ]);
+
     // Prepare data for the AI
     const categoryNames = categories.map(c => c.name);
-    const historicalAverages = historicalData.categoryAverages;
 
     // Initialize AI client
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -140,14 +148,14 @@ export async function POST(request: NextRequest) {
       const prompt = buildPrompt(
         budgetIncome,
         categoryNames,
-        historicalAverages,
-        historicalData.totalMonths,
+        lastMonthSpending,
+        targetMonth,
         attempts > 1 ? lastTotalAssigned : null,
         rent,
         existingAllocations,
         isReassign,
         userSetBudgets,
-        fixedExpensesByCategory,
+        lastMonthFixedExpenses,
         overspentCategories,
         currentSpending
       );
@@ -217,15 +225,28 @@ export async function POST(request: NextRequest) {
 
     // Build the chat message
     const totalAssigned = assignedCategories.reduce((sum, c) => sum + c.amount, 0);
+    const totalBudgeted = currentBudgets.reduce(
+      (sum, budget) => sum + (Number(budget.budgeted_amount) || 0),
+      0
+    );
+    const daysLeft = getDaysLeftInMonth(now);
+    const isOverbudgeted = budgetIncome < totalBudgeted;
+    const hasOverspent = overspentCategories.length > 0;
+
     const chatMessage = buildChatMessage(
       budgetIncome,
       totalAssigned,
       assignedCategories,
       aiResponse.explanation,
-      historicalData.totalMonths,
+      targetMonth,
       notZeroBased,
       overspentCategories,
-      aiResponse.reallocations
+      aiResponse.reallocations,
+      {
+        isOverbudgeted,
+        hasOverspent,
+        daysLeft,
+      }
     );
 
     return NextResponse.json({
@@ -254,8 +275,8 @@ export async function POST(request: NextRequest) {
 function buildPrompt(
   budgetIncome: number,
   categoryNames: string[],
-  historicalAverages: Record<string, number>,
-  totalMonths: number,
+  spendByCategory: Record<string, number>,
+  spendMonth: string,
   previousTotal: number | null,
   userProvidedRent?: number | null,
   existingAllocations?: Record<string, number> | null,
@@ -329,13 +350,13 @@ ${retryWarning}${rentInstruction}${userSetInstruction}${fixedExpensesInstruction
 
 **Budget Categories:** ${categoryNames.join(', ')}
 
-**Historical Spending (6-month averages by category):**
-${Object.entries(historicalAverages)
+**Last Month Spending by Category (${spendMonth}):**
+${Object.entries(spendByCategory)
   .sort(([, a], [, b]) => b - a)
-  .map(([cat, avg]) => `- ${cat}: $${avg.toFixed(2)}/month`)
+  .map(([cat, avg]) => `- ${cat}: $${avg.toFixed(2)}`)
   .join('\n')}
 
-**Months of Data Analyzed:** ${totalMonths}
+Use last month spending as the baseline for allocation decisions.
 
 **⚠️ CRITICAL CONSTRAINT - ZERO-BASED BUDGETING:**
 The SUM of all allocations MUST EQUAL EXACTLY $${budgetIncome.toFixed(2)}. Every dollar must be assigned to a category. The total cannot be more or less than the income.
@@ -370,22 +391,29 @@ function buildChatMessage(
   totalAssigned: number,
   categories: Array<{ name: string; amount: number }>,
   explanation: string,
-  monthsAnalyzed: number,
+  spendMonth: string,
   notZeroBased: boolean,
   overspentCategories?: Array<{name: string; budgeted: number; spent: number; deficit: number}>,
-  reallocations?: Array<{from: string; to: string; amount: number; reason?: string}>
+  reallocations?: Array<{from: string; to: string; amount: number; reason?: string}>,
+  context?: { isOverbudgeted: boolean; hasOverspent: boolean; daysLeft: number }
 ): string {
   const formatCurrency = (n: number) => `$${n.toFixed(2)}`;
 
   let message = `🤖 **AI Budget Assignment Complete**\n\n`;
-  
-  // Add overspending alert if applicable
-  if (overspentCategories && overspentCategories.length > 0) {
-    const totalDeficit = overspentCategories.reduce((sum, cat) => sum + cat.deficit, 0);
-    message += `🚨 **Overspending Detected:** ${overspentCategories.length} categor${overspentCategories.length === 1 ? 'y has' : 'ies have'} exceeded their budget this month (total deficit: ${formatCurrency(totalDeficit)}).\n\n`;
-    message += `I've adjusted the budget to cover all spending that has already occurred.\n\n`;
+
+  const isOverbudgeted = context?.isOverbudgeted ?? false;
+  const hasOverspent = context?.hasOverspent ?? false;
+  const daysLeft = Math.max(context?.daysLeft ?? 0, 0);
+
+  if (hasOverspent) {
+    message += `🚨 **Budget Breached:** You have already spent more than the current budget in at least one category.\n`;
+    message += `We can still adjust this month’s plan, and we can also set a smarter budget for next month. You can refine the plan as much as you want.\n\n`;
+  } else if (isOverbudgeted) {
+    message += `⚠️ **Overbudgeted:** Your planned budgets are currently higher than your income.\n`;
+    message += `You have about **${daysLeft} day${daysLeft === 1 ? '' : 's'}** left this month. I recommend trimming discretionary categories (e.g., dining, entertainment, shopping) so you can stay on track.\n`;
+    message += `Which categories would you like to cut back on?\n\n`;
   } else {
-  message += `I've analyzed your spending patterns over the last **${monthsAnalyzed} months** and created a zero-based budget for you.\n\n`;
+    message += `I've analyzed your spending from **${spendMonth}** and created a zero-based budget for you.\n\n`;
   }
   
   message += `**Income:** ${formatCurrency(income)}\n`;
@@ -432,4 +460,10 @@ function buildChatMessage(
   message += `Feel free to adjust any amounts that don't fit your current priorities. Just edit the values in the budget table and click Save.`;
 
   return message;
+}
+
+function getDaysLeftInMonth(date: Date): number {
+  const end = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+  const diffMs = end.getTime() - date.getTime();
+  return Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
 }

@@ -48,6 +48,13 @@ interface ChatInterfaceProps {
   questionCount?: number;
   onQuestionCountChange?: (count: number) => void;
   onQuestionLimit?: () => void;
+  clientBudgetContext?: {
+    month?: string;
+    income?: number;
+    totalBudgeted?: number;
+    readyToAssign?: number;
+    categories?: Array<{ id: string; name: string; budgeted: number; spent?: number }>;
+  };
 }
 
 const ChatInterface = forwardRef(({ 
@@ -58,6 +65,7 @@ const ChatInterface = forwardRef(({
   questionCount: externalQuestionCount,
   onQuestionCountChange,
   onQuestionLimit,
+  clientBudgetContext,
 }: ChatInterfaceProps, ref) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -459,6 +467,7 @@ Successfully mapped **${result.transactions_updated} transaction${result.transac
         body: JSON.stringify({
           messages: newMessages,
           userId,
+          clientBudgetContext,
         }),
       });
 
@@ -541,8 +550,11 @@ Successfully mapped **${result.transactions_updated} transaction${result.transac
                   });
                   
                   // Dispatch event if budget was adjusted
-                  if (currentToolCall.name === 'adjust_budget_allocations' && 
-                      event.data.result?.success === true) {
+                  if (
+                    (currentToolCall.name === 'adjust_budget_allocations' ||
+                      currentToolCall.name === 'set_ui_budget_allocations') &&
+                    event.data.result?.success === true
+                  ) {
                     const budgetUpdateEvent = new CustomEvent('budgetUpdated', {
                       detail: event.data.result
                     });

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import AuthGuard from '@/components/AuthGuard';
 import UserMenu from '@/components/UserMenu';
@@ -17,24 +17,6 @@ export default function BudgetPage() {
   const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
   const chatInterfaceRef = useRef<any>(null);
   const [refreshKey, setRefreshKey] = useState(0);
-
-  // Listen for budget updates from chat
-  useEffect(() => {
-    const handleBudgetUpdate = (event: CustomEvent) => {
-      // Refresh budget data when chat makes changes
-      setRefreshKey(prev => prev + 1);
-      
-      // Show a toast notification
-      setSaveMessage({ type: 'success', text: 'Budget updated from chat' });
-      setTimeout(() => setSaveMessage(null), 3000);
-    };
-
-    window.addEventListener('budgetUpdated', handleBudgetUpdate as EventListener);
-    
-    return () => {
-      window.removeEventListener('budgetUpdated', handleBudgetUpdate as EventListener);
-    };
-  }, []);
 
   // Get current month in YYYY-MM format
   const getCurrentMonth = () => {
@@ -101,6 +83,95 @@ export default function BudgetPage() {
   
   // Track user-manually-set budget amounts (to preserve during AI auto-assign)
   const [userSetBudgets, setUserSetBudgets] = useState<Record<string, number>>({});
+
+  const applyCategoryAllocations = useCallback((allocations: Array<{ categoryId: string; amount: number }>) => {
+    if (!budgetData) return;
+
+    const overrides: Record<string, number> = {};
+    allocations.forEach((a) => {
+      overrides[a.categoryId] = a.amount;
+    });
+    setBudgetedOverrides(overrides);
+
+    const updatedCategories = budgetData.categories.map(cat => {
+      const overrideAmount = overrides[cat.id];
+      const newBudgeted = Number.isFinite(overrideAmount) ? overrideAmount : cat.budgeted;
+      return {
+        ...cat,
+        budgeted: newBudgeted,
+        available: newBudgeted - cat.spent,
+      };
+    });
+
+    const updatedSuperCategories = budgetData.superCategories.map(superCategory => {
+      const updatedChildren = superCategory.categories.map(cat => {
+        const updated = updatedCategories.find(updatedCat => updatedCat.id === cat.id);
+        return updated ? { ...cat, ...updated } : cat;
+      });
+      const budgeted = updatedChildren.reduce((sum, cat) => sum + cat.budgeted, 0);
+      const spent = updatedChildren.reduce((sum, cat) => sum + cat.spent, 0);
+      return {
+        ...superCategory,
+        categories: updatedChildren,
+        budgeted,
+        spent,
+        available: budgeted - spent,
+        isOverride: false,
+      };
+    });
+
+    const newTotalBudgeted = updatedSuperCategories.reduce((sum, c) => sum + c.budgeted, 0);
+
+    setBudgetData({
+      ...budgetData,
+      categories: updatedCategories,
+      superCategories: updatedSuperCategories,
+      totalBudgeted: newTotalBudgeted,
+      readyToAssign: budgetData.income - newTotalBudgeted,
+    });
+
+    setHasUnsavedChanges(true);
+  }, [budgetData]);
+
+  // Listen for budget updates from chat
+  useEffect(() => {
+    const handleBudgetUpdate = (event: CustomEvent) => {
+      const detail = event.detail || {};
+      if (detail.categoryAllocations) {
+        applyCategoryAllocations(detail.categoryAllocations);
+        setSaveMessage({ type: 'success', text: 'Budget updated in the editor' });
+      } else {
+        // Refresh budget data when chat makes changes
+        setRefreshKey(prev => prev + 1);
+        setSaveMessage({ type: 'success', text: 'Budget updated from chat' });
+      }
+      setTimeout(() => setSaveMessage(null), 3000);
+    };
+
+    window.addEventListener('budgetUpdated', handleBudgetUpdate as EventListener);
+    
+    return () => {
+      window.removeEventListener('budgetUpdated', handleBudgetUpdate as EventListener);
+    };
+  }, [applyCategoryAllocations]);
+
+  const clientBudgetContext = useMemo(() => {
+    if (!budgetData) return undefined;
+    const categories = budgetData.categories.map((cat) => ({
+      id: cat.id,
+      name: cat.name,
+      budgeted: budgetedOverrides?.[cat.id] ?? cat.budgeted,
+      spent: cat.spent,
+    }));
+    const totalBudgeted = categories.reduce((sum, cat) => sum + (cat.budgeted || 0), 0);
+    return {
+      month: currentMonth,
+      income: budgetData.income,
+      totalBudgeted,
+      readyToAssign: budgetData.income - totalBudgeted,
+      categories,
+    };
+  }, [budgetData, budgetedOverrides, currentMonth]);
   
   const handleBudgetDataLoaded = useCallback((data: typeof budgetData) => {
     if (!data) {
@@ -332,51 +403,7 @@ export default function BudgetPage() {
 
       // Apply allocations to local state (NOT saved to DB yet)
       if (data.categoryAllocations) {
-        // Build overrides map for BudgetTable
-        const overrides: Record<string, number> = {};
-        data.categoryAllocations.forEach((a: { categoryId: string; amount: number }) => {
-          overrides[a.categoryId] = a.amount;
-        });
-        setBudgetedOverrides(overrides);
-
-        const updatedCategories = budgetData.categories.map(cat => {
-          const allocation = data.categoryAllocations.find(
-            (a: { categoryId: string; amount: number }) => a.categoryId === cat.id
-          );
-          const newBudgeted = allocation ? allocation.amount : cat.budgeted;
-          return {
-            ...cat,
-            budgeted: newBudgeted,
-            available: newBudgeted - cat.spent,
-          };
-        });
-
-        const updatedSuperCategories = budgetData.superCategories.map(superCategory => {
-          const updatedChildren = superCategory.categories.map(cat => {
-            const updated = updatedCategories.find(updatedCat => updatedCat.id === cat.id);
-            return updated ? { ...cat, ...updated } : cat;
-          });
-          const budgeted = updatedChildren.reduce((sum, cat) => sum + cat.budgeted, 0);
-          const spent = updatedChildren.reduce((sum, cat) => sum + cat.spent, 0);
-          return {
-            ...superCategory,
-            categories: updatedChildren,
-            budgeted,
-            spent,
-            available: budgeted - spent,
-            isOverride: false,
-          };
-        });
-
-        const newTotalBudgeted = updatedSuperCategories.reduce((sum, c) => sum + c.budgeted, 0);
-
-        setBudgetData({
-          ...budgetData,
-          categories: updatedCategories,
-          superCategories: updatedSuperCategories,
-          totalBudgeted: newTotalBudgeted,
-          readyToAssign: budgetData.income - newTotalBudgeted,
-        });
+        applyCategoryAllocations(data.categoryAllocations);
       }
 
       setHasAiAssigned(true);
@@ -555,10 +582,11 @@ export default function BudgetPage() {
             {/* Right Column: Chat (35%) - Hidden on mobile */}
             <div className="hidden lg:flex col-span-12 lg:col-span-4 flex-col min-h-0 bg-white dark:bg-gray-900">
               <div className="flex-1 min-h-0 overflow-hidden">
-                <ChatInterface 
-                  ref={chatInterfaceRef} 
-                  userId={user.id}
-                />
+                  <ChatInterface 
+                    ref={chatInterfaceRef} 
+                    userId={user.id}
+                    clientBudgetContext={clientBudgetContext}
+                  />
               </div>
             </div>
 
@@ -571,6 +599,7 @@ export default function BudgetPage() {
           chatInterfaceRef={chatInterfaceRef} 
           isOpen={isMobileChatOpen}
           onOpenChange={setIsMobileChatOpen}
+          clientBudgetContext={clientBudgetContext}
         />
       </main>
     </AuthGuard>

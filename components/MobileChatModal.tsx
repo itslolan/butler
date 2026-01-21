@@ -14,6 +14,13 @@ interface MobileChatModalProps {
   questionCount?: number;
   onQuestionCountChange?: (count: number) => void;
   onQuestionLimit?: () => void;
+  clientBudgetContext?: {
+    month?: string;
+    income?: number;
+    totalBudgeted?: number;
+    readyToAssign?: number;
+    categories?: Array<{ id: string; name: string; budgeted: number; spent?: number }>;
+  };
 }
 
 export default function MobileChatModal({ 
@@ -27,6 +34,7 @@ export default function MobileChatModal({
   questionCount,
   onQuestionCountChange,
   onQuestionLimit,
+  clientBudgetContext,
 }: MobileChatModalProps) {
   return (
     <>
@@ -108,6 +116,7 @@ export default function MobileChatModal({
                 questionCount={questionCount}
                 onQuestionCountChange={onQuestionCountChange}
                 onQuestionLimit={onQuestionLimit}
+                clientBudgetContext={clientBudgetContext}
               />
             </div>
           </div>

@@ -1060,6 +1060,54 @@ export async function getSpendingByCategory(
   return spending;
 }
 
+export async function getSpendingByCategoryForMonth(
+  userId: string,
+  month: string
+): Promise<Record<string, number>> {
+  return getSpendingByCategory(userId, month);
+}
+
+export async function getFixedExpenseTotalsForMonth(
+  userId: string,
+  month: string
+): Promise<Record<string, number>> {
+  const startDate = `${month}-01`;
+  const [year, monthNum] = month.split('-').map(Number);
+  const endDate = new Date(year, monthNum, 0).toISOString().split('T')[0];
+
+  const { data, error } = await supabase
+    .from('transactions')
+    .select('category, amount, fixed_expense_status, is_fixed_expense, transaction_type')
+    .eq('user_id', userId)
+    .gte('date', startDate)
+    .lte('date', endDate)
+    .or('fixed_expense_status.eq.fixed,fixed_expense_status.eq.maybe,is_fixed_expense.eq.true')
+    .in('transaction_type', ['expense', 'other'])
+    .not('category', 'is', null);
+
+  if (error) {
+    throw new Error(`Failed to get fixed expenses: ${error.message}`);
+  }
+
+  const totals: Record<string, number> = {};
+  for (const txn of data || []) {
+    const category = (txn.category || 'Uncategorized').trim();
+    totals[category] = (totals[category] || 0) + Math.abs(Number(txn.amount));
+  }
+
+  return totals;
+}
+
+export async function resolveFixBudgetMonth(
+  userId: string,
+  lastMonth: string,
+  currentMonth: string
+): Promise<string> {
+  const lastMonthSpending = await getSpendingByCategory(userId, lastMonth);
+  const hasLastMonthData = Object.values(lastMonthSpending).some((value) => value > 0);
+  return hasLastMonthData ? lastMonth : currentMonth;
+}
+
 /**
  * Get total income for a month
  */

@@ -120,6 +120,14 @@ You have access to four data sources:
    - Returns budgeted amounts, spent amounts, and available for each category
    - Use when user asks about their budget or wants to see budget status
 
+13. get_current_ui_budget(): Get current UNSAVED UI budget state
+   - Returns in-progress allocations from the budget editor (not yet saved)
+   - Use when user asks about their current in-progress budget before saving
+
+14. set_ui_budget_allocations(allocations): Update UNSAVED UI budget allocations
+   - Use when user wants to adjust in-progress allocations before saving
+   - Does NOT save to DB
+
 10. get_budget_health_analysis(): Analyze budget health and identify issues
    - Returns detailed analysis including overspent categories, large transactions, which category broke first
    - Use when user asks about budget problems, why they're over budget, or how to get back on track
@@ -184,7 +192,8 @@ When user requests budget changes (e.g., "Move $100 from Entertainment to Grocer
 1. First use get_current_budget() to see current allocations
 2. Understand exactly what the user wants (be specific about amounts and categories)
 3. Calculate new allocations ensuring total doesn't exceed income
-4. Use adjust_budget_allocations() to apply the changes
+4. If user is editing their UNSAVED budget, use set_ui_budget_allocations()
+5. If user wants to save changes immediately, use adjust_budget_allocations()
 5. Confirm what was changed and show the new "Ready to Assign" amount
 6. If total would exceed income, explain the constraint and suggest alternatives
 7. The budget UI will automatically update when you make changes
@@ -335,7 +344,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { messages, userId } = await request.json();
+    const { messages, userId, clientBudgetContext } = await request.json();
 
     if (!messages || !Array.isArray(messages)) {
       return NextResponse.json(
@@ -1145,6 +1154,41 @@ When answering questions, use these memories to provide context-aware responses.
             },
           },
           {
+            name: 'get_current_ui_budget',
+            description: 'Get the user\'s current UNSAVED budget state from the UI (not yet persisted). Use this when the user asks about their in-progress budget or wants to adjust the current allocations before saving.',
+            parameters: {
+              type: SchemaType.OBJECT,
+              properties: {
+                reasoning: {
+                  type: SchemaType.STRING,
+                  description: 'Explain why you are calling this function and what you plan to do with the results (max 50 words)',
+                },
+              },
+              required: ['reasoning'],
+            },
+          },
+          {
+            name: 'set_ui_budget_allocations',
+            description: 'Set UNSAVED budget allocations in the UI (does not save to DB). Use this when the user wants to adjust current allocations before saving.',
+            parameters: {
+              type: SchemaType.OBJECT,
+              properties: {
+                reasoning: {
+                  type: SchemaType.STRING,
+                  description: 'Explain why you are calling this function and what you plan to do with the results (max 50 words)',
+                },
+                allocations: {
+                  type: SchemaType.OBJECT,
+                  description: 'Map of category name to new budget amount',
+                  additionalProperties: {
+                    type: SchemaType.NUMBER,
+                  },
+                },
+              },
+              required: ['reasoning', 'allocations'],
+            },
+          },
+          {
             name: 'get_budget_health_analysis',
             description: 'Analyze budget health and identify problem areas. Returns detailed analysis including overspent categories, large transactions that contributed to overspending, which category went over budget first, and health status. Use this when user asks about budget problems or wants to understand why their budget is off track.',
             parameters: {
@@ -1268,7 +1312,13 @@ When answering questions, use these memories to provide context-aware responses.
               }
 
               const startTime = Date.now();
-              const functionResult = await executeToolCall(name, args, effectiveUserId, request.url);
+              const functionResult = await executeToolCall(
+                name,
+                args,
+                effectiveUserId,
+                request.url,
+                clientBudgetContext
+              );
               const duration = Date.now() - startTime;
 
               // Track canonical category breakdown for deterministic chat summaries

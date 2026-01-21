@@ -54,7 +54,14 @@ export async function executeToolCall(
   name: string,
   args: any,
   effectiveUserId: string,
-  requestUrl?: string
+  requestUrl?: string,
+  clientBudgetContext?: {
+    month?: string;
+    income?: number;
+    totalBudgeted?: number;
+    readyToAssign?: number;
+    categories?: Array<{ id: string; name: string; budgeted: number; spent?: number }>;
+  }
 ) {
   let functionResult;
 
@@ -359,6 +366,34 @@ export async function executeToolCall(
       );
 
       functionResult = result;
+    } else if (name === 'get_current_ui_budget') {
+      functionResult = clientBudgetContext || {
+        error: 'No client budget context available for this request.',
+      };
+    } else if (name === 'set_ui_budget_allocations') {
+      const allocations = args.allocations || {};
+      const categories = clientBudgetContext?.categories || [];
+      const categoryMap = new Map(
+        categories.map((cat) => [cat.name.toLowerCase(), cat.id])
+      );
+
+      const categoryAllocations: Array<{ categoryId: string; categoryName: string; amount: number }> = [];
+      for (const [name, amount] of Object.entries(allocations)) {
+        const id = categoryMap.get(String(name).toLowerCase());
+        if (!id) continue;
+        categoryAllocations.push({
+          categoryId: id,
+          categoryName: String(name),
+          amount: Number(amount) || 0,
+        });
+      }
+
+      const totalBudgeted = categoryAllocations.reduce((sum, item) => sum + item.amount, 0);
+      functionResult = {
+        success: true,
+        categoryAllocations,
+        totalBudgeted,
+      };
     } else if (name === 'get_visual') {
       const type = args.type || 'category-breakdown';
       const timePeriodParams: { month?: string; months?: number } = {};
