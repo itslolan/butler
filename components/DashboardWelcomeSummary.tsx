@@ -13,11 +13,19 @@ type Availability = {
   endDate: string | null;    // YYYY-MM-DD
 };
 
+type AccountAvailability = Availability & {
+  accountId: string;
+  displayName: string;
+  accountType?: string | null;
+  issuer?: string | null;
+};
+
 type WelcomeSummaryResponse = {
   summaryText: string;
   fromCache: boolean;
   generatedAt: string | null;
   availability: Availability;
+  availabilityByAccount?: AccountAvailability[];
   availabilityOneLiner: string;
   error?: string;
 };
@@ -143,8 +151,8 @@ export default function DashboardWelcomeSummary({
   }, []);
 
   const availability = data?.availability;
-  const missingMonths = availability?.missingMonths || [];
-  const hasGaps = missingMonths.length > 0;
+  const availabilityByAccount = data?.availabilityByAccount || [];
+  const hasGaps = availabilityByAccount.some((a) => (a.missingMonths || []).length > 0);
 
   // Helper to format date strings (YYYY-MM-DD) to "MMM D, YYYY"
   const formatDateFull = (dateStr: string | null) => {
@@ -158,9 +166,9 @@ export default function DashboardWelcomeSummary({
   };
 
   // Helper to group consecutive missing months into ranges
-  const getGapRanges = () => {
+  const getGapRanges = (missingMonths: string[]) => {
     if (!missingMonths.length) return [];
-    
+
     const sorted = [...missingMonths].sort();
     const ranges: { start: string; end: string; count: number }[] = [];
     
@@ -337,27 +345,61 @@ export default function DashboardWelcomeSummary({
             </summary>
 
             <div className="px-4 pb-4 pt-2 border-t border-slate-200 dark:border-slate-700/50 text-sm text-slate-600 dark:text-slate-300">
-              {!availability?.startMonth || !availability?.endMonth ? (
+              {availabilityByAccount.length === 0 ? (
                 <div className="text-slate-600 dark:text-slate-300">
                   No transactions found yet. Upload a statement or connect an account to populate your dashboard.
                 </div>
               ) : (
-                <div className="space-y-3">
-                  <div className="text-slate-700 dark:text-slate-300">
-                    You have provided data from <span className="font-semibold">{formatDateFull(availability.startDate)}</span> to <span className="font-semibold">{formatDateFull(availability.endDate)}</span>
-                    {hasGaps ? ' with gaps in these date ranges -' : '.'}
-                  </div>
+                <div className="space-y-4">
+                  {availabilityByAccount.map((account) => {
+                    const accountGaps = account.missingMonths || [];
+                    const hasAccountData = Boolean(account.startMonth && account.endMonth);
+                    return (
+                      <div key={account.accountId} className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-900/30 p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="font-semibold text-slate-800 dark:text-slate-100 truncate">
+                              {account.displayName}
+                            </div>
+                            {account.issuer && (
+                              <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                                {account.issuer}
+                              </div>
+                            )}
+                          </div>
+                          {accountGaps.length > 0 && (
+                            <span className="text-xs font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-full px-2 py-0.5">
+                              Gaps detected
+                            </span>
+                          )}
+                        </div>
 
-                  {hasGaps && (
-                    <ul className="list-disc ml-5 space-y-1">
-                      {getGapRanges().map((range, idx) => (
-                        <li key={idx} className="text-slate-700 dark:text-slate-300">
-                          <span className="font-medium">{range.text}</span> - {range.duration}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  
+                        {!hasAccountData ? (
+                          <div className="mt-2 text-slate-600 dark:text-slate-400">
+                            No transactions for this account yet.
+                          </div>
+                        ) : (
+                          <div className="mt-2 space-y-2">
+                            <div className="text-slate-700 dark:text-slate-300">
+                              Data from <span className="font-semibold">{formatDateFull(account.startDate)}</span> to <span className="font-semibold">{formatDateFull(account.endDate)}</span>
+                              {accountGaps.length > 0 ? ' with gaps -' : '.'}
+                            </div>
+
+                            {accountGaps.length > 0 && (
+                              <ul className="list-disc ml-5 space-y-1">
+                                {getGapRanges(accountGaps).map((range, idx) => (
+                                  <li key={idx} className="text-slate-700 dark:text-slate-300">
+                                    <span className="font-medium">{range.text}</span> - {range.duration}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
                   {hasGaps && (
                     <div className="text-xs text-slate-500 dark:text-slate-400 italic">
                       These gaps usually mean statements/syncs for those periods haven’t been uploaded yet.

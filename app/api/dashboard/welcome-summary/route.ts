@@ -5,6 +5,7 @@ import { getFixedExpenseCategoryNames } from '@/lib/budget-utils';
 import {
   getDashboardWelcomeSummaryCache,
   upsertDashboardWelcomeSummaryCache,
+  getAccountsByUserId,
 } from '@/lib/db-tools';
 import {
   generateWelcomeSummaryFallback,
@@ -21,6 +22,13 @@ type Availability = {
   missingMonths: string[];   // YYYY-MM
   startDate: string | null;  // YYYY-MM-DD
   endDate: string | null;    // YYYY-MM-DD
+};
+
+type AccountAvailability = Availability & {
+  accountId: string;
+  displayName: string;
+  accountType?: string | null;
+  issuer?: string | null;
 };
 
 function monthKey(d: Date): string {
@@ -73,12 +81,59 @@ async function getTransactionDateRange(userId: string): Promise<{ startDate: str
   return { startDate, endDate };
 }
 
+async function getTransactionDateRangeForAccount(
+  userId: string,
+  accountId: string
+): Promise<{ startDate: string | null; endDate: string | null }> {
+  const { data: earliest, error: e1 } = await supabase
+    .from('transactions')
+    .select('date')
+    .eq('user_id', userId)
+    .eq('account_id', accountId)
+    .order('date', { ascending: true })
+    .limit(1);
+
+  if (e1) throw new Error(`Failed to fetch earliest transaction date: ${e1.message}`);
+
+  const { data: latest, error: e2 } = await supabase
+    .from('transactions')
+    .select('date')
+    .eq('user_id', userId)
+    .eq('account_id', accountId)
+    .order('date', { ascending: false })
+    .limit(1);
+
+  if (e2) throw new Error(`Failed to fetch latest transaction date: ${e2.message}`);
+
+  const startDate = (earliest && earliest[0]?.date) ? String(earliest[0].date) : null;
+  const endDate = (latest && latest[0]?.date) ? String(latest[0].date) : null;
+  return { startDate, endDate };
+}
+
 async function hasTransactionsInMonth(userId: string, month: string): Promise<boolean> {
   const { start, end } = monthStartEnd(month);
   const { count, error } = await supabase
     .from('transactions')
     .select('id', { head: true, count: 'exact' })
     .eq('user_id', userId)
+    .gte('date', start)
+    .lte('date', end);
+
+  if (error) throw new Error(`Failed to count transactions for ${month}: ${error.message}`);
+  return (count || 0) > 0;
+}
+
+async function hasTransactionsInMonthForAccount(
+  userId: string,
+  accountId: string,
+  month: string
+): Promise<boolean> {
+  const { start, end } = monthStartEnd(month);
+  const { count, error } = await supabase
+    .from('transactions')
+    .select('id', { head: true, count: 'exact' })
+    .eq('user_id', userId)
+    .eq('account_id', accountId)
     .gte('date', start)
     .lte('date', end);
 
@@ -110,6 +165,38 @@ async function computeAvailability(userId: string): Promise<Availability> {
     const m = monthKey(new Date(cur));
     // eslint-disable-next-line no-await-in-loop
     const ok = await hasTransactionsInMonth(userId, m);
+    if (!ok) missing.push(m);
+    cur = addMonths(cur, 1);
+  }
+
+  return { startMonth, endMonth, missingMonths: missing, startDate, endDate };
+}
+
+async function computeAvailabilityForAccount(
+  userId: string,
+  accountId: string
+): Promise<Availability> {
+  const { startDate, endDate } = await getTransactionDateRangeForAccount(userId, accountId);
+  if (!startDate || !endDate) {
+    return { startMonth: null, endMonth: null, missingMonths: [], startDate: null, endDate: null };
+  }
+
+  const [startY, startM, startD] = startDate.split('-').map(Number);
+  const [endY, endM, endD] = endDate.split('-').map(Number);
+  const start = new Date(Date.UTC(startY, startM - 1, startD));
+  const end = new Date(Date.UTC(endY, endM - 1, endD));
+  const startMonth = monthKey(start);
+  const endMonth = monthKey(end);
+
+  const missing: string[] = [];
+  let cur = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1));
+  const endMarker = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), 1));
+
+  let guard = 0;
+  while (cur <= endMarker && guard++ < 120) {
+    const m = monthKey(new Date(cur));
+    // eslint-disable-next-line no-await-in-loop
+    const ok = await hasTransactionsInMonthForAccount(userId, accountId, m);
     if (!ok) missing.push(m);
     cur = addMonths(cur, 1);
   }
@@ -245,7 +332,23 @@ export async function GET(request: NextRequest) {
       computeAvailability(userId),
     ]);
 
-    const availabilityOneLiner = buildAvailabilityOneLiner(availability);
+    const accounts = await getAccountsByUserId(userId);
+    const availabilityByAccount: AccountAvailability[] = [];
+    for (const account of accounts) {
+      // eslint-disable-next-line no-await-in-loop
+      const accountAvailability = await computeAvailabilityForAccount(userId, account.id as string);
+      availabilityByAccount.push({
+        ...accountAvailability,
+        accountId: account.id as string,
+        displayName: account.display_name || account.official_name || 'Account',
+        accountType: account.account_type,
+        issuer: account.issuer,
+      });
+    }
+
+    const availabilityOneLiner = availabilityByAccount.length > 0
+      ? `Data availability by account (${availabilityByAccount.length}).`
+      : buildAvailabilityOneLiner(availability);
 
     // Serve cache if present and not forcing regen.
     const cacheMonth = cache?.generated_at ? monthKeyFromIso(cache.generated_at) : '';
@@ -262,6 +365,7 @@ export async function GET(request: NextRequest) {
         fromCache: true,
         generatedAt: cache.generated_at || cache.updated_at || null,
         availability,
+        availabilityByAccount,
         availabilityOneLiner,
       });
     }
@@ -303,6 +407,7 @@ export async function GET(request: NextRequest) {
       fromCache: false,
       generatedAt: new Date().toISOString(),
       availability,
+      availabilityByAccount,
       availabilityOneLiner,
     });
   } catch (error: any) {
