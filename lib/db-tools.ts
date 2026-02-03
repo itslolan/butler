@@ -40,6 +40,33 @@ function monthKeyFromTxnDate(date: unknown): string | null {
   }
 }
 
+function monthKeysBetween(startDateIso: string, endDateIso: string): string[] {
+  const parse = (iso: string): { y: number; m: number } | null => {
+    const m = iso.match(/^(\d{4})-(\d{2})/);
+    if (!m) return null;
+    const y = Number(m[1]);
+    const mo = Number(m[2]);
+    if (!Number.isFinite(y) || !Number.isFinite(mo) || mo < 1 || mo > 12) return null;
+    return { y, m: mo };
+  };
+
+  const s = parse(startDateIso);
+  const e = parse(endDateIso);
+  if (!s || !e) return [];
+
+  const keys: string[] = [];
+  let cur = new Date(Date.UTC(s.y, s.m - 1, 1));
+  const endMarker = new Date(Date.UTC(e.y, e.m - 1, 1));
+
+  // Safety cap (20 years) to avoid runaway loops on bad input.
+  let guard = 0;
+  while (cur <= endMarker && guard++ < 240) {
+    keys.push(`${cur.getUTCFullYear()}-${String(cur.getUTCMonth() + 1).padStart(2, '0')}`);
+    cur.setUTCMonth(cur.getUTCMonth() + 1);
+  }
+  return keys;
+}
+
 export interface DocumentFilter {
   documentType?: string;
   issuer?: string;
@@ -676,7 +703,8 @@ async function fetchAllTransactions(
 export async function getMonthlySpendingTrend(
   userId: string,
   months: number = 6,
-  specificMonth?: string
+  specificMonth?: string,
+  dateRange?: { startDate?: string; endDate?: string }
 ): Promise<Array<{ month: string; total: number }>> {
   let startDate: string;
   let endDate: string | undefined;
@@ -685,6 +713,10 @@ export async function getMonthlySpendingTrend(
     startDate = `${specificMonth}-01`;
     const [year, month] = specificMonth.split('-').map(Number);
     endDate = new Date(year, month, 0).toISOString().split('T')[0];
+  } else if (dateRange?.startDate || dateRange?.endDate) {
+    const now = new Date();
+    startDate = dateRange?.startDate || new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString().slice(0, 10);
+    endDate = dateRange?.endDate || now.toISOString().split('T')[0];
   } else {
     const now = new Date();
     const monthsAgo = new Date(now.getFullYear(), now.getMonth() - months, 1);
@@ -715,8 +747,13 @@ export async function getMonthlySpendingTrend(
     if (specificMonth) {
       return [{ month: specificMonth, total: 0 }];
     }
-    
+
     // Return empty months for range
+    if (dateRange?.startDate || dateRange?.endDate) {
+      const keys = monthKeysBetween(startDate, endDate || startDate);
+      return keys.map((m) => ({ month: m, total: 0 }));
+    }
+
     const result: Array<{ month: string; total: number }> = [];
     const now = new Date();
     for (let i = months - 1; i >= 0; i--) {
@@ -750,6 +787,11 @@ export async function getMonthlySpendingTrend(
   }
 
   // Initialize result with all months in range first
+  if (dateRange?.startDate || dateRange?.endDate) {
+    const keys = monthKeysBetween(startDate, endDate || startDate);
+    return keys.map((m) => ({ month: m, total: monthlyMap.get(m) || 0 }));
+  }
+
   const result: Array<{ month: string; total: number }> = [];
   const now = new Date();
   for (let i = months - 1; i >= 0; i--) {
@@ -758,7 +800,7 @@ export async function getMonthlySpendingTrend(
     const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
     result.push({ month: monthKey, total: monthlyMap.get(monthKey) || 0 });
   }
-  
+
   return result;
 }
 
@@ -834,7 +876,8 @@ function deduplicateTransactions(transactions: any[]): any[] {
 export async function getCategoryBreakdown(
   userId: string,
   months: number = 6,
-  specificMonth?: string // Optional: 'YYYY-MM'
+  specificMonth?: string, // Optional: 'YYYY-MM'
+  dateRange?: { startDate?: string; endDate?: string }
 ): Promise<Array<{ category: string; total: number; percentage: number; count: number; spend_classification?: string | null }>> {
   
   let startDate: string;
@@ -847,6 +890,11 @@ export async function getCategoryBreakdown(
     const [year, month] = specificMonth.split('-').map(Number);
     endDate = new Date(year, month, 0).toISOString().split('T')[0]; // Last day of month
     console.log(`[getCategoryBreakdown] Using specific month: ${specificMonth}, dates: ${startDate} to ${endDate}, userId: ${userId}`);
+  } else if (dateRange?.startDate || dateRange?.endDate) {
+    const now = new Date();
+    startDate = dateRange?.startDate || new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString().slice(0, 10);
+    endDate = dateRange?.endDate || now.toISOString().split('T')[0];
+    console.log(`[getCategoryBreakdown] Using custom range: ${startDate} to ${endDate}, userId: ${userId}`);
   } else {
     // Default: last N months - start from the 1st of the month N months ago
     const now = new Date();
@@ -1244,7 +1292,8 @@ export async function bulkUpdateTransactionsByFilters(
 export async function getIncomeVsExpenses(
   userId: string,
   months: number = 6,
-  specificMonth?: string
+  specificMonth?: string,
+  dateRange?: { startDate?: string; endDate?: string }
 ): Promise<Array<{ month: string; income: number; expenses: number }>> {
   let startDate: string;
   let endDate: string | undefined;
@@ -1253,6 +1302,10 @@ export async function getIncomeVsExpenses(
     startDate = `${specificMonth}-01`;
     const [year, month] = specificMonth.split('-').map(Number);
     endDate = new Date(year, month, 0).toISOString().split('T')[0];
+  } else if (dateRange?.startDate || dateRange?.endDate) {
+    const now = new Date();
+    startDate = dateRange?.startDate || new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString().slice(0, 10);
+    endDate = dateRange?.endDate || now.toISOString().split('T')[0];
   } else {
     const now = new Date();
     const monthsAgo = new Date(now.getFullYear(), now.getMonth() - months, 1);
@@ -1280,7 +1333,14 @@ export async function getIncomeVsExpenses(
   // Initialize monthly data
   const monthlyData = new Map<string, { income: number; expenses: number }>();
   
-  if (!specificMonth) {
+  if (specificMonth) {
+    monthlyData.set(specificMonth, { income: 0, expenses: 0 });
+  } else if (dateRange?.startDate || dateRange?.endDate) {
+    const keys = monthKeysBetween(startDate, endDate || startDate);
+    for (const k of keys) {
+      monthlyData.set(k, { income: 0, expenses: 0 });
+    }
+  } else {
     const now = new Date();
     // Fill in all months first with zeros for range
     for (let i = months - 1; i >= 0; i--) {
@@ -1289,8 +1349,6 @@ export async function getIncomeVsExpenses(
       const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
       monthlyData.set(monthKey, { income: 0, expenses: 0 });
     }
-  } else {
-    monthlyData.set(specificMonth, { income: 0, expenses: 0 });
   }
 
   if (deduplicatedData && deduplicatedData.length > 0) {
@@ -1354,7 +1412,8 @@ export async function getIncomeVsExpenses(
 export async function getCashFlowSankeyData(
   userId: string,
   months: number = 6,
-  specificMonth?: string
+  specificMonth?: string,
+  dateRange?: { startDate?: string; endDate?: string }
 ): Promise<{ nodes: any[]; links: any[] }> {
   let startDate: string;
   let endDate: string | undefined;
@@ -1363,6 +1422,10 @@ export async function getCashFlowSankeyData(
     startDate = `${specificMonth}-01`;
     const [year, month] = specificMonth.split('-').map(Number);
     endDate = new Date(year, month, 0).toISOString().split('T')[0];
+  } else if (dateRange?.startDate || dateRange?.endDate) {
+    const now = new Date();
+    startDate = dateRange?.startDate || new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString().slice(0, 10);
+    endDate = dateRange?.endDate || now.toISOString().split('T')[0];
   } else {
     const now = new Date();
     const monthsAgo = new Date(now.getFullYear(), now.getMonth() - months, 1);

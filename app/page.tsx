@@ -33,6 +33,9 @@ export default function Home() {
   // Default to current month
   const [dateRange, setDateRange] = useState<number | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().slice(0, 7));
+  const [customDateRange, setCustomDateRange] = useState<{ start: string; end: string } | null>(null);
+  const dateControlsTouchedRef = useRef(false);
+  const autoAppliedRangeRef = useRef(false);
   
   // Generate last 12 months for dropdown
   const monthOptions = Array.from({ length: 12 }, (_, i) => {
@@ -43,6 +46,16 @@ export default function Home() {
       label: d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
     };
   });
+
+  const applyCustomDateRange = useCallback((range: { start: string; end: string } | null) => {
+    dateControlsTouchedRef.current = true;
+    setCustomDateRange(range);
+    if (range) {
+      // Ensure legacy controls don't conflict
+      setSelectedMonth('all');
+      setDateRange(null);
+    }
+  }, []);
 
   useEffect(() => {
     if (!user?.id) {
@@ -266,22 +279,51 @@ export default function Home() {
                 refreshTrigger={chartRefreshKey}
                 dateRange={dateRange}
                 selectedMonth={selectedMonth}
+                customDateRange={customDateRange}
                 monthOptions={monthOptions}
                 showAccountsPanel={true}
                 onSyncComplete={() => setChartRefreshKey(prev => prev + 1)}
                 onFileUpload={handleFileUpload}
                 isProcessing={isProcessing}
                 onDateRangeChange={(months) => {
+                  dateControlsTouchedRef.current = true;
+                  setCustomDateRange(null);
                   setDateRange(months);
                   setSelectedMonth('all');
                 }}
                 onMonthChange={(month) => {
+                  dateControlsTouchedRef.current = true;
+                  setCustomDateRange(null);
                   setSelectedMonth(month);
                   if (month !== 'all') {
                     setDateRange(null);
                   } else {
                     setDateRange(6);
                   }
+                }}
+                onCustomDateRangeChange={applyCustomDateRange}
+                onAvailability={(availability) => {
+                  // Auto-adjust only on initial default state (current month selected) when
+                  // we have no data for the current month (i.e., latest data month is earlier).
+                  if (autoAppliedRangeRef.current) return;
+                  if (dateControlsTouchedRef.current) return;
+                  if (!availability?.endMonth) return;
+
+                  const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+                  const isDefaultCurrentMonth =
+                    selectedMonth === currentMonth && dateRange === null && customDateRange === null;
+
+                  if (!isDefaultCurrentMonth) return;
+                  if (availability.endMonth >= currentMonth) return;
+
+                  const [cy, cm] = currentMonth.split('-').map(Number);
+                  const endOfCurrentMonth = new Date(Date.UTC(cy, cm, 0)).toISOString().slice(0, 10);
+                  const startOfLatestDataMonth = `${availability.endMonth}-01`;
+
+                  autoAppliedRangeRef.current = true;
+                  setCustomDateRange({ start: startOfLatestDataMonth, end: endOfCurrentMonth });
+                  setSelectedMonth('all');
+                  setDateRange(null);
                 }}
               />
               
@@ -298,6 +340,7 @@ export default function Home() {
                 userId={user?.id || 'default-user'}
                 dateRange={dateRange}
                 selectedMonth={selectedMonth}
+                customDateRange={customDateRange}
                 chatInterfaceRef={chatInterfaceRef}
                 onOpenMobileChat={() => setIsMobileChatOpen(true)}
               />

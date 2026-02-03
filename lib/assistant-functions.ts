@@ -35,6 +35,10 @@ export interface TimePeriodParams {
   month?: string;
   /** Number of months to analyze (e.g., 3, 6, 12) */
   months?: number;
+  /** Custom start date in YYYY-MM-DD format */
+  startDate?: string;
+  /** Custom end date in YYYY-MM-DD format */
+  endDate?: string;
   // If neither is specified, defaults to current month
 }
 
@@ -116,22 +120,26 @@ export async function getCategoryBreakdown(
   userId: string,
   params: TimePeriodParams = {}
 ): Promise<CategoryBreakdownData[]> {
-  const { month, months } = params;
+  const { month, months, startDate, endDate } = params;
+  const hasCustomRange = Boolean(startDate || endDate);
   
   // Apply default: current month if no params specified
   const currentMonth = new Date().toISOString().slice(0, 7);
-  const specificMonth = month || (months ? undefined : currentMonth);
-  const monthsToUse = months;
+  const specificMonth = hasCustomRange ? undefined : (month || (months ? undefined : currentMonth));
+  const monthsToUse = hasCustomRange ? undefined : months;
+  const dateRange = hasCustomRange ? { startDate, endDate } : undefined;
   
   console.log('[assistant-functions getCategoryBreakdown] Called with:', {
     userId,
     inputParams: params,
     resolvedMonth: specificMonth,
     resolvedMonths: monthsToUse,
+    resolvedStartDate: startDate,
+    resolvedEndDate: endDate,
     currentMonth,
   });
   
-  const result = await dbGetCategoryBreakdown(userId, monthsToUse, specificMonth);
+  const result = await dbGetCategoryBreakdown(userId, monthsToUse, specificMonth, dateRange);
   
   console.log('[assistant-functions getCategoryBreakdown] Returned:', {
     count: result.length,
@@ -152,14 +160,16 @@ export async function getMonthlySpendingTrend(
   userId: string,
   params: TimePeriodParams = {}
 ): Promise<MonthlySpendingData[]> {
-  const { month, months } = params;
+  const { month, months, startDate, endDate } = params;
+  const hasCustomRange = Boolean(startDate || endDate);
   
   // Apply default: current month if no params specified
   const currentMonth = new Date().toISOString().slice(0, 7);
-  const specificMonth = month || (months ? undefined : currentMonth);
-  const monthsToUse = months;
+  const specificMonth = hasCustomRange ? undefined : (month || (months ? undefined : currentMonth));
+  const monthsToUse = hasCustomRange ? undefined : months;
+  const dateRange = hasCustomRange ? { startDate, endDate } : undefined;
   
-  return await dbGetMonthlySpendingTrend(userId, monthsToUse, specificMonth);
+  return await dbGetMonthlySpendingTrend(userId, monthsToUse, specificMonth, dateRange);
 }
 
 /**
@@ -173,14 +183,16 @@ export async function getIncomeVsExpenses(
   userId: string,
   params: TimePeriodParams = {}
 ): Promise<IncomeVsExpensesData[]> {
-  const { month, months } = params;
+  const { month, months, startDate, endDate } = params;
+  const hasCustomRange = Boolean(startDate || endDate);
   
   // Apply default: current month if no params specified
   const currentMonth = new Date().toISOString().slice(0, 7);
-  const specificMonth = month || (months ? undefined : currentMonth);
-  const monthsToUse = months;
+  const specificMonth = hasCustomRange ? undefined : (month || (months ? undefined : currentMonth));
+  const monthsToUse = hasCustomRange ? undefined : months;
+  const dateRange = hasCustomRange ? { startDate, endDate } : undefined;
   
-  return await dbGetIncomeVsExpenses(userId, monthsToUse, specificMonth);
+  return await dbGetIncomeVsExpenses(userId, monthsToUse, specificMonth, dateRange);
 }
 
 /**
@@ -194,14 +206,16 @@ export async function getCashFlowData(
   userId: string,
   params: TimePeriodParams = {}
 ): Promise<any> {
-  const { month, months } = params;
+  const { month, months, startDate, endDate } = params;
+  const hasCustomRange = Boolean(startDate || endDate);
   
   // Apply default: current month if no params specified
   const currentMonth = new Date().toISOString().slice(0, 7);
-  const specificMonth = month || (months ? undefined : currentMonth);
-  const monthsToUse = months;
+  const specificMonth = hasCustomRange ? undefined : (month || (months ? undefined : currentMonth));
+  const monthsToUse = hasCustomRange ? undefined : months;
+  const dateRange = hasCustomRange ? { startDate, endDate } : undefined;
   
-  return await dbGetCashFlowSankeyData(userId, monthsToUse, specificMonth);
+  return await dbGetCashFlowSankeyData(userId, monthsToUse, specificMonth, dateRange);
 }
 
 /**

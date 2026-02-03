@@ -51,8 +51,11 @@ export default function DashboardWelcomeSummary({
   refreshTrigger,
   dateRange,
   selectedMonth,
+  customDateRange,
   onDateRangeChange,
   onMonthChange,
+  onCustomDateRangeChange,
+  onAvailability,
   monthOptions,
   showAccountsPanel,
   onSyncComplete,
@@ -64,8 +67,11 @@ export default function DashboardWelcomeSummary({
   refreshTrigger?: number;
   dateRange?: number | null;
   selectedMonth?: string;
+  customDateRange?: { start: string; end: string } | null;
   onDateRangeChange?: (months: number) => void;
   onMonthChange?: (month: string) => void;
+  onCustomDateRangeChange?: (range: { start: string; end: string } | null) => void;
+  onAvailability?: (availability: Availability | null) => void;
   monthOptions?: Array<{ value: string; label: string }>;
   showAccountsPanel?: boolean;
   onSyncComplete?: () => void;
@@ -76,6 +82,9 @@ export default function DashboardWelcomeSummary({
   const [loading, setLoading] = useState(true);
   const [regenerating, setRegenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [customStart, setCustomStart] = useState('');
+  const [customEnd, setCustomEnd] = useState('');
+  const [customRangeError, setCustomRangeError] = useState<string | null>(null);
 
   const name = useMemo(() => displayNameFallback(displayName), [displayName]);
 
@@ -145,6 +154,41 @@ export default function DashboardWelcomeSummary({
   const availability = data?.availability;
   const missingMonths = availability?.missingMonths || [];
   const hasGaps = missingMonths.length > 0;
+  const customActive = Boolean(customDateRange?.start && customDateRange?.end);
+
+  useEffect(() => {
+    // Keep inputs synced to the active custom range (including auto-applied ranges).
+    if (customDateRange?.start && customDateRange?.end) {
+      setCustomStart(customDateRange.start);
+      setCustomEnd(customDateRange.end);
+      setCustomRangeError(null);
+    }
+  }, [customDateRange?.start, customDateRange?.end]);
+
+  useEffect(() => {
+    onAvailability?.(availability || null);
+  }, [
+    onAvailability,
+    availability?.startMonth,
+    availability?.endMonth,
+    availability?.startDate,
+    availability?.endDate,
+  ]);
+
+  const canApplyCustomRange = Boolean(customStart && customEnd && customStart <= customEnd);
+  const onApplyCustomRange = () => {
+    if (!onCustomDateRangeChange) return;
+    if (!customStart || !customEnd) {
+      setCustomRangeError('Pick both a start and end date.');
+      return;
+    }
+    if (customStart > customEnd) {
+      setCustomRangeError('Start date must be on or before end date.');
+      return;
+    }
+    setCustomRangeError(null);
+    onCustomDateRangeChange({ start: customStart, end: customEnd });
+  };
 
   // Helper to format date strings (YYYY-MM-DD) to "MMM D, YYYY"
   const formatDateFull = (dateStr: string | null) => {
@@ -268,6 +312,67 @@ export default function DashboardWelcomeSummary({
                 </button>
               ))}
             </div>
+
+            {/* Custom Date Range */}
+            {onCustomDateRangeChange && (
+              <div
+                className={`flex items-center gap-1.5 px-2 py-1 border rounded-lg shadow-sm ${
+                  customActive
+                    ? 'border-slate-900 dark:border-white bg-slate-900/5 dark:bg-white/10'
+                    : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-gray-900'
+                }`}
+                title="Custom date range"
+              >
+                <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 select-none">
+                  Custom
+                </span>
+                <input
+                  type="date"
+                  value={customStart}
+                  onChange={(e) => {
+                    setCustomStart(e.target.value);
+                    setCustomRangeError(null);
+                  }}
+                  className="px-2 py-1 text-xs bg-white dark:bg-gray-900 border border-slate-200 dark:border-slate-800 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-700 dark:text-slate-300"
+                  aria-label="Custom range start date"
+                />
+                <span className="text-xs text-slate-400 dark:text-slate-500 select-none">→</span>
+                <input
+                  type="date"
+                  value={customEnd}
+                  onChange={(e) => {
+                    setCustomEnd(e.target.value);
+                    setCustomRangeError(null);
+                  }}
+                  className="px-2 py-1 text-xs bg-white dark:bg-gray-900 border border-slate-200 dark:border-slate-800 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-700 dark:text-slate-300"
+                  aria-label="Custom range end date"
+                />
+                <button
+                  onClick={onApplyCustomRange}
+                  disabled={!canApplyCustomRange}
+                  className="px-2.5 py-1 text-xs font-semibold rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed bg-blue-600 hover:bg-blue-700 text-white"
+                  aria-label="Apply custom date range"
+                >
+                  Apply
+                </button>
+                {customActive && (
+                  <button
+                    onClick={() => onCustomDateRangeChange(null)}
+                    className="px-2 py-1 text-xs font-semibold rounded-md transition-colors text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800"
+                    aria-label="Clear custom date range"
+                    title="Clear custom date range"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {customRangeError && (
+          <div className="text-xs font-medium text-red-600 dark:text-red-400 clear-both mb-2">
+            {customRangeError}
           </div>
         )}
         

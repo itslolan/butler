@@ -302,7 +302,12 @@ export async function executeToolCall(
     } else if (name === 'get_category_breakdown') {
       // Call canonical assistant function
       console.log('[CHAT get_category_breakdown] Args:', args);
-      const params = { month: args.specificMonth, months: args.months };
+      const params = {
+        month: args.specificMonth,
+        months: args.months,
+        startDate: args.startDate,
+        endDate: args.endDate,
+      };
       console.log('[CHAT get_category_breakdown] Calling with params:', params);
       functionResult = await getAssistantCategoryBreakdown(
         effectiveUserId,
@@ -315,19 +320,34 @@ export async function executeToolCall(
       // Call canonical assistant function
       functionResult = await getAssistantMonthlySpending(
         effectiveUserId,
-        { month: args.specificMonth, months: args.months }
+        {
+          month: args.specificMonth,
+          months: args.months,
+          startDate: args.startDate,
+          endDate: args.endDate,
+        }
       );
     } else if (name === 'get_income_vs_expenses') {
       // Call canonical assistant function
       functionResult = await getAssistantIncomeVsExpenses(
         effectiveUserId,
-        { month: args.specificMonth, months: args.months }
+        {
+          month: args.specificMonth,
+          months: args.months,
+          startDate: args.startDate,
+          endDate: args.endDate,
+        }
       );
     } else if (name === 'get_cash_flow_data') {
       // Call canonical assistant function
       functionResult = await getAssistantCashFlow(
         effectiveUserId,
-        { month: args.specificMonth, months: args.months }
+        {
+          month: args.specificMonth,
+          months: args.months,
+          startDate: args.startDate,
+          endDate: args.endDate,
+        }
       );
     } else if (name === 'get_current_budget') {
       // Call canonical assistant function
