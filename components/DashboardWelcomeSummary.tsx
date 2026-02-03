@@ -85,6 +85,7 @@ export default function DashboardWelcomeSummary({
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
   const [customRangeError, setCustomRangeError] = useState<string | null>(null);
+  const [showCustomRange, setShowCustomRange] = useState(false);
 
   const name = useMemo(() => displayNameFallback(displayName), [displayName]);
 
@@ -162,18 +163,13 @@ export default function DashboardWelcomeSummary({
       setCustomStart(customDateRange.start);
       setCustomEnd(customDateRange.end);
       setCustomRangeError(null);
+      setShowCustomRange(true);
     }
   }, [customDateRange?.start, customDateRange?.end]);
 
   useEffect(() => {
     onAvailability?.(availability || null);
-  }, [
-    onAvailability,
-    availability?.startMonth,
-    availability?.endMonth,
-    availability?.startDate,
-    availability?.endDate,
-  ]);
+  }, [onAvailability, availability]);
 
   const canApplyCustomRange = Boolean(customStart && customEnd && customStart <= customEnd);
   const onApplyCustomRange = () => {
@@ -190,6 +186,18 @@ export default function DashboardWelcomeSummary({
     onCustomDateRangeChange({ start: customStart, end: customEnd });
   };
 
+  const onPickDateRange = (months: number) => {
+    setCustomRangeError(null);
+    setShowCustomRange(false);
+    onDateRangeChange?.(months);
+  };
+
+  const onPickMonth = (month: string) => {
+    setCustomRangeError(null);
+    setShowCustomRange(false);
+    onMonthChange?.(month);
+  };
+
   // Helper to format date strings (YYYY-MM-DD) to "MMM D, YYYY"
   const formatDateFull = (dateStr: string | null) => {
     if (!dateStr) return '';
@@ -200,6 +208,72 @@ export default function DashboardWelcomeSummary({
       year: 'numeric'
     });
   };
+
+  const formatDayFirstDate = (value: string | Date | null) => {
+    if (!value) return '';
+    const d = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  };
+
+  const formatDurationLabel = (startDate: string | null, endDate: string | null) => {
+    if (!startDate || !endDate) return '';
+    const [sy, sm, sd] = startDate.split('-').map(Number);
+    const [ey, em, ed] = endDate.split('-').map(Number);
+    const start = Date.UTC(sy, sm - 1, sd);
+    const end = Date.UTC(ey, em - 1, ed);
+    const msPerDay = 24 * 60 * 60 * 1000;
+    const rawDays = Math.max(0, Math.ceil((end - start) / msPerDay));
+    const days = Math.max(1, rawDays + 1);
+
+    if (days < 14) {
+      return `${days} day${days === 1 ? '' : 's'}`;
+    }
+    if (days < 56) {
+      const weeks = Math.max(1, Math.round(days / 7));
+      return `${weeks} week${weeks === 1 ? '' : 's'}`;
+    }
+    if (days < 730) {
+      const months = Math.max(1, Math.round(days / 30.44));
+      return `${months} month${months === 1 ? '' : 's'}`;
+    }
+    const years = Math.max(1, Math.round(days / 365.25));
+    return `${years} year${years === 1 ? '' : 's'}`;
+  };
+
+  const rangeLabel = useMemo(() => {
+    if (customActive && customDateRange) {
+      return `${formatDayFirstDate(customDateRange.start)} to ${formatDayFirstDate(customDateRange.end)}`;
+    }
+    if (selectedMonth && selectedMonth !== 'all') {
+      return formatMonth(selectedMonth);
+    }
+    if (dateRange && dateRange > 0) {
+      const end = new Date();
+      const start = new Date(end);
+      start.setMonth(start.getMonth() - (dateRange - 1));
+      start.setDate(1);
+      return `${formatDayFirstDate(start)} to ${formatDayFirstDate(end)}`;
+    }
+    return 'All time';
+  }, [customActive, customDateRange, selectedMonth, dateRange]);
+
+  const selectionDurationLabel = useMemo(() => {
+    if (customActive && customDateRange) {
+      return formatDurationLabel(customDateRange.start, customDateRange.end);
+    }
+    if (selectedMonth && selectedMonth !== 'all') {
+      return '1 month';
+    }
+    if (dateRange && dateRange > 0) {
+      return `${dateRange} month${dateRange === 1 ? '' : 's'}`;
+    }
+    return '';
+  }, [customActive, customDateRange, selectedMonth, dateRange]);
+
+  const selectionOneLiner = selectionDurationLabel
+    ? `Based on ${selectionDurationLabel} of your data.`
+    : data?.availabilityOneLiner || 'Data availability';
 
   // Helper to group consecutive missing months into ranges
   const getGapRanges = () => {
@@ -254,124 +328,145 @@ export default function DashboardWelcomeSummary({
   return (
     <div className="bg-white dark:bg-gray-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
       <div className="p-5 sm:p-6">
-        {/* Date Range Controls with Regenerate button - Float on the right */}
+        {/* Compact Date Controls Strip */}
         {monthOptions && onDateRangeChange && onMonthChange && (
-          <div className="float-right ml-4 mb-2 flex flex-wrap items-center gap-2">
-            {/* Regenerate button - first in the ribbon */}
-            <button
-              onClick={onRegenerate}
-              disabled={loading || regenerating}
-              aria-label="Regenerate summary"
-              title="Regenerate summary"
-              className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-gray-900 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-            >
-            <svg
-              className={`w-4 h-4 text-slate-700 dark:text-slate-200 ${regenerating ? 'animate-spin' : ''}`}
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M21 12a9 9 0 11-2.64-6.36M21 3v6h-6"
-              />
-            </svg>
-            </button>
-            
-            {/* Month Dropdown */}
-            <select
-              value={selectedMonth || 'all'}
-              onChange={(e) => {
-                onMonthChange(e.target.value);
-              }}
-              className="px-3 py-1.5 text-xs font-medium bg-white dark:bg-gray-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-700 dark:text-slate-300 cursor-pointer"
-            >
-              <option value="all">All Time</option>
-              {monthOptions.map((month) => (
-                <option key={month.value} value={month.value}>
-                  {month.label}
-                </option>
-              ))}
-            </select>
-
-            {/* Date Range Selector */}
-            <div className="inline-flex bg-white dark:bg-gray-900 rounded-lg p-1 border border-slate-200 dark:border-slate-800 shadow-sm">
-              {[3, 6, 12].map((months) => (
-                <button
-                  key={months}
-                  onClick={() => onDateRangeChange(months)}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
-                    dateRange === months && selectedMonth === 'all'
-                      ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-sm'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  {months}M
-                </button>
-              ))}
+          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/40 px-2.5 py-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                {rangeLabel}
+              </span>
             </div>
 
-            {/* Custom Date Range */}
-            {onCustomDateRangeChange && (
-              <div
-                className={`flex items-center gap-1.5 px-2 py-1 border rounded-lg shadow-sm ${
-                  customActive
-                    ? 'border-slate-900 dark:border-white bg-slate-900/5 dark:bg-white/10'
-                    : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-gray-900'
-                }`}
-                title="Custom date range"
+            <div className="flex flex-wrap items-center gap-2 ml-auto">
+              <button
+                onClick={onRegenerate}
+                disabled={loading || regenerating}
+                aria-label="Regenerate summary"
+                title="Regenerate summary"
+                className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-gray-900 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
               >
-                <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 select-none">
-                  Custom
-                </span>
-                <input
-                  type="date"
-                  value={customStart}
-                  onChange={(e) => {
-                    setCustomStart(e.target.value);
-                    setCustomRangeError(null);
-                  }}
-                  className="px-2 py-1 text-xs bg-white dark:bg-gray-900 border border-slate-200 dark:border-slate-800 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-700 dark:text-slate-300"
-                  aria-label="Custom range start date"
-                />
-                <span className="text-xs text-slate-400 dark:text-slate-500 select-none">→</span>
-                <input
-                  type="date"
-                  value={customEnd}
-                  onChange={(e) => {
-                    setCustomEnd(e.target.value);
-                    setCustomRangeError(null);
-                  }}
-                  className="px-2 py-1 text-xs bg-white dark:bg-gray-900 border border-slate-200 dark:border-slate-800 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-700 dark:text-slate-300"
-                  aria-label="Custom range end date"
-                />
-                <button
-                  onClick={onApplyCustomRange}
-                  disabled={!canApplyCustomRange}
-                  className="px-2.5 py-1 text-xs font-semibold rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed bg-blue-600 hover:bg-blue-700 text-white"
-                  aria-label="Apply custom date range"
+                <svg
+                  className={`w-4 h-4 text-slate-700 dark:text-slate-200 ${regenerating ? 'animate-spin' : ''}`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
                 >
-                  Apply
-                </button>
-                {customActive && (
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M21 12a9 9 0 11-2.64-6.36M21 3v6h-6"
+                  />
+                </svg>
+              </button>
+
+              <select
+                value={selectedMonth || 'all'}
+                onChange={(e) => {
+                  onPickMonth(e.target.value);
+                }}
+                className="px-2.5 py-1.5 text-xs font-medium bg-white dark:bg-gray-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-700 dark:text-slate-300 cursor-pointer"
+              >
+                <option value="all">Select month</option>
+                {monthOptions.map((month) => (
+                  <option key={month.value} value={month.value}>
+                    {month.label}
+                  </option>
+                ))}
+              </select>
+
+              <div className="inline-flex bg-white dark:bg-gray-900 rounded-lg p-1 border border-slate-200 dark:border-slate-800 shadow-sm">
+                {[3, 6, 12].map((months) => (
                   <button
-                    onClick={() => onCustomDateRangeChange(null)}
-                    className="px-2 py-1 text-xs font-semibold rounded-md transition-colors text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800"
-                    aria-label="Clear custom date range"
-                    title="Clear custom date range"
+                    key={months}
+                    onClick={() => onPickDateRange(months)}
+                    className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${
+                      dateRange === months && selectedMonth === 'all'
+                        ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-sm'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800'
+                    }`}
                   >
-                    Clear
+                    {months}M
                   </button>
-                )}
+                ))}
               </div>
-            )}
+
+              {onCustomDateRangeChange && (
+                <>
+                  <button
+                    onClick={() => setShowCustomRange((prev) => !prev)}
+                    className={`px-2.5 py-1.5 text-xs font-semibold rounded-lg border transition-colors ${
+                      customActive || showCustomRange
+                        ? 'border-slate-900 dark:border-white bg-slate-900 text-white dark:bg-white dark:text-slate-900'
+                        : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-gray-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                    }`}
+                    aria-expanded={showCustomRange}
+                    aria-label="Toggle custom date range"
+                  >
+                    Custom
+                  </button>
+
+                  {showCustomRange && (
+                    <div
+                      className={`flex items-center gap-1.5 px-2 py-1 border rounded-lg shadow-sm ${
+                        customActive
+                          ? 'border-slate-900 dark:border-white bg-slate-900/5 dark:bg-white/10'
+                          : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-gray-900'
+                      }`}
+                      title="Custom date range"
+                    >
+                      <input
+                        type="date"
+                        value={customStart}
+                        onChange={(e) => {
+                          setCustomStart(e.target.value);
+                          setCustomRangeError(null);
+                        }}
+                        className="px-2 py-1 text-xs bg-white dark:bg-gray-900 border border-slate-200 dark:border-slate-800 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-700 dark:text-slate-300"
+                        aria-label="Custom range start date"
+                      />
+                      <span className="text-xs text-slate-400 dark:text-slate-500 select-none">→</span>
+                      <input
+                        type="date"
+                        value={customEnd}
+                        onChange={(e) => {
+                          setCustomEnd(e.target.value);
+                          setCustomRangeError(null);
+                        }}
+                        className="px-2 py-1 text-xs bg-white dark:bg-gray-900 border border-slate-200 dark:border-slate-800 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-700 dark:text-slate-300"
+                        aria-label="Custom range end date"
+                      />
+                      <button
+                        onClick={onApplyCustomRange}
+                        disabled={!canApplyCustomRange}
+                        className="px-2.5 py-1 text-xs font-semibold rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed bg-blue-600 hover:bg-blue-700 text-white"
+                        aria-label="Apply custom date range"
+                      >
+                        Apply
+                      </button>
+                      {customActive && (
+                        <button
+                          onClick={() => {
+                            onCustomDateRangeChange(null);
+                            setShowCustomRange(false);
+                          }}
+                          className="px-2 py-1 text-xs font-semibold rounded-md transition-colors text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800"
+                          aria-label="Clear custom date range"
+                          title="Clear custom date range"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
           </div>
         )}
 
         {customRangeError && (
-          <div className="text-xs font-medium text-red-600 dark:text-red-400 clear-both mb-2">
+          <div className="text-xs font-medium text-red-600 dark:text-red-400 mb-2">
             {customRangeError}
           </div>
         )}
@@ -405,7 +500,7 @@ export default function DashboardWelcomeSummary({
           <details className="group bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden">
             <summary className="cursor-pointer list-none px-3 py-2.5 flex items-center justify-between gap-3 hover:bg-slate-100/60 dark:hover:bg-slate-800 transition-colors">
               <span className="min-w-0 truncate text-base font-semibold text-slate-800 dark:text-slate-100">
-                {data?.availabilityOneLiner || 'Data availability'}
+                {selectionOneLiner}
               </span>
               <div className="flex items-center gap-3 shrink-0">
                 {hasGaps && (

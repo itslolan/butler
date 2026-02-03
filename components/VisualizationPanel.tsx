@@ -141,7 +141,7 @@ export default function VisualizationPanel({
     } finally {
       setLoading(false);
     }
-  }, [userId, dateRange, selectedMonth, customActive, customDateRange?.start, customDateRange?.end]);
+  }, [userId, dateRange, selectedMonth, customActive, customDateRange]);
 
   useEffect(() => {
     fetchCharts();

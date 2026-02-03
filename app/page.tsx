@@ -297,8 +297,6 @@ export default function Home() {
                   setSelectedMonth(month);
                   if (month !== 'all') {
                     setDateRange(null);
-                  } else {
-                    setDateRange(6);
                   }
                 }}
                 onCustomDateRangeChange={applyCustomDateRange}
