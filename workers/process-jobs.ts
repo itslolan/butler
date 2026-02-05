@@ -257,6 +257,9 @@ async function processFileBuffer(opts: {
     last4?: string;
     allAccounts?: any[];
   } = { needsConfirmation: false };
+  
+  // Track the resolved account ID to link transactions properly
+  let resolvedAccountId: string | null = null;
 
   if (!isScreenshot && (extractedData.accountName || extractedData.accountNumberLast4)) {
     sendUpdate('account-check', '🔗 Checking for existing account matches...', 'processing');
@@ -268,14 +271,17 @@ async function processFileBuffer(opts: {
       const matchingAccounts = await findAccountsByLast4(userId, last4);
 
       if (matchingAccounts.length === 1) {
+        // Found exactly one match - use it automatically
+        resolvedAccountId = matchingAccounts[0].id;
         accountMatchInfo = {
-          needsConfirmation: true,
+          needsConfirmation: false,
           matchedAccount: matchingAccounts[0],
           officialName,
           last4,
         };
-        sendUpdate('account-match', `🔗 Found potential match: "${matchingAccounts[0].display_name}" (****${last4})`, 'complete');
+        sendUpdate('account-match', `🔗 Linked to existing account: "${matchingAccounts[0].display_name}" (****${last4})`, 'complete');
       } else if (matchingAccounts.length > 1) {
+        // Multiple matches - user needs to pick (mark as pending)
         accountMatchInfo = {
           needsConfirmation: true,
           allAccounts: matchingAccounts,
@@ -284,14 +290,16 @@ async function processFileBuffer(opts: {
         };
         sendUpdate('account-match', `🔗 Found ${matchingAccounts.length} accounts with ****${last4} - please confirm which one`, 'complete');
       } else {
+        // No last4 match - create new account automatically
         try {
-          await getOrCreateAccount(userId, {
+          const { account } = await getOrCreateAccount(userId, {
             display_name: officialName || `Account ****${last4}`,
             account_number_last4: last4 || undefined,
             official_name: officialName || undefined,
             issuer: extractedData.issuer || undefined,
             source: 'statement',
           });
+          resolvedAccountId = account.id;
           sendUpdate('account-match', `✅ Created new account: ${officialName || `****${last4}`}`, 'complete');
         } catch (error) {
           console.error('[worker] Error creating account:', error);
@@ -299,14 +307,16 @@ async function processFileBuffer(opts: {
         }
       }
     } else if (officialName) {
+      // No last4 but have official name - create or find by name
       try {
-        await getOrCreateAccount(userId, {
+        const { account } = await getOrCreateAccount(userId, {
           display_name: officialName,
           official_name: officialName,
           issuer: extractedData.issuer || undefined,
           source: 'statement',
         });
-        sendUpdate('account-match', `✅ Created new account: ${officialName}`, 'complete');
+        resolvedAccountId = account.id;
+        sendUpdate('account-match', `✅ Linked to account: ${officialName}`, 'complete');
       } catch (error) {
         console.error('[worker] Error creating account:', error);
         sendUpdate('account-match', '⚠️ Failed to create account, continuing...', 'complete');
@@ -406,8 +416,11 @@ async function processFileBuffer(opts: {
 
   const accountName = extractedData.accountName || null;
   const accountLast4 = extractedData.accountNumberLast4 || null;
-  // Ask for account selection whenever account info cannot be extracted (images OR PDFs)
-  const needsAccountSelection = !accountName && !accountLast4;
+  // Ask for account selection whenever:
+  // 1. Account info cannot be extracted (images OR PDFs), OR
+  // 2. Multiple accounts matched and user needs to pick
+  const needsAccountSelection = (!accountName && !accountLast4) ||
+    (accountMatchInfo.needsConfirmation && !resolvedAccountId);
 
   const normalizedUploadId = uploadId && uploadId.trim() !== '' ? uploadId : null;
   const batchId = normalizedUploadId || null;
@@ -426,7 +439,7 @@ async function processFileBuffer(opts: {
     uploaded_at: new Date().toISOString(),
     document_type: extractedData.documentType || 'unknown',
     issuer: extractedData.issuer || null,
-    account_id: extractedData.accountId || null,
+    account_id: resolvedAccountId,  // Use the resolved account ID
     account_name: accountName,
     currency: extractedData.currency || 'USD',
     statement_date: extractedData.statementDate || null,
@@ -463,6 +476,7 @@ async function processFileBuffer(opts: {
     const transactions: Transaction[] = transactionsToInsert.map((txn: any) => ({
       user_id: userId,
       document_id: documentId,
+      account_id: resolvedAccountId,  // Link transaction to account
       account_name: accountName,
       date: txn.date,
       merchant: txn.merchant,

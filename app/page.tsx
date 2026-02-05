@@ -226,11 +226,19 @@ export default function Home() {
       <main className="flex flex-col h-screen bg-slate-50 dark:bg-gray-950 text-slate-900 dark:text-slate-100 overflow-hidden font-sans">
         {/* Top Bar */}
         <header className="h-16 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-gray-900 flex items-center justify-between px-6 shrink-0 z-10">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white font-bold shadow-sm">
-              A
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white font-bold shadow-sm">
+                A
+              </div>
+              <h1 className="font-semibold text-lg tracking-tight">Adphex</h1>
             </div>
-            <h1 className="font-semibold text-lg tracking-tight">Adphex</h1>
+            <Link 
+              href="/transactions"
+              className="text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+            >
+              Transactions
+            </Link>
           </div>
           
           <div className="flex items-center gap-4">

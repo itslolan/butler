@@ -2192,10 +2192,11 @@ export async function assignAccountToDocuments(
     return { documents_updated: 0, transactions_updated: 0 };
   }
 
-  // Update documents
+  // Update documents with account_id, account_name, and clear pending flag
   const { error: docError } = await supabase
     .from('documents')
     .update({
+      account_id: accountId,
       account_name: accountDisplayName,
       pending_account_selection: false,
     })

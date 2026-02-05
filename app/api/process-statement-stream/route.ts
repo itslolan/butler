@@ -464,6 +464,9 @@ export async function POST(request: NextRequest) {
           last4?: string;
           allAccounts?: any[];
         } = { needsConfirmation: false };
+        
+        // Track the resolved account ID to link transactions properly
+        let resolvedAccountId: string | null = null;
 
         if (!isScreenshot && (extractedData.accountName || extractedData.accountNumberLast4)) {
           sendUpdate('account-check', '🔗 Checking for existing account matches...', 'processing');
@@ -477,16 +480,17 @@ export async function POST(request: NextRequest) {
             const matchingAccounts = await findAccountsByLast4(userId, last4);
             
             if (matchingAccounts.length === 1) {
-              // Found exactly one match - ask for confirmation
+              // Found exactly one match - use it automatically
+              resolvedAccountId = matchingAccounts[0].id;
               accountMatchInfo = {
-                needsConfirmation: true,
+                needsConfirmation: false,
                 matchedAccount: matchingAccounts[0],
                 officialName,
                 last4,
               };
-              sendUpdate('account-match', `🔗 Found potential match: "${matchingAccounts[0].display_name}" (****${last4})`, 'complete');
+              sendUpdate('account-match', `🔗 Linked to existing account: "${matchingAccounts[0].display_name}" (****${last4})`, 'complete');
             } else if (matchingAccounts.length > 1) {
-              // Multiple matches - user needs to pick
+              // Multiple matches - user needs to pick (mark as pending)
               accountMatchInfo = {
                 needsConfirmation: true,
                 allAccounts: matchingAccounts,
@@ -497,13 +501,14 @@ export async function POST(request: NextRequest) {
             } else {
               // No last4 match - create new account automatically
               try {
-                await getOrCreateAccount(userId, {
+                const { account } = await getOrCreateAccount(userId, {
                   display_name: officialName || `Account ****${last4}`,
                   account_number_last4: last4 || undefined,
                   official_name: officialName || undefined,
                   issuer: extractedData.issuer || undefined,
                   source: 'statement',
                 });
+                resolvedAccountId = account.id;
                 sendUpdate('account-match', `✅ Created new account: ${officialName || `****${last4}`}`, 'complete');
               } catch (error) {
                 console.error('[process-statement] Error creating account:', error);
@@ -511,15 +516,16 @@ export async function POST(request: NextRequest) {
               }
             }
           } else if (officialName) {
-            // No last4 but have official name - create new automatically
+            // No last4 but have official name - create or find by name
             try {
-              await getOrCreateAccount(userId, {
+              const { account } = await getOrCreateAccount(userId, {
                 display_name: officialName,
                 official_name: officialName,
                 issuer: extractedData.issuer || undefined,
                 source: 'statement',
               });
-              sendUpdate('account-match', `✅ Created new account: ${officialName}`, 'complete');
+              resolvedAccountId = account.id;
+              sendUpdate('account-match', `✅ Linked to account: ${officialName}`, 'complete');
             } catch (error) {
               console.error('[process-statement] Error creating account:', error);
               sendUpdate('account-match', `⚠️ Failed to create account, continuing...`, 'complete');
@@ -673,8 +679,11 @@ export async function POST(request: NextRequest) {
         const accountName = extractedData.accountName || null;
         const accountLast4 = extractedData.accountNumberLast4 || null;
         
-        // If account info cannot be extracted (images OR PDFs), mark as pending account selection
-        const needsAccountSelection = !accountName && !accountLast4;
+        // Account selection is needed if:
+        // 1. No account info could be extracted, OR
+        // 2. Multiple accounts matched and user needs to pick (accountMatchInfo.needsConfirmation)
+        const needsAccountSelection = (!accountName && !accountLast4) || 
+          (accountMatchInfo.needsConfirmation && !resolvedAccountId);
         
         // Get upload_id from request if provided (new upload entity)
         const uploadId = formData.get('uploadId') as string || null;
@@ -689,7 +698,7 @@ export async function POST(request: NextRequest) {
           uploaded_at: new Date().toISOString(),
           document_type: extractedData.documentType || 'unknown',
           issuer: extractedData.issuer || null,
-          account_id: extractedData.accountId || null,
+          account_id: resolvedAccountId,  // Use the resolved account ID
           account_name: accountName,
           currency: extractedData.currency || 'USD',
           statement_date: extractedData.statementDate || null,
@@ -727,6 +736,7 @@ export async function POST(request: NextRequest) {
           const transactions: Transaction[] = transactionsToInsert.map((txn: any) => ({
             user_id: userId,
             document_id: documentId,
+            account_id: resolvedAccountId,  // Link transaction to account
             account_name: accountName,
             date: txn.date,
             merchant: txn.merchant,
