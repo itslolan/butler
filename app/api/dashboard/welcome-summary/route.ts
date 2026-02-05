@@ -81,27 +81,80 @@ async function getTransactionDateRange(userId: string): Promise<{ startDate: str
   return { startDate, endDate };
 }
 
+function getAccountNameCandidates(account: {
+  display_name?: string | null;
+  official_name?: string | null;
+  alias?: string | null;
+}): string[] {
+  const candidates = [
+    account.display_name,
+    account.official_name,
+    account.alias,
+  ]
+    .filter((name): name is string => typeof name === 'string' && name.trim().length > 0)
+    .map((name) => name.trim());
+
+  return Array.from(new Set(candidates));
+}
+
+function buildAccountFilter(
+  account: {
+    id?: string | null;
+    plaid_account_id?: string | null;
+  },
+  accountNames: string[]
+): string | null {
+  const filters: string[] = [];
+  if (account.id) {
+    filters.push(`account_id.eq.${account.id}`);
+  }
+  if (account.plaid_account_id) {
+    filters.push(`plaid_account_id.eq.${account.plaid_account_id}`);
+  }
+  if (accountNames.length > 0) {
+    const escaped = accountNames.map((name) => `"${name.replace(/"/g, '\\"')}"`);
+    filters.push(`account_name.in.(${escaped.join(',')})`);
+  }
+  return filters.length > 0 ? filters.join(',') : null;
+}
+
 async function getTransactionDateRangeForAccount(
   userId: string,
-  accountId: string
+  account: {
+    id?: string | null;
+    plaid_account_id?: string | null;
+    display_name?: string | null;
+    official_name?: string | null;
+    alias?: string | null;
+  }
 ): Promise<{ startDate: string | null; endDate: string | null }> {
-  const { data: earliest, error: e1 } = await supabase
+  const accountNames = getAccountNameCandidates(account);
+  const filter = buildAccountFilter(account, accountNames);
+
+  let earliestQuery = supabase
     .from('transactions')
     .select('date')
     .eq('user_id', userId)
-    .eq('account_id', accountId)
     .order('date', { ascending: true })
     .limit(1);
 
-  if (e1) throw new Error(`Failed to fetch earliest transaction date: ${e1.message}`);
-
-  const { data: latest, error: e2 } = await supabase
+  let latestQuery = supabase
     .from('transactions')
     .select('date')
     .eq('user_id', userId)
-    .eq('account_id', accountId)
     .order('date', { ascending: false })
     .limit(1);
+
+  if (filter) {
+    earliestQuery = earliestQuery.or(filter);
+    latestQuery = latestQuery.or(filter);
+  }
+
+  const { data: earliest, error: e1 } = await earliestQuery;
+
+  if (e1) throw new Error(`Failed to fetch earliest transaction date: ${e1.message}`);
+
+  const { data: latest, error: e2 } = await latestQuery;
 
   if (e2) throw new Error(`Failed to fetch latest transaction date: ${e2.message}`);
 
@@ -125,17 +178,31 @@ async function hasTransactionsInMonth(userId: string, month: string): Promise<bo
 
 async function hasTransactionsInMonthForAccount(
   userId: string,
-  accountId: string,
+  account: {
+    id?: string | null;
+    plaid_account_id?: string | null;
+    display_name?: string | null;
+    official_name?: string | null;
+    alias?: string | null;
+  },
   month: string
 ): Promise<boolean> {
   const { start, end } = monthStartEnd(month);
-  const { count, error } = await supabase
+  const accountNames = getAccountNameCandidates(account);
+  const filter = buildAccountFilter(account, accountNames);
+
+  let query = supabase
     .from('transactions')
     .select('id', { head: true, count: 'exact' })
     .eq('user_id', userId)
-    .eq('account_id', accountId)
     .gte('date', start)
     .lte('date', end);
+
+  if (filter) {
+    query = query.or(filter);
+  }
+
+  const { count, error } = await query;
 
   if (error) throw new Error(`Failed to count transactions for ${month}: ${error.message}`);
   return (count || 0) > 0;
@@ -174,9 +241,15 @@ async function computeAvailability(userId: string): Promise<Availability> {
 
 async function computeAvailabilityForAccount(
   userId: string,
-  accountId: string
+  account: {
+    id?: string | null;
+    plaid_account_id?: string | null;
+    display_name?: string | null;
+    official_name?: string | null;
+    alias?: string | null;
+  }
 ): Promise<Availability> {
-  const { startDate, endDate } = await getTransactionDateRangeForAccount(userId, accountId);
+  const { startDate, endDate } = await getTransactionDateRangeForAccount(userId, account);
   if (!startDate || !endDate) {
     return { startMonth: null, endMonth: null, missingMonths: [], startDate: null, endDate: null };
   }
@@ -196,7 +269,7 @@ async function computeAvailabilityForAccount(
   while (cur <= endMarker && guard++ < 120) {
     const m = monthKey(new Date(cur));
     // eslint-disable-next-line no-await-in-loop
-    const ok = await hasTransactionsInMonthForAccount(userId, accountId, m);
+    const ok = await hasTransactionsInMonthForAccount(userId, account, m);
     if (!ok) missing.push(m);
     cur = addMonths(cur, 1);
   }
@@ -336,7 +409,7 @@ export async function GET(request: NextRequest) {
     const availabilityByAccount: AccountAvailability[] = [];
     for (const account of accounts) {
       // eslint-disable-next-line no-await-in-loop
-      const accountAvailability = await computeAvailabilityForAccount(userId, account.id as string);
+      const accountAvailability = await computeAvailabilityForAccount(userId, account);
       availabilityByAccount.push({
         ...accountAvailability,
         accountId: account.id as string,
@@ -346,9 +419,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const availabilityOneLiner = availabilityByAccount.length > 0
-      ? `Data availability by account (${availabilityByAccount.length}).`
-      : buildAvailabilityOneLiner(availability);
+    const availabilityOneLiner = buildAvailabilityOneLiner(availability);
 
     // Serve cache if present and not forcing regen.
     const cacheMonth = cache?.generated_at ? monthKeyFromIso(cache.generated_at) : '';
