@@ -278,6 +278,113 @@ async function computeAvailabilityForAccount(
   return { startMonth, endMonth, missingMonths: missing, startDate, endDate };
 }
 
+/**
+ * Find account_name values in transactions that don't have a matching account record.
+ * These are "orphan" accounts that should still appear in data availability.
+ */
+async function getOrphanAccountNames(
+  userId: string,
+  knownAccountNames: Set<string>
+): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('transactions')
+    .select('account_name')
+    .eq('user_id', userId)
+    .not('account_name', 'is', null);
+
+  if (error) {
+    console.error('[getOrphanAccountNames] Error:', error.message);
+    return [];
+  }
+
+  // Get unique account names that aren't in the known set
+  const uniqueNames = new Set<string>();
+  for (const row of data || []) {
+    const name = row.account_name?.trim();
+    if (name && !knownAccountNames.has(name.toLowerCase())) {
+      uniqueNames.add(name);
+    }
+  }
+
+  return Array.from(uniqueNames).sort();
+}
+
+/**
+ * Compute availability for an orphan account (one that only exists in transactions, not in accounts table).
+ */
+async function computeAvailabilityForOrphanAccount(
+  userId: string,
+  accountName: string
+): Promise<Availability> {
+  // Get date range for this account name
+  const { data: earliest, error: e1 } = await supabase
+    .from('transactions')
+    .select('date')
+    .eq('user_id', userId)
+    .eq('account_name', accountName)
+    .order('date', { ascending: true })
+    .limit(1);
+
+  if (e1) {
+    console.error('[computeAvailabilityForOrphanAccount] earliest error:', e1.message);
+    return { startMonth: null, endMonth: null, missingMonths: [], startDate: null, endDate: null };
+  }
+
+  const { data: latest, error: e2 } = await supabase
+    .from('transactions')
+    .select('date')
+    .eq('user_id', userId)
+    .eq('account_name', accountName)
+    .order('date', { ascending: false })
+    .limit(1);
+
+  if (e2) {
+    console.error('[computeAvailabilityForOrphanAccount] latest error:', e2.message);
+    return { startMonth: null, endMonth: null, missingMonths: [], startDate: null, endDate: null };
+  }
+
+  const startDate = (earliest && earliest[0]?.date) ? String(earliest[0].date) : null;
+  const endDate = (latest && latest[0]?.date) ? String(latest[0].date) : null;
+
+  if (!startDate || !endDate) {
+    return { startMonth: null, endMonth: null, missingMonths: [], startDate: null, endDate: null };
+  }
+
+  const [startY, startM, startD] = startDate.split('-').map(Number);
+  const [endY, endM, endD] = endDate.split('-').map(Number);
+  const start = new Date(Date.UTC(startY, startM - 1, startD));
+  const end = new Date(Date.UTC(endY, endM - 1, endD));
+  const startMonth = monthKey(start);
+  const endMonth = monthKey(end);
+
+  // Check for gaps
+  const missing: string[] = [];
+  let cur = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1));
+  const endMarker = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), 1));
+
+  let guard = 0;
+  while (cur <= endMarker && guard++ < 120) {
+    const m = monthKey(new Date(cur));
+    const { start: mStart, end: mEnd } = monthStartEnd(m);
+    
+    // eslint-disable-next-line no-await-in-loop
+    const { count, error } = await supabase
+      .from('transactions')
+      .select('id', { head: true, count: 'exact' })
+      .eq('user_id', userId)
+      .eq('account_name', accountName)
+      .gte('date', mStart)
+      .lte('date', mEnd);
+
+    if (!error && (count || 0) === 0) {
+      missing.push(m);
+    }
+    cur = addMonths(cur, 1);
+  }
+
+  return { startMonth, endMonth, missingMonths: missing, startDate, endDate };
+}
+
 function formatMonthForLabel(month: string): string {
   const [y, m] = month.split('-').map(Number);
   const d = new Date(Date.UTC(y, m - 1, 1));
@@ -522,6 +629,16 @@ export async function GET(request: NextRequest) {
 
     const accounts = await getAccountsByUserId(userId);
     const availabilityByAccount: AccountAvailability[] = [];
+    
+    // Track all account names from the accounts table for deduplication
+    const knownAccountNames = new Set<string>();
+    for (const account of accounts) {
+      if (account.display_name) knownAccountNames.add(account.display_name.toLowerCase());
+      if (account.official_name) knownAccountNames.add(account.official_name.toLowerCase());
+      if (account.alias) knownAccountNames.add(account.alias.toLowerCase());
+    }
+    
+    // Compute availability for accounts in the accounts table
     for (const account of accounts) {
       // eslint-disable-next-line no-await-in-loop
       const accountAvailability = await computeAvailabilityForAccount(userId, account);
@@ -532,6 +649,22 @@ export async function GET(request: NextRequest) {
         accountType: account.account_type,
         issuer: account.issuer,
       });
+    }
+    
+    // Find "orphan" account names from transactions that don't have a matching account record
+    const orphanAccountNames = await getOrphanAccountNames(userId, knownAccountNames);
+    for (const accountName of orphanAccountNames) {
+      // eslint-disable-next-line no-await-in-loop
+      const orphanAvailability = await computeAvailabilityForOrphanAccount(userId, accountName);
+      if (orphanAvailability.startDate) {
+        availabilityByAccount.push({
+          ...orphanAvailability,
+          accountId: `orphan:${accountName}`,
+          displayName: accountName,
+          accountType: null,
+          issuer: null,
+        });
+      }
     }
 
     const availabilityOneLiner = buildAvailabilityOneLiner(availability);
