@@ -13,6 +13,7 @@ interface VisualizationPanelProps {
   fixedExpensesDemoData?: FixedExpensesData | null;
   dateRange?: number | null;
   selectedMonth?: string;
+  customDateRange?: { start: string; end: string } | null;
   chatInterfaceRef?: React.RefObject<any>;
   onOpenMobileChat?: () => void;
 }
@@ -23,6 +24,7 @@ export default function VisualizationPanel({
   fixedExpensesDemoData = null,
   dateRange: externalDateRange,
   selectedMonth: externalSelectedMonth,
+  customDateRange: externalCustomDateRange,
   chatInterfaceRef,
   onOpenMobileChat,
 }: VisualizationPanelProps) {
@@ -52,9 +54,12 @@ export default function VisualizationPanel({
   // Default to current month
   const [internalDateRange, setInternalDateRange] = useState<number | null>(null);
   const [internalSelectedMonth, setInternalSelectedMonth] = useState<string>(new Date().toISOString().slice(0, 7));
+  const [internalCustomDateRange, setInternalCustomDateRange] = useState<{ start: string; end: string } | null>(null);
   
   const dateRange = externalDateRange !== undefined ? externalDateRange : internalDateRange;
   const selectedMonth = externalSelectedMonth !== undefined ? externalSelectedMonth : internalSelectedMonth;
+  const customDateRange = externalCustomDateRange !== undefined ? externalCustomDateRange : internalCustomDateRange;
+  const customActive = Boolean(customDateRange?.start && customDateRange?.end);
 
   // Generate last 12 months for dropdown
   const monthOptions = Array.from({ length: 12 }, (_, i) => {
@@ -75,8 +80,11 @@ export default function VisualizationPanel({
         userId,
       });
 
-      // If a specific month is selected, use it; otherwise use date range
-      if (selectedMonth !== 'all') {
+      // Priority: custom date range > specific month > relative months
+      if (customActive && customDateRange) {
+        queryParams.append('start', customDateRange.start);
+        queryParams.append('end', customDateRange.end);
+      } else if (selectedMonth !== 'all') {
         queryParams.append('month', selectedMonth);
       } else if (dateRange !== null) {
         queryParams.append('months', dateRange.toString());
@@ -133,7 +141,7 @@ export default function VisualizationPanel({
     } finally {
       setLoading(false);
     }
-  }, [userId, dateRange, selectedMonth]);
+  }, [userId, dateRange, selectedMonth, customActive, customDateRange]);
 
   useEffect(() => {
     fetchCharts();
@@ -195,6 +203,18 @@ export default function VisualizationPanel({
     </div>
   );
 
+  const periodLabel = (() => {
+    if (customActive && customDateRange) {
+      const fmt = (iso: string) =>
+        new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      return `${fmt(customDateRange.start)} – ${fmt(customDateRange.end)}`;
+    }
+    if (selectedMonth !== 'all') {
+      return monthOptions.find(m => m.value === selectedMonth)?.label || 'selected';
+    }
+    return `${dateRange}M`;
+  })();
+
   const ChartCard = ({ title, children, className }: { title: string, children: ReactNode, className?: string }) => (
     <div className={`bg-white dark:bg-gray-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col ${className}`}>
       <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800">
@@ -222,7 +242,7 @@ export default function VisualizationPanel({
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 shrink-0">
                     <div className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-3 border border-slate-100 dark:border-slate-700/50">
                       <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                        Total Income ({selectedMonth !== 'all' ? monthOptions.find(m => m.value === selectedMonth)?.label || 'selected' : dateRange + 'M'})
+                        Total Income ({periodLabel})
                       </p>
                       <h3 className="text-xl font-semibold text-slate-900 dark:text-white mt-1 tracking-tight">
                         {formatCompactCurrency(metrics.totalIncome, metrics?.currency || 'USD')}
@@ -234,7 +254,7 @@ export default function VisualizationPanel({
 
                     <div className="bg-slate-50 dark:bg-slate-800/50 rounded-lg p-3 border border-slate-100 dark:border-slate-700/50">
                       <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                        Total Expenses ({selectedMonth !== 'all' ? monthOptions.find(m => m.value === selectedMonth)?.label || 'selected' : dateRange + 'M'})
+                        Total Expenses ({periodLabel})
                       </p>
                       <h3 className="text-xl font-semibold text-slate-900 dark:text-white mt-1 tracking-tight">
                         {formatCompactCurrency(metrics.totalExpenses, metrics?.currency || 'USD')}

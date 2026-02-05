@@ -6,6 +6,7 @@ import {
   getDashboardWelcomeSummaryCache,
   upsertDashboardWelcomeSummaryCache,
   getAccountsByUserId,
+  getLatestTransactionTimestamp,
 } from '@/lib/db-tools';
 import {
   generateWelcomeSummaryFallback,
@@ -337,17 +338,98 @@ function dayPeriodFromIsoWithOffset(iso: string, tzOffsetMinutes: number): DayPe
   return dayPeriodFromHour(localHour);
 }
 
-async function buildMetrics(userId: string): Promise<WelcomeSummaryMetrics> {
-  const now = new Date();
-  const currentMonth = now.toISOString().slice(0, 7);
-  const lastMonth = addMonths(now, -1).toISOString().slice(0, 7);
+type DateRangeParams = {
+  selectedMonth?: string | null;  // YYYY-MM
+  dateRange?: number | null;       // months like 3, 6, 12
+  customStartDate?: string | null; // YYYY-MM-DD
+  customEndDate?: string | null;   // YYYY-MM-DD
+};
 
-  const [ive3, currentBreakdown, lastBreakdown, fixedCategories] = await Promise.all([
-    getIncomeVsExpenses(userId, { months: 3 }),
-    getCategoryBreakdown(userId, { month: currentMonth }).catch(() => []),
-    getCategoryBreakdown(userId, { month: lastMonth }).catch(() => []),
+async function buildMetrics(
+  userId: string,
+  dateRangeParams?: DateRangeParams
+): Promise<WelcomeSummaryMetrics> {
+  const now = new Date();
+  const serverCurrentMonth = now.toISOString().slice(0, 7);
+  
+  // Determine the effective date range based on user selection
+  let targetMonth: string | undefined;
+  let startDate: string | undefined;
+  let endDate: string | undefined;
+  let previousMonth: string | undefined;
+  
+  if (dateRangeParams?.customStartDate && dateRangeParams?.customEndDate) {
+    // Custom date range
+    startDate = dateRangeParams.customStartDate;
+    endDate = dateRangeParams.customEndDate;
+    // For comparison, use the month before the start date
+    const [sy, sm] = startDate.split('-').map(Number);
+    const prevDate = new Date(Date.UTC(sy, sm - 2, 1));
+    previousMonth = `${prevDate.getUTCFullYear()}-${String(prevDate.getUTCMonth() + 1).padStart(2, '0')}`;
+  } else if (dateRangeParams?.selectedMonth && dateRangeParams.selectedMonth !== 'all') {
+    // Specific month selected
+    targetMonth = dateRangeParams.selectedMonth;
+    const [y, m] = targetMonth.split('-').map(Number);
+    const prevDate = new Date(Date.UTC(y, m - 2, 1));
+    previousMonth = `${prevDate.getUTCFullYear()}-${String(prevDate.getUTCMonth() + 1).padStart(2, '0')}`;
+  } else if (dateRangeParams?.dateRange && dateRangeParams.dateRange > 0) {
+    // N months range (3M, 6M, 12M)
+    const months = dateRangeParams.dateRange;
+    const endDateObj = new Date();
+    const startDateObj = new Date(endDateObj);
+    startDateObj.setMonth(startDateObj.getMonth() - (months - 1));
+    startDateObj.setDate(1);
+    startDate = startDateObj.toISOString().slice(0, 10);
+    endDate = endDateObj.toISOString().slice(0, 10);
+    // For comparison, use the month before the range
+    const prevDate = new Date(startDateObj);
+    prevDate.setMonth(prevDate.getMonth() - 1);
+    previousMonth = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
+  } else {
+    // Default: current month
+    targetMonth = serverCurrentMonth;
+    previousMonth = addMonths(now, -1).toISOString().slice(0, 7);
+  }
+  
+  // Build query params for the selected range
+  const currentParams = startDate && endDate
+    ? { startDate, endDate }
+    : { month: targetMonth };
+  
+  const previousParams = previousMonth ? { month: previousMonth } : undefined;
+
+  console.log('[buildMetrics] Date range params:', {
+    input: dateRangeParams,
+    resolved: { targetMonth, startDate, endDate, previousMonth },
+    currentParams,
+  });
+
+  const [ive, currentBreakdown, lastBreakdown, fixedCategories] = await Promise.all([
+    // For income vs expenses, use the same range
+    startDate && endDate
+      ? getIncomeVsExpenses(userId, { startDate, endDate })
+      : targetMonth
+        ? getIncomeVsExpenses(userId, { month: targetMonth })
+        : getIncomeVsExpenses(userId, { months: 3 }),
+    getCategoryBreakdown(userId, currentParams).catch((e) => {
+      console.error('[buildMetrics] getCategoryBreakdown current failed:', e);
+      return [];
+    }),
+    previousParams
+      ? getCategoryBreakdown(userId, previousParams).catch((e) => {
+          console.error('[buildMetrics] getCategoryBreakdown previous failed:', e);
+          return [];
+        })
+      : Promise.resolve([]),
     getFixedExpenseCategoryNames(userId).catch(() => []),
   ]);
+
+  console.log('[buildMetrics] Query results:', {
+    iveCount: Array.isArray(ive) ? ive.length : 0,
+    currentBreakdownCount: Array.isArray(currentBreakdown) ? currentBreakdown.length : 0,
+    lastBreakdownCount: Array.isArray(lastBreakdown) ? lastBreakdown.length : 0,
+    sampleCurrentBreakdown: Array.isArray(currentBreakdown) ? currentBreakdown.slice(0, 3) : [],
+  });
 
   const fixedSet = new Set(
     (fixedCategories || []).map((name) => normalizeCategoryName(name))
@@ -356,10 +438,10 @@ async function buildMetrics(userId: string): Promise<WelcomeSummaryMetrics> {
     items.filter((c) => !fixedSet.has(normalizeCategoryName(c.category)));
 
   return {
-    currentMonth,
-    lastMonth,
-    incomeVsExpensesLast3: Array.isArray(ive3)
-      ? ive3.map((r: any) => ({
+    currentMonth: targetMonth || serverCurrentMonth,
+    lastMonth: previousMonth,
+    incomeVsExpensesLast3: Array.isArray(ive)
+      ? ive.map((r: any) => ({
           month: String(r.month),
           income: Number(r.income) || 0,
           expenses: Number(r.expenses) || 0,
@@ -386,6 +468,22 @@ async function buildMetrics(userId: string): Promise<WelcomeSummaryMetrics> {
   };
 }
 
+// Build a cache key suffix based on date range selection
+function buildDateRangeCacheKey(params: DateRangeParams): string {
+  if (params.customStartDate && params.customEndDate) {
+    return `custom:${params.customStartDate}:${params.customEndDate}`;
+  }
+  if (params.selectedMonth && params.selectedMonth !== 'all') {
+    return `month:${params.selectedMonth}`;
+  }
+  if (params.dateRange && params.dateRange > 0) {
+    return `range:${params.dateRange}M`;
+  }
+  // Default: current month
+  const now = new Date();
+  return `month:${now.toISOString().slice(0, 7)}`;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const sp = request.nextUrl.searchParams;
@@ -395,14 +493,31 @@ export async function GET(request: NextRequest) {
     const dayPeriod = (sp.get('dayPeriod') || '').toLowerCase();
     const localTimeISO = sp.get('localTimeISO') || '';
     const tzOffsetMinutes = Number(sp.get('tzOffsetMinutes') || '0');
+    
+    // Date range parameters from the UI
+    const selectedMonth = sp.get('selectedMonth') || null;
+    const dateRange = sp.get('dateRange') ? Number(sp.get('dateRange')) : null;
+    const customStartDate = sp.get('customStartDate') || null;
+    const customEndDate = sp.get('customEndDate') || null;
+    
+    const dateRangeParams: DateRangeParams = {
+      selectedMonth,
+      dateRange,
+      customStartDate,
+      customEndDate,
+    };
 
     if (!userId) {
       return NextResponse.json({ error: 'Missing userId' }, { status: 400 });
     }
+    
+    // Build cache key that includes the date range
+    const dateRangeCacheKey = buildDateRangeCacheKey(dateRangeParams);
 
-    const [cache, availability] = await Promise.all([
+    const [cache, availability, latestTransactionAt] = await Promise.all([
       getDashboardWelcomeSummaryCache(userId),
       computeAvailability(userId),
+      getLatestTransactionTimestamp(userId),
     ]);
 
     const accounts = await getAccountsByUserId(userId);
@@ -430,7 +545,29 @@ export async function GET(request: NextRequest) {
       : null;
     const cacheMatchesDayPeriod = dayPeriod ? cacheDayPeriod === dayPeriod : true;
 
-    if (cache?.summary_text && !force && cacheIsFreshForThisMonth && cacheMatchesDayPeriod) {
+    // Check if new transactions have been added since the cache was created
+    // This invalidates cache when user uploads statements or syncs new data
+    const cachedTransactionAt = cache?.latest_transaction_at;
+    const hasNewerTransactions = Boolean(
+      latestTransactionAt &&
+      (!cachedTransactionAt || new Date(latestTransactionAt) > new Date(cachedTransactionAt))
+    );
+    
+    // Check if the cached date range matches the requested date range
+    const cachedDateRangeKey = cache?.date_range_key;
+    const dateRangeMatches = cachedDateRangeKey === dateRangeCacheKey;
+
+    console.log('[welcome-summary] Cache check:', {
+      dateRangeCacheKey,
+      cachedDateRangeKey,
+      dateRangeMatches,
+      cacheIsFreshForThisMonth,
+      cacheMatchesDayPeriod,
+      hasNewerTransactions,
+      force,
+    });
+
+    if (cache?.summary_text && !force && cacheIsFreshForThisMonth && cacheMatchesDayPeriod && !hasNewerTransactions && dateRangeMatches) {
       return NextResponse.json({
         summaryText: cache.summary_text,
         fromCache: true,
@@ -441,7 +578,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const metrics = await buildMetrics(userId);
+    const metrics = await buildMetrics(userId, dateRangeParams);
 
     let summaryText = '';
     let model: string | null = null;
@@ -471,7 +608,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    await upsertDashboardWelcomeSummaryCache(userId, summaryText, model);
+    await upsertDashboardWelcomeSummaryCache(userId, summaryText, model, latestTransactionAt, dateRangeCacheKey);
 
     return NextResponse.json({
       summaryText,

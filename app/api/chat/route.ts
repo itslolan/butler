@@ -1178,10 +1178,21 @@ When answering questions, use these memories to provide context-aware responses.
                   description: 'Explain why you are calling this function and what you plan to do with the results (max 50 words)',
                 },
                 allocations: {
-                  type: SchemaType.OBJECT,
-                  description: 'Map of category name to new budget amount',
-                  additionalProperties: {
-                    type: SchemaType.NUMBER,
+                  type: SchemaType.ARRAY,
+                  description: 'Array of category allocations to set',
+                  items: {
+                    type: SchemaType.OBJECT,
+                    properties: {
+                      categoryName: {
+                        type: SchemaType.STRING,
+                        description: 'Name of the budget category',
+                      },
+                      amount: {
+                        type: SchemaType.NUMBER,
+                        description: 'New budget amount for this category',
+                      },
+                    },
+                    required: ['categoryName', 'amount'],
                   },
                 },
               },

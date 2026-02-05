@@ -51,6 +51,8 @@ export async function GET(request: NextRequest) {
     const monthsParam = searchParams.get('months');
     const months = monthsParam ? parseInt(monthsParam, 10) : null;
     const monthFilter = searchParams.get('month'); // Optional: specific month filter (YYYY-MM)
+    const start = searchParams.get('start'); // Optional: custom start date (YYYY-MM-DD)
+    const end = searchParams.get('end'); // Optional: custom end date (YYYY-MM-DD)
 
     if (!type) {
       return NextResponse.json(
@@ -60,8 +62,12 @@ export async function GET(request: NextRequest) {
     }
 
     // Build time period params (assistant functions handle defaults)
-    const timePeriodParams: { month?: string; months?: number } = {};
-    if (monthFilter) {
+    // Priority: custom start/end > month > months
+    const timePeriodParams: { startDate?: string; endDate?: string; month?: string; months?: number } = {};
+    if (start || end) {
+      timePeriodParams.startDate = start || undefined;
+      timePeriodParams.endDate = end || undefined;
+    } else if (monthFilter) {
       timePeriodParams.month = monthFilter;
     } else if (months !== null) {
       timePeriodParams.months = months;
@@ -82,6 +88,8 @@ export async function GET(request: NextRequest) {
     const toolArgs = {
       specificMonth: timePeriodParams.month,
       months: timePeriodParams.months,
+      startDate: timePeriodParams.startDate,
+      endDate: timePeriodParams.endDate,
     };
 
     switch (type) {
