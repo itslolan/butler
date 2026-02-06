@@ -10,6 +10,7 @@ import {
   getFixedExpenseTotalsForMonth,
   resolveFixBudgetMonth
 } from '@/lib/budget-utils';
+import { createLLMSession, logLLMCall } from '@/lib/llm-logger';
 
 export const runtime = 'nodejs';
 
@@ -131,6 +132,9 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    // Create LLM session for logging
+    const sessionId = createLLMSession();
+    
     // Retry loop for budget allocation
     let aiResponse: { 
       allocations: Record<string, number>; 
@@ -161,8 +165,22 @@ export async function POST(request: NextRequest) {
       );
 
       try {
+        const llmStartTime = Date.now();
         const result = await model.generateContent(prompt);
         const responseText = result.response.text();
+        const llmDuration = Date.now() - llmStartTime;
+        
+        // Log the LLM call
+        logLLMCall({
+          sessionId,
+          userId,
+          flowName: 'budget_auto_assign',
+          model: GEMINI_MODEL,
+          systemPrompt: `Budget auto-assign attempt ${attempts}`,
+          userMessage: prompt.substring(0, 2000),
+          llmResult: responseText.substring(0, 2000),
+          durationMs: llmDuration,
+        });
         
         aiResponse = JSON.parse(responseText);
         

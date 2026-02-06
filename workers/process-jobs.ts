@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { createLLMSession, logLLMCall } from '../lib/llm-logger';
 import { supabase } from '../lib/supabase';
 import {
   claimNextPendingJob,
@@ -205,6 +206,7 @@ async function processFileBuffer(opts: {
 
   log('info', 'Calling Gemini for extraction', { fileName, mimeType, bytes: buffer.length });
 
+  const sessionId = createLLMSession();
   const { result: geminiResponse, ms: geminiMs } = await timed('gemini.generateContent', async () => {
     return await model.generateContent({
       contents: [
@@ -221,6 +223,21 @@ async function processFileBuffer(opts: {
   log('info', 'Gemini extraction complete', { fileName, ms: geminiMs });
 
   const content = geminiResponse.response.text();
+  
+  // Log the LLM call
+  logLLMCall({
+    sessionId,
+    userId,
+    flowName: 'job_processing',
+    model: GEMINI_MODEL,
+    systemPrompt: systemPrompt.substring(0, 3000),
+    userMessage: 'Extract all information from this financial document',
+    llmResult: content.substring(0, 2000),
+    hasAttachments: true,
+    attachmentType: filePart.inlineData.mimeType.includes('pdf') ? 'pdf' : 'image',
+    durationMs: geminiMs,
+  });
+  
   if (!content) throw new Error('No response from Gemini');
 
   let extractedData: any;

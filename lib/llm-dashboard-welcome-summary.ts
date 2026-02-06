@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
+import { createLLMSession, logLLMCall } from '@/lib/llm-logger';
 
 // Keep this lightweight/cost-effective; summary is short.
 const GEMINI_MODEL = 'gemini-2.0-flash-exp';
@@ -141,7 +142,8 @@ export function generateWelcomeSummaryFallback(
  */
 export async function generateWelcomeSummaryLLM(
   metrics: WelcomeSummaryMetrics,
-  context: WelcomeSummaryContext = {}
+  context: WelcomeSummaryContext = {},
+  userId?: string
 ): Promise<{ text: string; model: string }> {
   const model = getModel();
   const dayPeriod = normalizeDayPeriod(context.dayPeriod);
@@ -171,8 +173,23 @@ Data (JSON):
 ${JSON.stringify(metrics)}
 `;
 
+  const sessionId = createLLMSession();
+  const llmStartTime = Date.now();
   const res = await model.generateContent(prompt);
+  const llmDuration = Date.now() - llmStartTime;
   const text = (res.response.text() || '').trim();
+  
+  // Log the LLM call
+  logLLMCall({
+    sessionId,
+    userId,
+    flowName: 'welcome_summary',
+    model: GEMINI_MODEL,
+    systemPrompt: 'Generate welcome summary',
+    userMessage: prompt.substring(0, 1000),
+    llmResult: text.substring(0, 2000),
+    durationMs: llmDuration,
+  });
 
   // Basic sanitization (remove markdown fences if any)
   const cleaned = text.replace(/```[\s\S]*?```/g, '').trim();

@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { createLLMSession, logLLMCall } from '@/lib/llm-logger';
 
 const GEMINI_MODEL = 'gemini-3-pro-preview';
 
@@ -67,8 +68,23 @@ export async function generateSuggestedActions(
 
 Generate 2-4 contextual action suggestions for this transaction.`;
 
+    const sessionId = createLLMSession();
+    const llmStartTime = Date.now();
     const result = await model.generateContent(prompt);
+    const llmDuration = Date.now() - llmStartTime;
     const responseText = result.response.text();
+    
+    // Log the LLM call
+    logLLMCall({
+      sessionId,
+      userId,
+      flowName: 'action_generation',
+      model: GEMINI_MODEL,
+      systemPrompt: ACTION_GENERATION_PROMPT.substring(0, 1000),
+      userMessage: prompt,
+      llmResult: responseText.substring(0, 1000),
+      durationMs: llmDuration,
+    });
     
     // Parse the JSON response
     const parsed: ActionGenerationResult = JSON.parse(responseText);

@@ -3,6 +3,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { insertDocument, insertTransactions, appendMetadata } from '@/lib/db-tools';
 import { uploadFile } from '@/lib/supabase';
 import { applyFixedExpenseDetectionToTransactions, persistFixedExpenseFlags } from '@/lib/fixed-expense-detector';
+import { createLLMSession, logLLMCall } from '@/lib/llm-logger';
 
 export const runtime = 'nodejs';
 
@@ -146,6 +147,8 @@ export async function POST(request: NextRequest) {
       },
     };
 
+    const sessionId = createLLMSession();
+    const llmStartTime = Date.now();
     const geminiResponse = await model.generateContent({
       contents: [
         {
@@ -159,8 +162,23 @@ export async function POST(request: NextRequest) {
         },
       ],
     });
+    const llmDuration = Date.now() - llmStartTime;
 
     const content = geminiResponse.response.text();
+    
+    // Log the LLM call
+    logLLMCall({
+      sessionId,
+      userId,
+      flowName: 'statement_parsing',
+      model: GEMINI_MODEL,
+      systemPrompt: SYSTEM_PROMPT.substring(0, 3000),
+      userMessage: 'Extract all information from this financial document',
+      llmResult: content.substring(0, 2000),
+      hasAttachments: true,
+      attachmentType: isPdf ? 'pdf' : 'image',
+      durationMs: llmDuration,
+    });
     if (!content) {
       throw new Error('No response from Gemini');
     }

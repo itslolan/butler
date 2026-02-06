@@ -3,6 +3,7 @@ import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
 import { getAllMemories, upsertMemory } from '@/lib/db-tools';
 import { executeToolCall } from '@/lib/chat-tool-executor';
 import { transformCategoryBreakdownToChartData } from '@/lib/visualization-functions';
+import { createLLMSession, logLLMCall, logToolCall } from '@/lib/llm-logger';
 
 
 export const runtime = 'nodejs';
@@ -316,8 +317,24 @@ Return a JSON object:
 
 If no memories found, return {"memories": []}.`;
 
+    const sessionId = createLLMSession();
+    const startTime = Date.now();
     const result = await model.generateContent(prompt);
     const responseText = result.response.text();
+    const durationMs = Date.now() - startTime;
+    
+    // Log the LLM call
+    logLLMCall({
+      sessionId,
+      userId,
+      flowName: 'memory_extraction',
+      model: 'gemini-2.0-flash-exp',
+      systemPrompt: 'Extract memories from conversation',
+      userMessage: prompt.substring(0, 2000), // Truncate for logging
+      llmResult: responseText.substring(0, 2000),
+      durationMs,
+    });
+    
     const parsed = JSON.parse(responseText);
 
     if (parsed.memories && Array.isArray(parsed.memories)) {
@@ -1282,6 +1299,9 @@ When answering questions, use these memories to provide context-aware responses.
     const chat = model.startChat({ history });
 
     const lastMessage = messages[messages.length - 1];
+    
+    // Create LLM session for logging
+    const llmSessionId = createLLMSession();
 
     // Create a streaming response
     const encoder = new TextEncoder();
@@ -1294,7 +1314,21 @@ When answering questions, use these memories to provide context-aware responses.
             controller.enqueue(encoder.encode(JSON.stringify(event) + '\n'));
           };
 
+          const llmStartTime = Date.now();
           let result = await chat.sendMessage(lastMessage.content);
+          const llmDuration = Date.now() - llmStartTime;
+          
+          // Log initial LLM call
+          logLLMCall({
+            sessionId: llmSessionId,
+            userId: effectiveUserId,
+            flowName: 'chat',
+            model: GEMINI_MODEL,
+            systemPrompt: SYSTEM_PROMPT.substring(0, 5000),
+            userMessage: lastMessage.content,
+            llmResult: result.response.text().substring(0, 2000),
+            durationMs: llmDuration,
+          });
           let functionCallCount = 0;
           const maxFunctionCalls = 10;
           let chartConfig = null;
@@ -1323,14 +1357,40 @@ When answering questions, use these memories to provide context-aware responses.
               }
 
               const startTime = Date.now();
-              const functionResult = await executeToolCall(
-                name,
-                args,
-                effectiveUserId,
-                request.url,
-                clientBudgetContext
-              );
+              let functionResult;
+              let functionError;
+              
+              try {
+                functionResult = await executeToolCall(
+                  name,
+                  args,
+                  effectiveUserId,
+                  request.url,
+                  clientBudgetContext
+                );
+              } catch (error: any) {
+                functionError = error;
+                functionResult = { error: error.message };
+              }
+              
               const duration = Date.now() - startTime;
+              
+              // Log tool call
+              logToolCall({
+                sessionId: llmSessionId,
+                userId: effectiveUserId,
+                flowName: 'chat',
+                toolName: name,
+                toolArguments: args,
+                toolResult: functionError ? undefined : JSON.stringify(functionResult).substring(0, 2000),
+                toolError: functionError ? functionError.message : undefined,
+                durationMs: duration,
+              });
+              
+              // Re-throw if there was an error
+              if (functionError) {
+                throw functionError;
+              }
 
               // Track canonical category breakdown for deterministic chat summaries
               if (name === 'get_category_breakdown' && Array.isArray(functionResult)) {
@@ -1379,7 +1439,21 @@ When answering questions, use these memories to provide context-aware responses.
             }
 
             // Send function responses back to model
+            const followUpStartTime = Date.now();
             result = await chat.sendMessage(functionResponses);
+            const followUpDuration = Date.now() - followUpStartTime;
+            
+            // Log follow-up LLM call after tool execution
+            logLLMCall({
+              sessionId: llmSessionId,
+              userId: effectiveUserId,
+              flowName: 'chat',
+              model: GEMINI_MODEL,
+              systemPrompt: `Tool responses: ${functionResponses.length} tools`,
+              userMessage: `Tool results from: ${functionCalls.map((c: any) => c.name).join(', ')}`,
+              llmResult: result.response.text().substring(0, 2000),
+              durationMs: followUpDuration,
+            });
           }
 
           // Stream the final text response

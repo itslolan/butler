@@ -15,6 +15,7 @@ import {
   ProcessingJob,
   ProcessingJobProgress,
 } from './supabase';
+import { createLLMSession, logLLMCall } from './llm-logger';
 import { isUserProvidedIncomeTransaction } from './financial-figure-sources';
 import { classifyTransaction } from './transaction-classifier';
 
@@ -1851,8 +1852,24 @@ Return a JSON array of the EXACT content strings from existing memories that con
 
 Format: ["- memory content 1", "- memory content 2"]`;
 
+    const sessionId = createLLMSession();
+    const llmStartTime = Date.now();
     const result = await model.generateContent(prompt);
+    const llmDuration = Date.now() - llmStartTime;
     const responseText = result.response.text();
+    
+    // Log the LLM call
+    logLLMCall({
+      sessionId,
+      userId,
+      flowName: 'memory_conflict_detection',
+      model: 'gemini-2.0-flash-exp',
+      systemPrompt: 'Detect memory conflicts',
+      userMessage: prompt.substring(0, 1000),
+      llmResult: responseText.substring(0, 1000),
+      durationMs: llmDuration,
+    });
+    
     const conflictingContents: string[] = JSON.parse(responseText);
 
     if (!Array.isArray(conflictingContents) || conflictingContents.length === 0) {

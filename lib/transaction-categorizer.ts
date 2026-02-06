@@ -2,6 +2,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getAllMemories, upsertMemory } from '@/lib/db-tools';
 import { getBudgetCategoryHierarchy, syncTransactionCategoriesToBudget } from '@/lib/budget-utils';
 import { normalizeCategoryNameKey, normalizeCategoryDisplayName } from '@/lib/category-normalization';
+import { createLLMSession, logLLMCall } from '@/lib/llm-logger';
 
 const GEMINI_MODEL = 'gemini-2.0-flash';
 
@@ -201,11 +202,27 @@ Use these memories to help classify transactions accurately.`;
       description: t.description,
     }));
 
+    const sessionId = createLLMSession();
+    const llmStartTime = Date.now();
     const result = await model.generateContent(
       `Categorize these ${transactions.length} transactions:\n\n${JSON.stringify(transactionsForLLM, null, 2)}`
     );
+    const llmDuration = Date.now() - llmStartTime;
 
     const response = result.response.text();
+    
+    // Log the LLM call
+    logLLMCall({
+      sessionId,
+      userId,
+      flowName: 'transaction_categorization',
+      model: GEMINI_MODEL,
+      systemPrompt: systemPrompt.substring(0, 3000),
+      userMessage: `Categorize ${transactions.length} transactions`,
+      llmResult: response.substring(0, 2000),
+      durationMs: llmDuration,
+    });
+    
     const parsed = JSON.parse(response);
 
     // Merge LLM results back into transactions
