@@ -14,7 +14,7 @@ import { createLLMSession, logLLMCall } from '@/lib/llm-logger';
 
 export const runtime = 'nodejs';
 
-const GEMINI_MODEL = 'gemini-2.0-flash-exp';
+const GEMINI_MODEL = 'gemini-3-flash-preview';
 const MAX_RETRY_ATTEMPTS = 3;
 
 /**
@@ -147,6 +147,7 @@ export async function POST(request: NextRequest) {
 
     while (attempts < MAX_RETRY_ATTEMPTS) {
       attempts++;
+      let responseText = '';
       
       // Build the prompt (with correction hint on retries)
       const prompt = buildPrompt(
@@ -167,7 +168,7 @@ export async function POST(request: NextRequest) {
       try {
         const llmStartTime = Date.now();
         const result = await model.generateContent(prompt);
-        const responseText = result.response.text();
+        responseText = result.response.text();
         const llmDuration = Date.now() - llmStartTime;
         
         // Log the LLM call
@@ -181,6 +182,14 @@ export async function POST(request: NextRequest) {
           llmResult: responseText.substring(0, 2000),
           durationMs: llmDuration,
         });
+
+        // Strip markdown code fences if the model wraps JSON in them
+        responseText = responseText.trim();
+        if (responseText.startsWith('```')) {
+          responseText = responseText
+            .replace(/^```(?:json)?\s*\n?/, '')
+            .replace(/\n?\s*```\s*$/, '');
+        }
         
         aiResponse = JSON.parse(responseText);
         
@@ -203,8 +212,9 @@ export async function POST(request: NextRequest) {
           notZeroBased = true;
           console.log(`Attempt ${attempts}: AI allocated $${lastTotalAssigned.toFixed(2)} but income is $${budgetIncome.toFixed(2)} (diff: $${difference.toFixed(2)}). ${attempts < MAX_RETRY_ATTEMPTS ? 'Retrying...' : 'Max retries reached.'}`);
         }
-      } catch (parseError) {
-        console.error(`Attempt ${attempts}: Failed to parse AI response`);
+      } catch (parseError: any) {
+        console.error(`Attempt ${attempts}: Failed to parse AI response:`, parseError.message);
+        console.error(`Raw response (first 500 chars):`, typeof responseText === 'string' ? responseText.substring(0, 500) : responseText);
         if (attempts >= MAX_RETRY_ATTEMPTS) {
           return NextResponse.json(
             { error: 'AI returned invalid response after multiple attempts' },

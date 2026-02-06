@@ -271,7 +271,7 @@ async function extractAndSaveMemories(
   try {
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({
-      model: 'gemini-2.0-flash-exp',
+      model: 'gemini-3-flash-preview',
       generationConfig: {
         responseMimeType: 'application/json',
         temperature: 0.3,
@@ -328,7 +328,7 @@ If no memories found, return {"memories": []}.`;
       sessionId,
       userId,
       flowName: 'memory_extraction',
-      model: 'gemini-2.0-flash-exp',
+      model: 'gemini-3-flash-preview',
       systemPrompt: 'Extract memories from conversation',
       userMessage: prompt.substring(0, 2000), // Truncate for logging
       llmResult: responseText.substring(0, 2000),
@@ -1444,13 +1444,23 @@ When answering questions, use these memories to provide context-aware responses.
             const followUpDuration = Date.now() - followUpStartTime;
             
             // Log follow-up LLM call after tool execution
+            // Build a readable summary of the tool responses sent back to the model
+            const toolResponseSummary = functionResponses.map((fr: any) => {
+              const name = fr.functionResponse?.name || 'unknown';
+              const content = fr.functionResponse?.response?.content;
+              const contentStr = typeof content === 'string'
+                ? content
+                : JSON.stringify(content);
+              return `[${name}]\n${contentStr}`;
+            }).join('\n\n---\n\n');
+
             logLLMCall({
               sessionId: llmSessionId,
               userId: effectiveUserId,
               flowName: 'chat',
               model: GEMINI_MODEL,
-              systemPrompt: `Tool responses: ${functionResponses.length} tools`,
-              userMessage: `Tool results from: ${functionCalls.map((c: any) => c.name).join(', ')}`,
+              systemPrompt: SYSTEM_PROMPT.substring(0, 5000),
+              userMessage: toolResponseSummary.substring(0, 5000),
               llmResult: result.response.text().substring(0, 2000),
               durationMs: followUpDuration,
             });

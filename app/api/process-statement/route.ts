@@ -7,7 +7,7 @@ import { createLLMSession, logLLMCall } from '@/lib/llm-logger';
 
 export const runtime = 'nodejs';
 
-const GEMINI_MODEL = 'gemini-2.0-flash-exp';
+const GEMINI_MODEL = 'gemini-3-flash-preview';
 
 const SYSTEM_PROMPT = `You are a financial document parser. Extract structured information from bank statements and credit card statements.
 

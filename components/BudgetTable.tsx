@@ -12,6 +12,7 @@ interface Category {
   budgeted: number;
   spent: number;
   available: number;
+  lastMonthSpent?: number;
   // Pre-fill suggestions from API
   historicalAverage?: number;
   fixedExpenseAmount?: number;
@@ -25,6 +26,7 @@ interface SuperCategory {
   budgeted: number;
   spent: number;
   available: number;
+  lastMonthSpent?: number;
   isOverride: boolean;
   categories: Category[];
 }
@@ -80,6 +82,7 @@ export default function BudgetTable({
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const [expandedSuperCategories, setExpandedSuperCategories] = useState<Record<string, boolean>>({});
+  const [hasPreviousMonthData, setHasPreviousMonthData] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -96,6 +99,7 @@ export default function BudgetTable({
       
       setSuperCategories(data.superCategories || []);
       setExpandedSuperCategories({});
+      setHasPreviousMonthData(data.hasPreviousMonthData ?? false);
       onDataLoaded(data);
     } catch (err: any) {
       setError(err.message);
@@ -367,8 +371,11 @@ export default function BudgetTable({
     <div className="bg-white dark:bg-gray-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
       {/* Header */}
       <div className="px-4 md:px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50">
-        <div className="grid grid-cols-10 md:grid-cols-12 gap-2 md:gap-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+        <div className={`grid grid-cols-10 ${hasPreviousMonthData ? 'md:grid-cols-14' : 'md:grid-cols-12'} gap-2 md:gap-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider`}>
           <div className="col-span-4 md:col-span-5">Category</div>
+          {hasPreviousMonthData && (
+            <div className="hidden md:block md:col-span-2 text-right">Last Month</div>
+          )}
           <div className="col-span-3 md:col-span-2 text-right">Budgeted</div>
           <div className="hidden md:block md:col-span-2 text-right">Spent</div>
           <div className="col-span-3 md:col-span-2 text-right">Available</div>
@@ -396,7 +403,7 @@ export default function BudgetTable({
                 key={`super-${row.superCategory.id}`}
                 className="px-4 md:px-6 py-3 bg-slate-50/60 dark:bg-slate-900/40 hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors"
               >
-                <div className="grid grid-cols-10 md:grid-cols-12 gap-2 md:gap-4 items-start">
+                <div className={`grid grid-cols-10 ${hasPreviousMonthData ? 'md:grid-cols-14' : 'md:grid-cols-12'} gap-2 md:gap-4 items-start`}>
                   {/* Super-category Name */}
                   <div className="col-span-4 md:col-span-5 flex items-center gap-2 pt-1.5">
                     <button
@@ -423,6 +430,15 @@ export default function BudgetTable({
                       </span>
                     )}
                   </div>
+
+                  {/* Last Month (read-only) - Desktop only, conditional */}
+                  {hasPreviousMonthData && (
+                    <div className="hidden md:block md:col-span-2 text-right pt-1.5">
+                      <span className="text-sm text-slate-500 dark:text-slate-500">
+                        {formatCurrency(Number(row.superCategory.lastMonthSpent) || 0)}
+                      </span>
+                    </div>
+                  )}
 
                   {/* Budgeted Input */}
                   <div className="col-span-3 md:col-span-2">
@@ -479,7 +495,7 @@ export default function BudgetTable({
               key={row.category.id}
               className="px-4 md:px-6 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group"
             >
-              <div className="grid grid-cols-10 md:grid-cols-12 gap-2 md:gap-4 items-start">
+              <div className={`grid grid-cols-10 ${hasPreviousMonthData ? 'md:grid-cols-14' : 'md:grid-cols-12'} gap-2 md:gap-4 items-start`}>
                 {/* Category Name */}
                 <div className="col-span-4 md:col-span-5 flex items-center gap-2 pt-1.5 pl-6">
                   <span className="text-sm font-medium text-slate-900 dark:text-white">
@@ -491,6 +507,18 @@ export default function BudgetTable({
                     </span>
                   )}
                 </div>
+
+                {/* Last Month (read-only) - Desktop only, conditional */}
+                {hasPreviousMonthData && (
+                  <div className="hidden md:block md:col-span-2 text-right pt-1.5">
+                    <span className="text-sm text-slate-500 dark:text-slate-500">
+                      {(row.category.lastMonthSpent ?? 0) > 0
+                        ? formatCurrency(row.category.lastMonthSpent!)
+                        : <span className="text-slate-300 dark:text-slate-600">—</span>
+                      }
+                    </span>
+                  </div>
+                )}
 
                 {/* Budgeted Input */}
                 <div className="col-span-3 md:col-span-2">

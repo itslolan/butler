@@ -106,7 +106,7 @@ export async function applyFixedExpenseFlagsWithLLM(
         fixed_expense_status: r.label,
         fixed_expense_source: 'llm',
         fixed_expense_confidence: r.confidence,
-        fixed_expense_model: 'gemini-2.0-flash-exp',
+        fixed_expense_model: 'gemini-3-flash-preview',
         fixed_expense_explain: r.explain,
       };
     }

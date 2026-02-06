@@ -4,7 +4,7 @@ import { getBudgetCategoryHierarchy, syncTransactionCategoriesToBudget } from '@
 import { normalizeCategoryNameKey, normalizeCategoryDisplayName } from '@/lib/category-normalization';
 import { createLLMSession, logLLMCall } from '@/lib/llm-logger';
 
-const GEMINI_MODEL = 'gemini-2.0-flash';
+const GEMINI_MODEL = 'gemini-3-flash-preview';
 
 interface RawTransaction {
   date: string;

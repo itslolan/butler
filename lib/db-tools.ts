@@ -1827,7 +1827,7 @@ export async function findConflictingMemories(
     const { GoogleGenerativeAI } = await import('@google/generative-ai');
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({
-      model: 'gemini-2.0-flash-exp',
+      model: 'gemini-3-flash-preview',
       generationConfig: {
         responseMimeType: 'application/json',
         temperature: 0.3,
@@ -1863,7 +1863,7 @@ Format: ["- memory content 1", "- memory content 2"]`;
       sessionId,
       userId,
       flowName: 'memory_conflict_detection',
-      model: 'gemini-2.0-flash-exp',
+      model: 'gemini-3-flash-preview',
       systemPrompt: 'Detect memory conflicts',
       userMessage: prompt.substring(0, 1000),
       llmResult: responseText.substring(0, 1000),

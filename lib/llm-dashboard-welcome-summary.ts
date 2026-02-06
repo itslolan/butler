@@ -2,7 +2,7 @@ import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
 import { createLLMSession, logLLMCall } from '@/lib/llm-logger';
 
 // Keep this lightweight/cost-effective; summary is short.
-const GEMINI_MODEL = 'gemini-2.0-flash-exp';
+const GEMINI_MODEL = 'gemini-3-flash-preview';
 
 export interface WelcomeSummaryMetrics {
   currentMonth: string; // YYYY-MM

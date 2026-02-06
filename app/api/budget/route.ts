@@ -17,6 +17,8 @@ import {
   getCategoriesFromTransactions,
   syncTransactionCategoriesToBudget,
   initializeBudgetCategories,
+  getSpendingByCategory,
+  getPreviousMonth,
   DEFAULT_MISC_SUPER_CATEGORY,
 } from '@/lib/budget-utils';
 import { getFixedExpensesByCategory } from '@/lib/fixed-expenses';
@@ -85,6 +87,7 @@ export async function GET(request: NextRequest) {
     
     // Then fetch supplementary data in parallel
     // Reduce months for historical data to save memory
+    const previousMonth = getPreviousMonth(month);
     const [
       transactionsExist,
       incomeStats,
@@ -94,6 +97,7 @@ export async function GET(request: NextRequest) {
       fixedExpensePrefillByCategory,
       superCategories,
       superBudgets,
+      previousMonthSpending,
     ] = await Promise.all([
       hasTransactions(userId),
       getMedianMonthlyIncome(userId, 6), // Reduced from 12 to 6 months
@@ -103,6 +107,7 @@ export async function GET(request: NextRequest) {
       getFixedExpensePrefillByCategory(userId, month),
       getBudgetSuperCategories(userId),
       getSuperBudgetsForMonth(userId, month),
+      getSpendingByCategory(userId, previousMonth),
     ]);
     
     // Check if this is a past month with no budgets - use baseline data
@@ -179,6 +184,9 @@ export async function GET(request: NextRequest) {
       category => allowedCategoryTypes.has((category as any).category_type ?? 'expense')
     );
 
+    // Determine if previous month has any transaction data
+    const hasPreviousMonthData = Object.keys(previousMonthSpending).length > 0;
+
     const categoryBudgets = filteredCategories.map((category) => {
       const categoryId = category.id ?? '';
       const resolvedSuperCategoryId = category.super_category_id || miscSuperCategoryId || '';
@@ -189,6 +197,7 @@ export async function GET(request: NextRequest) {
         normalizedSuperCategoryId ? superBudgetOverrides.has(normalizedSuperCategoryId) : false;
       const budget = data.budgets.find(b => b.category_id === categoryId);
       const spent = data.spending[category.name] || 0;
+      const lastMonthSpent = previousMonthSpending[category.name] || 0;
       const historicalAverage = historicalSpending.categoryAverages[category.name] || 0;
       const fixedExpensePrefillAmount = fixedExpensePrefillByCategory[category.name] || 0;
       const fixedExpenseAmount =
@@ -230,6 +239,7 @@ export async function GET(request: NextRequest) {
         budgeted: roundedBudgeted, // Round to whole dollars
         spent: Number(spent),       // Ensure number
         available: roundedBudgeted - Number(spent),
+        lastMonthSpent: Math.round(lastMonthSpent * 100) / 100,
         // Pre-fill data for reference
         historicalAverage: Math.round(historicalAverage * 100) / 100,
         fixedExpenseAmount: Math.round(fixedExpenseAmount * 100) / 100,
@@ -258,6 +268,7 @@ export async function GET(request: NextRequest) {
       });
 
       const spent = categories.reduce((sum, c) => sum + c.spent, 0);
+      const lastMonthSpent = categories.reduce((sum, c) => sum + (c.lastMonthSpent || 0), 0);
       const isOverride = superCategoryId ? superBudgetOverrides.has(superCategoryId) : false;
       const overrideAmount = superCategoryId ? superBudgetOverrides.get(superCategoryId) : 0;
       const budgeted = isOverride
@@ -271,6 +282,7 @@ export async function GET(request: NextRequest) {
         budgeted,
         spent,
         available: budgeted - spent,
+        lastMonthSpent: Math.round(lastMonthSpent * 100) / 100,
         isOverride,
         categories,
       };
@@ -314,6 +326,8 @@ export async function GET(request: NextRequest) {
       categories: categoryBudgets,
       superCategories: superCategoryBudgets,
       hasTransactions: transactionsExist,
+      hasPreviousMonthData,
+      previousMonth,
       incomeStats: incomeStats,
       isBaselineData,
       baselineMonth,

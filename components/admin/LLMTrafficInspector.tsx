@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { createClient } from '@/lib/supabase-client';
 
 interface LLMEvent {
@@ -23,6 +23,27 @@ interface LLMEvent {
   created_at: string;
 }
 
+interface SessionGroup {
+  sessionId: string;
+  events: LLMEvent[];
+  /** Timestamp of the earliest event in the session */
+  startedAt: string;
+  /** Timestamp of the most recent event in the session */
+  lastEventAt: string;
+  /** Primary flow name (from first event) */
+  flowName: string;
+  /** User ID (from first event that has one) */
+  userId: string | null;
+  /** Total duration across all events */
+  totalDurationMs: number;
+  /** Count of LLM calls */
+  llmCallCount: number;
+  /** Count of tool calls */
+  toolCallCount: number;
+  /** Whether any event has an error */
+  hasError: boolean;
+}
+
 const FLOW_COLORS: Record<string, string> = {
   chat: 'bg-blue-100 text-blue-800',
   statement_parsing: 'bg-green-100 text-green-800',
@@ -40,25 +61,32 @@ const FLOW_COLORS: Record<string, string> = {
   job_processing: 'bg-violet-100 text-violet-800',
 };
 
+function truncate(text: string | null | undefined, maxLen: number): string {
+  if (!text) return '—';
+  if (text.length <= maxLen) return text;
+  return text.substring(0, maxLen) + '…';
+}
+
 export default function LLMTrafficInspector() {
   const [events, setEvents] = useState<LLMEvent[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<LLMEvent | null>(null);
+  const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set());
   const [filterFlow, setFilterFlow] = useState<string>('');
   const [filterEventType, setFilterEventType] = useState<string>('');
   const [loading, setLoading] = useState(true);
-  
+
   // Get unique flow names for filter
   const uniqueFlows = Array.from(new Set(events.map(e => e.flow_name))).sort();
-  
+
   // Fetch initial events
   useEffect(() => {
     fetchEvents();
   }, []);
-  
+
   // Subscribe to real-time updates
   useEffect(() => {
     const supabase = createClient();
-    
+
     const channel = supabase
       .channel('llm_events_changes')
       .on(
@@ -70,16 +98,16 @@ export default function LLMTrafficInspector() {
         },
         (payload) => {
           const newEvent = payload.new as LLMEvent;
-          setEvents((prev) => [newEvent, ...prev].slice(0, 200)); // Keep last 200
+          setEvents((prev) => [newEvent, ...prev].slice(0, 200));
         }
       )
       .subscribe();
-    
+
     return () => {
       supabase.removeChannel(channel);
     };
   }, []);
-  
+
   async function fetchEvents() {
     try {
       setLoading(true);
@@ -93,21 +121,62 @@ export default function LLMTrafficInspector() {
       setLoading(false);
     }
   }
-  
+
   // Filter events
   const filteredEvents = events.filter((event) => {
     if (filterFlow && event.flow_name !== filterFlow) return false;
     if (filterEventType && event.event_type !== filterEventType) return false;
     return true;
   });
-  
-  // Group by session
-  const eventsBySession = filteredEvents.reduce((acc, event) => {
-    if (!acc[event.session_id]) acc[event.session_id] = [];
-    acc[event.session_id].push(event);
-    return acc;
-  }, {} as Record<string, LLMEvent[]>);
-  
+
+  // Group filtered events into sessions, sorted by most recent activity
+  const sessionGroups: SessionGroup[] = useMemo(() => {
+    const groupMap: Record<string, LLMEvent[]> = {};
+    for (const event of filteredEvents) {
+      if (!groupMap[event.session_id]) groupMap[event.session_id] = [];
+      groupMap[event.session_id].push(event);
+    }
+
+    const groups: SessionGroup[] = Object.entries(groupMap).map(([sessionId, sessionEvents]) => {
+      // Sort events within session chronologically (oldest first)
+      const sorted = [...sessionEvents].sort(
+        (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
+      const firstEvent = sorted[0];
+      const lastEvent = sorted[sorted.length - 1];
+      const userId = sorted.find(e => e.user_id)?.user_id ?? null;
+
+      return {
+        sessionId,
+        events: sorted,
+        startedAt: firstEvent.created_at,
+        lastEventAt: lastEvent.created_at,
+        flowName: firstEvent.flow_name,
+        userId,
+        totalDurationMs: sorted.reduce((sum, e) => sum + (e.duration_ms || 0), 0),
+        llmCallCount: sorted.filter(e => e.event_type === 'llm_call').length,
+        toolCallCount: sorted.filter(e => e.event_type === 'tool_call').length,
+        hasError: sorted.some(e => !!e.tool_error),
+      };
+    });
+
+    // Sort sessions by most recent activity (newest first)
+    groups.sort((a, b) => new Date(b.lastEventAt).getTime() - new Date(a.lastEventAt).getTime());
+    return groups;
+  }, [filteredEvents]);
+
+  function toggleSession(sessionId: string) {
+    setExpandedSessions((prev) => {
+      const next = new Set(prev);
+      if (next.has(sessionId)) {
+        next.delete(sessionId);
+      } else {
+        next.add(sessionId);
+      }
+      return next;
+    });
+  }
+
   function getRelativeTime(timestamp: string) {
     const now = new Date();
     const then = new Date(timestamp);
@@ -115,17 +184,17 @@ export default function LLMTrafficInspector() {
     const diffSec = Math.floor(diffMs / 1000);
     const diffMin = Math.floor(diffSec / 60);
     const diffHour = Math.floor(diffMin / 60);
-    
+
     if (diffSec < 60) return `${diffSec}s ago`;
     if (diffMin < 60) return `${diffMin}m ago`;
     if (diffHour < 24) return `${diffHour}h ago`;
     return `${Math.floor(diffHour / 24)}d ago`;
   }
-  
+
   function copyToClipboard(text: string) {
     navigator.clipboard.writeText(text);
   }
-  
+
   return (
     <div className="bg-white rounded-lg shadow">
       {/* Filters */}
@@ -148,7 +217,7 @@ export default function LLMTrafficInspector() {
               ))}
             </select>
           </div>
-          
+
           <div className="flex-1">
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Event Type
@@ -163,7 +232,7 @@ export default function LLMTrafficInspector() {
               <option value="tool_call">Tool Call</option>
             </select>
           </div>
-          
+
           <div className="flex items-end">
             <button
               onClick={fetchEvents}
@@ -173,77 +242,182 @@ export default function LLMTrafficInspector() {
             </button>
           </div>
         </div>
-        
+
         <div className="mt-2 text-sm text-gray-600">
-          Showing {filteredEvents.length} events
+          {sessionGroups.length} sessions · {filteredEvents.length} events
         </div>
       </div>
-      
-      {/* Event List */}
+
+      {/* Session Accordion List */}
       <div className="max-h-[600px] overflow-y-auto">
         {loading ? (
           <div className="p-8 text-center text-gray-500">Loading events...</div>
-        ) : filteredEvents.length === 0 ? (
+        ) : sessionGroups.length === 0 ? (
           <div className="p-8 text-center text-gray-500">No events found</div>
         ) : (
           <div className="divide-y divide-gray-200">
-            {Object.entries(eventsBySession).map(([sessionId, sessionEvents]) => (
-              <div key={sessionId} className="p-4 hover:bg-gray-50">
-                {sessionEvents.map((event, idx) => (
+            {sessionGroups.map((session) => {
+              const isExpanded = expandedSessions.has(session.sessionId);
+              return (
+                <div key={session.sessionId}>
+                  {/* Session header row (click to expand/collapse) */}
                   <div
-                    key={event.id}
-                    className={`${idx > 0 ? 'ml-6 mt-2 pt-2 border-t border-gray-100' : ''} cursor-pointer`}
-                    onClick={() => setSelectedEvent(event)}
+                    className="px-4 py-3 hover:bg-gray-50 cursor-pointer select-none"
+                    onClick={() => toggleSession(session.sessionId)}
                   >
                     <div className="flex items-center gap-2">
+                      {/* Chevron */}
+                      <svg
+                        className={`w-4 h-4 text-gray-400 transition-transform flex-shrink-0 ${isExpanded ? 'rotate-90' : ''}`}
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth={2}
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                      </svg>
+
                       <span
                         className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                          FLOW_COLORS[event.flow_name] || 'bg-gray-100 text-gray-800'
+                          FLOW_COLORS[session.flowName] || 'bg-gray-100 text-gray-800'
                         }`}
                       >
-                        {event.flow_name}
+                        {session.flowName}
                       </span>
-                      
-                      <span className="text-xs font-medium text-gray-700">
-                        {event.event_type === 'llm_call' ? '🤖 LLM Call' : '🔧 Tool Call'}
+
+                      <span className="text-xs text-gray-600">
+                        {session.llmCallCount > 0 && (
+                          <span className="mr-2">🤖 {session.llmCallCount}</span>
+                        )}
+                        {session.toolCallCount > 0 && (
+                          <span>🔧 {session.toolCallCount}</span>
+                        )}
                       </span>
-                      
-                      {event.event_type === 'tool_call' && (
-                        <span className="text-xs text-gray-600">
-                          {event.tool_name}
-                        </span>
+
+                      {session.hasError && (
+                        <span className="text-xs text-red-600 font-medium">ERROR</span>
                       )}
-                      
-                      {event.has_attachments && (
-                        <span className="text-xs" title={event.attachment_type || 'attachment'}>
-                          📎
-                        </span>
-                      )}
-                      
+
                       <span className="ml-auto text-xs text-gray-500">
-                        {getRelativeTime(event.created_at)}
+                        {getRelativeTime(session.lastEventAt)}
                       </span>
-                      
-                      {event.duration_ms && (
-                        <span className="text-xs text-gray-500">
-                          {event.duration_ms}ms
-                        </span>
-                      )}
+
+                      <span className="text-xs text-gray-400">
+                        {session.totalDurationMs}ms total
+                      </span>
                     </div>
-                    
-                    {event.user_id && (
-                      <div className="mt-1 text-xs text-gray-500">
-                        User: {event.user_id.substring(0, 8)}...
-                      </div>
-                    )}
+
+                    <div className="mt-1 flex items-center gap-3 text-xs text-gray-400 ml-6">
+                      {session.userId && (
+                        <span>User: {session.userId.substring(0, 8)}…</span>
+                      )}
+                      <span className="font-mono">
+                        {session.sessionId.substring(0, 8)}…
+                      </span>
+                      <span>
+                        {session.events.length} event{session.events.length !== 1 ? 's' : ''}
+                      </span>
+                    </div>
                   </div>
-                ))}
-              </div>
-            ))}
+
+                  {/* Expanded events */}
+                  {isExpanded && (
+                    <div className="border-t border-gray-100 bg-gray-50">
+                      {session.events.map((event, idx) => (
+                        <div
+                          key={event.id}
+                          className={`px-4 py-3 ml-6 cursor-pointer hover:bg-gray-100 ${
+                            idx < session.events.length - 1 ? 'border-b border-gray-100' : ''
+                          }`}
+                          onClick={() => setSelectedEvent(event)}
+                        >
+                          {/* Event row header */}
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-gray-400 font-mono w-5 text-right flex-shrink-0">
+                              {idx + 1}.
+                            </span>
+
+                            <span className="text-xs font-medium text-gray-700">
+                              {event.event_type === 'llm_call' ? '🤖 LLM Call' : '🔧 Tool Call'}
+                            </span>
+
+                            {event.event_type === 'llm_call' && event.model && (
+                              <span className="text-xs text-gray-500 font-mono">
+                                {event.model}
+                              </span>
+                            )}
+
+                            {event.event_type === 'tool_call' && event.tool_name && (
+                              <span className="text-xs text-gray-600 font-mono">
+                                {event.tool_name}
+                              </span>
+                            )}
+
+                            {event.has_attachments && (
+                              <span className="text-xs" title={event.attachment_type || 'attachment'}>
+                                📎
+                              </span>
+                            )}
+
+                            {event.tool_error && (
+                              <span className="text-xs text-red-600 font-medium">ERROR</span>
+                            )}
+
+                            <span className="ml-auto text-xs text-gray-500">
+                              {getRelativeTime(event.created_at)}
+                            </span>
+
+                            {event.duration_ms != null && (
+                              <span className="text-xs text-gray-500">
+                                {event.duration_ms}ms
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Self-contained input/output preview */}
+                          {event.event_type === 'llm_call' && (
+                            <div className="mt-2 ml-7 space-y-1">
+                              <div className="text-xs text-gray-500">
+                                <span className="font-medium text-gray-600">Input:</span>{' '}
+                                {truncate(event.user_message, 120)}
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                <span className="font-medium text-gray-600">Output:</span>{' '}
+                                {truncate(event.llm_result, 120)}
+                              </div>
+                            </div>
+                          )}
+
+                          {event.event_type === 'tool_call' && (
+                            <div className="mt-2 ml-7 space-y-1">
+                              <div className="text-xs text-gray-500">
+                                <span className="font-medium text-gray-600">Args:</span>{' '}
+                                {truncate(
+                                  event.tool_arguments ? JSON.stringify(event.tool_arguments) : null,
+                                  120
+                                )}
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                <span className="font-medium text-gray-600">Result:</span>{' '}
+                                {event.tool_error ? (
+                                  <span className="text-red-600">{truncate(event.tool_error, 120)}</span>
+                                ) : (
+                                  truncate(event.tool_result, 120)
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
-      
+
       {/* Detail Modal */}
       {selectedEvent && (
         <div
@@ -265,7 +439,7 @@ export default function LLMTrafficInspector() {
                 ✕
               </button>
             </div>
-            
+
             <div className="p-6 space-y-4">
               {/* Metadata */}
               <div className="grid grid-cols-2 gap-4 text-sm">
@@ -279,126 +453,92 @@ export default function LLMTrafficInspector() {
                   <span className="font-medium text-gray-700">Type:</span> {selectedEvent.event_type}
                 </div>
                 <div>
-                  <span className="font-medium text-gray-700">Duration:</span> {selectedEvent.duration_ms}ms
+                  <span className="font-medium text-gray-700">Duration:</span>{' '}
+                  {selectedEvent.duration_ms != null ? `${selectedEvent.duration_ms}ms` : '—'}
                 </div>
                 <div>
-                  <span className="font-medium text-gray-700">Time:</span> {new Date(selectedEvent.created_at).toLocaleString()}
+                  <span className="font-medium text-gray-700">Time:</span>{' '}
+                  {new Date(selectedEvent.created_at).toLocaleString()}
+                </div>
+                {selectedEvent.user_id && (
+                  <div>
+                    <span className="font-medium text-gray-700">User:</span>{' '}
+                    <span className="font-mono text-xs">{selectedEvent.user_id}</span>
+                  </div>
+                )}
+                <div>
+                  <span className="font-medium text-gray-700">Session:</span>{' '}
+                  <span className="font-mono text-xs">{selectedEvent.session_id}</span>
                 </div>
               </div>
-              
-              {/* LLM Call Details */}
+
+              {/* LLM Call Details — always show all fields */}
               {selectedEvent.event_type === 'llm_call' && (
                 <>
-                  {selectedEvent.model && (
-                    <div>
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="text-sm font-medium text-gray-700">Model</span>
-                      </div>
-                      <div className="text-sm text-gray-900">{selectedEvent.model}</div>
+                  <div>
+                    <div className="mb-1">
+                      <span className="text-sm font-medium text-gray-700">Model</span>
                     </div>
-                  )}
-                  
-                  {selectedEvent.system_prompt && (
-                    <div>
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="text-sm font-medium text-gray-700">System Prompt</span>
-                        <button
-                          onClick={() => copyToClipboard(selectedEvent.system_prompt || '')}
-                          className="text-xs text-blue-600 hover:text-blue-800"
-                        >
-                          Copy
-                        </button>
-                      </div>
-                      <pre className="text-xs bg-gray-50 p-3 rounded border border-gray-200 overflow-x-auto whitespace-pre-wrap">
-                        {selectedEvent.system_prompt}
-                      </pre>
+                    <div className="text-sm text-gray-900 font-mono">
+                      {selectedEvent.model || <span className="text-gray-400 italic">Not logged</span>}
                     </div>
-                  )}
-                  
-                  {selectedEvent.user_message && (
-                    <div>
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="text-sm font-medium text-gray-700">User Message</span>
-                        <button
-                          onClick={() => copyToClipboard(selectedEvent.user_message || '')}
-                          className="text-xs text-blue-600 hover:text-blue-800"
-                        >
-                          Copy
-                        </button>
-                      </div>
-                      <pre className="text-xs bg-gray-50 p-3 rounded border border-gray-200 overflow-x-auto whitespace-pre-wrap">
-                        {selectedEvent.user_message}
-                      </pre>
-                    </div>
-                  )}
-                  
+                  </div>
+
+                  <DetailSection
+                    label="System Prompt"
+                    content={selectedEvent.system_prompt}
+                    onCopy={copyToClipboard}
+                  />
+
+                  <DetailSection
+                    label="User Message"
+                    content={selectedEvent.user_message}
+                    onCopy={copyToClipboard}
+                  />
+
                   {selectedEvent.has_attachments && (
                     <div className="text-sm">
-                      <span className="font-medium text-gray-700">Attachment:</span> {selectedEvent.attachment_type}
+                      <span className="font-medium text-gray-700">Attachment:</span>{' '}
+                      {selectedEvent.attachment_type || 'Unknown type'}
                     </div>
                   )}
-                  
-                  {selectedEvent.llm_result && (
-                    <div>
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="text-sm font-medium text-gray-700">LLM Result</span>
-                        <button
-                          onClick={() => copyToClipboard(selectedEvent.llm_result || '')}
-                          className="text-xs text-blue-600 hover:text-blue-800"
-                        >
-                          Copy
-                        </button>
-                      </div>
-                      <pre className="text-xs bg-gray-50 p-3 rounded border border-gray-200 overflow-x-auto whitespace-pre-wrap">
-                        {selectedEvent.llm_result}
-                      </pre>
-                    </div>
-                  )}
+
+                  <DetailSection
+                    label="LLM Result"
+                    content={selectedEvent.llm_result}
+                    onCopy={copyToClipboard}
+                  />
                 </>
               )}
-              
-              {/* Tool Call Details */}
+
+              {/* Tool Call Details — always show all fields */}
               {selectedEvent.event_type === 'tool_call' && (
                 <>
                   <div>
-                    <span className="text-sm font-medium text-gray-700">Tool Name:</span>
-                    <div className="text-sm text-gray-900 mt-1">{selectedEvent.tool_name}</div>
+                    <div className="mb-1">
+                      <span className="text-sm font-medium text-gray-700">Tool Name</span>
+                    </div>
+                    <div className="text-sm text-gray-900 font-mono">
+                      {selectedEvent.tool_name || <span className="text-gray-400 italic">Not logged</span>}
+                    </div>
                   </div>
-                  
-                  {selectedEvent.tool_arguments && (
-                    <div>
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="text-sm font-medium text-gray-700">Arguments</span>
-                        <button
-                          onClick={() => copyToClipboard(JSON.stringify(selectedEvent.tool_arguments, null, 2))}
-                          className="text-xs text-blue-600 hover:text-blue-800"
-                        >
-                          Copy
-                        </button>
-                      </div>
-                      <pre className="text-xs bg-gray-50 p-3 rounded border border-gray-200 overflow-x-auto">
-                        {JSON.stringify(selectedEvent.tool_arguments, null, 2)}
-                      </pre>
-                    </div>
-                  )}
-                  
-                  {selectedEvent.tool_result && (
-                    <div>
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="text-sm font-medium text-gray-700">Result</span>
-                        <button
-                          onClick={() => copyToClipboard(selectedEvent.tool_result || '')}
-                          className="text-xs text-blue-600 hover:text-blue-800"
-                        >
-                          Copy
-                        </button>
-                      </div>
-                      <pre className="text-xs bg-gray-50 p-3 rounded border border-gray-200 overflow-x-auto whitespace-pre-wrap">
-                        {selectedEvent.tool_result}
-                      </pre>
-                    </div>
-                  )}
-                  
+
+                  <DetailSection
+                    label="Arguments"
+                    content={
+                      selectedEvent.tool_arguments
+                        ? JSON.stringify(selectedEvent.tool_arguments, null, 2)
+                        : null
+                    }
+                    onCopy={copyToClipboard}
+                  />
+
+                  <DetailSection
+                    label="Result"
+                    content={selectedEvent.tool_result}
+                    onCopy={copyToClipboard}
+                  />
+
                   {selectedEvent.tool_error && (
                     <div>
                       <div className="flex justify-between items-center mb-2">
@@ -419,6 +559,42 @@ export default function LLMTrafficInspector() {
               )}
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Reusable section for displaying a text field with copy button. Always rendered even when content is null. */
+function DetailSection({
+  label,
+  content,
+  onCopy,
+}: {
+  label: string;
+  content: string | null | undefined;
+  onCopy: (text: string) => void;
+}) {
+  return (
+    <div>
+      <div className="flex justify-between items-center mb-2">
+        <span className="text-sm font-medium text-gray-700">{label}</span>
+        {content && (
+          <button
+            onClick={() => onCopy(content)}
+            className="text-xs text-blue-600 hover:text-blue-800"
+          >
+            Copy
+          </button>
+        )}
+      </div>
+      {content ? (
+        <pre className="text-xs bg-gray-50 p-3 rounded border border-gray-200 overflow-x-auto whitespace-pre-wrap max-h-80 overflow-y-auto">
+          {content}
+        </pre>
+      ) : (
+        <div className="text-xs text-gray-400 italic bg-gray-50 p-3 rounded border border-gray-200">
+          Not logged
         </div>
       )}
     </div>

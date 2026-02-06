@@ -364,7 +364,7 @@ function getMonthRange(month: string): { start: string; end: string; endDay: num
   return { start, end, endDay: endDate.getUTCDate() };
 }
 
-function getPreviousMonth(month: string): string {
+export function getPreviousMonth(month: string): string {
   const [yearStr, monthStr] = month.split('-');
   const year = Number(yearStr);
   const monthIndex = Number(monthStr) - 1;

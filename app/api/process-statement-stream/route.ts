@@ -500,7 +500,7 @@ export async function POST(request: NextRequest) {
             
             if (matchingAccounts.length === 1) {
               // Found exactly one match - use it automatically
-              resolvedAccountId = matchingAccounts[0].id;
+              resolvedAccountId = matchingAccounts[0].id ?? null;
               accountMatchInfo = {
                 needsConfirmation: false,
                 matchedAccount: matchingAccounts[0],
@@ -527,7 +527,7 @@ export async function POST(request: NextRequest) {
                   issuer: extractedData.issuer || undefined,
                   source: 'statement',
                 });
-                resolvedAccountId = account.id;
+                resolvedAccountId = account.id ?? null;
                 sendUpdate('account-match', `✅ Created new account: ${officialName || `****${last4}`}`, 'complete');
               } catch (error) {
                 console.error('[process-statement] Error creating account:', error);
@@ -543,7 +543,7 @@ export async function POST(request: NextRequest) {
                 issuer: extractedData.issuer || undefined,
                 source: 'statement',
               });
-              resolvedAccountId = account.id;
+              resolvedAccountId = account.id ?? null;
               sendUpdate('account-match', `✅ Linked to account: ${officialName}`, 'complete');
             } catch (error) {
               console.error('[process-statement] Error creating account:', error);
