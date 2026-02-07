@@ -77,7 +77,7 @@ Generate 2-4 contextual action suggestions for this transaction.`;
     // Log the LLM call
     logLLMCall({
       sessionId,
-      userId,
+      userId: undefined,
       flowName: 'action_generation',
       model: GEMINI_MODEL,
       systemPrompt: ACTION_GENERATION_PROMPT.substring(0, 1000),
