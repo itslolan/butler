@@ -86,6 +86,8 @@ export default function LLMTrafficInspector() {
   // Subscribe to real-time updates
   useEffect(() => {
     const supabase = createClient();
+    
+    if (!supabase) return;
 
     const channel = supabase
       .channel('llm_events_changes')
