@@ -230,7 +230,7 @@ async function processFileBuffer(opts: {
     userId,
     flowName: 'job_processing',
     model: GEMINI_MODEL,
-    systemPrompt: systemPrompt.substring(0, 3000),
+    systemPrompt: SYSTEM_PROMPT.substring(0, 3000),
     userMessage: 'Extract all information from this financial document',
     llmResult: content.substring(0, 2000),
     hasAttachments: true,
@@ -289,7 +289,7 @@ async function processFileBuffer(opts: {
 
       if (matchingAccounts.length === 1) {
         // Found exactly one match - use it automatically
-        resolvedAccountId = matchingAccounts[0].id;
+        resolvedAccountId = matchingAccounts[0].id ?? null;
         accountMatchInfo = {
           needsConfirmation: false,
           matchedAccount: matchingAccounts[0],
@@ -316,7 +316,7 @@ async function processFileBuffer(opts: {
             issuer: extractedData.issuer || undefined,
             source: 'statement',
           });
-          resolvedAccountId = account.id;
+          resolvedAccountId = account.id ?? null;
           sendUpdate('account-match', `✅ Created new account: ${officialName || `****${last4}`}`, 'complete');
         } catch (error) {
           console.error('[worker] Error creating account:', error);
@@ -332,7 +332,7 @@ async function processFileBuffer(opts: {
           issuer: extractedData.issuer || undefined,
           source: 'statement',
         });
-        resolvedAccountId = account.id;
+        resolvedAccountId = account.id ?? null;
         sendUpdate('account-match', `✅ Linked to account: ${officialName}`, 'complete');
       } catch (error) {
         console.error('[worker] Error creating account:', error);
