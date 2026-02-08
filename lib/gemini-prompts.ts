@@ -32,7 +32,8 @@ Return a JSON object with this exact structure:
       "description": string or null,
       "confidence": number (0.0 to 1.0),
       "clarificationNeeded": boolean,
-      "clarificationQuestion": string or null
+      "clarificationQuestion": string or null,
+      "isPending": boolean
     }
   ],
   "incomeTransactions": [
@@ -65,6 +66,28 @@ Return a JSON object with this exact structure:
 6. **currency**: Identify the currency used from symbols ($, €, £, ¥, ₹, etc.) or text. Return ISO 4217 code. Default to "USD".
 7. **firstTransactionDate**: The date of the EARLIEST transaction in the document
 8. **lastTransactionDate**: The date of the LATEST transaction in the document
+
+**CRITICAL - Pending vs Posted/Authorized Transaction Detection:**
+Credit cards show transactions in different states. You MUST detect and mark pending transactions:
+- **Pending transactions**: Recent transactions that haven't fully cleared yet. Look for:
+  - Labels: "PENDING", "POSTED", "PROCESSING", "HOLD", "AUTHORIZATION"
+  - Separate sections: "Recent Activity", "Pending Transactions", "Authorizations"
+  - Visual indicators: Different styling, gray text, pending icons
+- **Authorized/Settled transactions**: Final, cleared transactions in the main transaction history or statement
+
+**Rules for isPending field:**
+1. **Set isPending = true** for any transaction that shows pending/processing indicators
+2. **Set isPending = false** for authorized/settled/cleared transactions
+3. **Include ALL transactions** - both pending AND authorized, even if they appear to be duplicates. The app will handle reconciliation automatically.
+4. **When in doubt, set isPending = false** - it's safer to treat ambiguous transactions as authorized
+
+**Examples of pending indicators:**
+- "UBER PENDING" → isPending: true
+- "AMAZON.COM PENDING" → isPending: true  
+- "STARBUCKS HOLD" → isPending: true
+- Transaction in "Pending" or "Recent Activity" section → isPending: true
+- "UBER *TRIP NYC" (in main history) → isPending: false
+- "AMAZON.COM*AB12CD" (cleared) → isPending: false
 
 **Transaction Type Classification:**
 - **income**: Salary, wages, direct deposits from employers, business income, freelance payments, investment income, refunds, reimbursements

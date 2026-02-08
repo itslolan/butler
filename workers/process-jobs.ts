@@ -18,12 +18,14 @@ import {
   searchTransactions,
   findAccountsByLast4,
   getOrCreateAccount,
+  getPendingTransactions,
+  deleteTransactionsByIds,
 } from '../lib/db-tools';
 import { Transaction } from '../lib/supabase';
 import { calculateMonthlySnapshots } from '../lib/snapshot-calculator';
 import { generateSuggestedActions } from '../lib/action-generator';
 import { applyFixedExpenseDetectionToTransactions, persistFixedExpenseFlags } from '../lib/fixed-expense-detector';
-import { deduplicateTransactionsSimple } from '../lib/deduplication-test';
+import { deduplicateTransactionsSimple, reconcilePendingTransactions } from '../lib/deduplication-test';
 import { BASE_SYSTEM_PROMPT, GEMINI_MODEL } from '../lib/gemini-prompts';
 import { getBudgetCategories } from '../lib/budget-utils';
 import { normalizeCategoryNameKey, normalizeCategoryDisplayName } from '../lib/category-normalization';
@@ -341,36 +343,95 @@ async function processFileBuffer(opts: {
     }
   }
 
-  // Duplicate detection
+  // Duplicate detection and pending transaction reconciliation
   let transactionsToInsert = extractedData.transactions || [];
   let duplicatesInfo = { duplicatesFound: 0, duplicateExamples: [] as string[] };
+  let pendingReconciliationInfo = { pendingReconciled: 0, pendingIdsToDelete: [] as string[], reconciledFromIds: new Map<number, string>() };
 
   if (transactionsToInsert.length > 0 && extractedData.firstTransactionDate && extractedData.lastTransactionDate) {
-    sendUpdate('duplicate-check', '🔍 Checking for duplicate transactions...', 'processing');
+    sendUpdate('duplicate-check', '🔍 Checking for duplicates and pending transactions...', 'processing');
+
+    // Expand date range by 5 days to catch pending/posted matches
+    const startDate = new Date(extractedData.firstTransactionDate);
+    startDate.setDate(startDate.getDate() - 5);
+    const endDate = new Date(extractedData.lastTransactionDate);
+    endDate.setDate(endDate.getDate() + 5);
 
     const existingTransactions = await searchTransactions(userId, {
       accountName: extractedData.accountName || undefined,
-      startDate: extractedData.firstTransactionDate,
-      endDate: extractedData.lastTransactionDate,
+      startDate: startDate.toISOString().split('T')[0],
+      endDate: endDate.toISOString().split('T')[0],
     });
 
-    if (existingTransactions.length > 0) {
-      const deduplicationResult = deduplicateTransactionsSimple(
+    // Also fetch pending transactions specifically
+    let pendingTransactions: Array<any> = [];
+    try {
+      pendingTransactions = await getPendingTransactions(
+        userId,
+        resolvedAccountId,
+        startDate.toISOString().split('T')[0],
+        endDate.toISOString().split('T')[0]
+      );
+    } catch (e) {
+      log('warn', 'getPendingTransactions failed, column may not be migrated', { error: e });
+    }
+
+    // Merge existing and pending, ensuring we have id and is_pending
+    const allExisting = existingTransactions.map(t => ({
+      id: t.id || '',
+      date: t.date instanceof Date ? t.date.toISOString().split('T')[0] : String(t.date),
+      merchant: t.merchant,
+      amount: Number(t.amount),
+      category: t.category,
+      description: t.description,
+      is_pending: pendingTransactions.some(p => p.id === t.id) || (t as any).is_pending || false,
+    }));
+
+    if (allExisting.length > 0) {
+      const reconciliationResult = reconcilePendingTransactions(
         transactionsToInsert,
-        existingTransactions.map(t => ({
-          date: t.date instanceof Date ? t.date.toISOString().split('T')[0] : (t.date as any),
-          merchant: t.merchant,
-          amount: Number(t.amount),
-          category: t.category,
-          description: t.description,
-        }))
+        allExisting
       );
 
-      transactionsToInsert = deduplicationResult.uniqueTransactions;
+      // Store which transactions need reconciled_from_id
+      const reconciledFromIds = new Map<number, string>();
+      reconciliationResult.reconciledTransactions.forEach((rt) => {
+        const txnIdx = transactionsToInsert.findIndex((t: any) => 
+          t.date === rt.transaction.date && 
+          t.merchant === rt.transaction.merchant && 
+          Math.abs(t.amount - rt.transaction.amount) < 0.01
+        );
+        if (txnIdx >= 0) {
+          reconciledFromIds.set(txnIdx, rt.reconciledFromId);
+        }
+      });
+
+      // Delete reconciled pending transactions
+      if (reconciliationResult.pendingIdsToDelete.length > 0) {
+        try {
+          const deletedCount = await deleteTransactionsByIds(reconciliationResult.pendingIdsToDelete);
+          log('info', 'Deleted reconciled pending transactions', { count: deletedCount });
+        } catch (e) {
+          log('error', 'Failed to delete pending transactions', { error: e });
+        }
+      }
+
+      transactionsToInsert = reconciliationResult.transactionsToInsert;
       duplicatesInfo = {
-        duplicatesFound: deduplicationResult.duplicatesFound,
-        duplicateExamples: deduplicationResult.duplicateExamples,
+        duplicatesFound: reconciliationResult.stats.exactDuplicatesSkipped,
+        duplicateExamples: [],
       };
+      pendingReconciliationInfo = {
+        pendingReconciled: reconciliationResult.stats.pendingReconciled,
+        pendingIdsToDelete: reconciliationResult.pendingIdsToDelete,
+        reconciledFromIds,
+      };
+
+      log('info', 'Reconciliation complete', {
+        duplicatesSkipped: duplicatesInfo.duplicatesFound,
+        pendingReconciled: pendingReconciliationInfo.pendingReconciled,
+        transactionsToInsert: transactionsToInsert.length,
+      });
     }
   }
 
@@ -490,7 +551,7 @@ async function processFileBuffer(opts: {
       existingBudgetByKey.set(normalizeCategoryNameKey(name), normalizeCategoryDisplayName(name));
     }
 
-    const transactions: Transaction[] = transactionsToInsert.map((txn: any) => ({
+    const transactions: Transaction[] = transactionsToInsert.map((txn: any, idx: number) => ({
       user_id: userId,
       document_id: documentId,
       account_id: resolvedAccountId,  // Link transaction to account
@@ -510,6 +571,9 @@ async function processFileBuffer(opts: {
       suggested_actions: txn.suggestedActions || null,
       currency: extractedData.currency || 'USD',
       metadata: txn.metadata || {},
+      // Pending transaction tracking
+      is_pending: txn.isPending === true,
+      reconciled_from_id: pendingReconciliationInfo.reconciledFromIds.get(idx) || null,
     }));
 
     const insertedTransactions = await insertTransactions(transactions);

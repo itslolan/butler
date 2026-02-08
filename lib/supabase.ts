@@ -167,6 +167,9 @@ export interface Transaction {
   source?: 'file_upload' | 'plaid';
   // Todo dismissal
   is_dismissed?: boolean;
+  // Pending transaction tracking (for credit card pending vs posted reconciliation)
+  is_pending?: boolean;
+  reconciled_from_id?: string | null;  // ID of the pending transaction this one replaced
 }
 
 export interface AccountSnapshot {

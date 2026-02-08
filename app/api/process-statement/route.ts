@@ -31,7 +31,8 @@ Return a JSON object with this exact structure:
       "merchant": string,
       "amount": number,
       "category": string or null,
-      "description": string or null
+      "description": string or null,
+      "isPending": boolean
     }
   ],
   "metadataSummary": "A concise markdown-formatted summary of key information from this statement. Include: issuer, account number (last 4 digits only), statement period, balances, credit limit if applicable, notable spending patterns, and any important notices or alerts."
@@ -43,6 +44,19 @@ Return a JSON object with this exact structure:
 3. **issuer**: The bank or financial institution name (e.g., "Chase", "Bank of America", "American Express")
 4. **firstTransactionDate**: The date of the EARLIEST transaction in the document
 5. **lastTransactionDate**: The date of the LATEST transaction in the document
+
+**CRITICAL - Pending vs Posted/Authorized Transaction Detection:**
+Credit cards show transactions in different states. You MUST detect and mark pending transactions:
+- **Pending transactions**: Recent transactions that haven't fully cleared yet. Look for:
+  - Labels: "PENDING", "POSTED", "PROCESSING", "HOLD", "AUTHORIZATION"
+  - Separate sections: "Recent Activity", "Pending Transactions", "Authorizations"
+- **Authorized/Settled transactions**: Final, cleared transactions in the main transaction history or statement
+
+**Rules for isPending field:**
+1. **Set isPending = true** for any transaction that shows pending/processing indicators
+2. **Set isPending = false** for authorized/settled/cleared transactions
+3. **Include ALL transactions** - both pending AND authorized. The app will handle reconciliation automatically.
+4. **When in doubt, set isPending = false** - it's safer to treat ambiguous transactions as authorized
 
 Extract all transactions visible in the document. Categorize them logically (Food, Travel, Utilities, Entertainment, Shopping, etc.).
 For amounts, use positive numbers for charges/debits and negative numbers for payments/credits.
@@ -223,65 +237,127 @@ export async function POST(request: NextRequest) {
     let transactionsToInsert = extractedData.transactions || [];
     let duplicatesInfo = { duplicatesFound: 0, duplicateExamples: [] as string[] };
 
-    console.log('\n=== DUPLICATE DETECTION START ===');
+    console.log('\n=== DUPLICATE DETECTION & PENDING RECONCILIATION START ===');
     console.log(`Extracted transactions: ${transactionsToInsert.length}`);
     console.log(`First transaction date: ${extractedData.firstTransactionDate}`);
     console.log(`Last transaction date: ${extractedData.lastTransactionDate}`);
     console.log(`Account name: ${extractedData.accountName}`);
+
+    let pendingReconciliationInfo = { pendingReconciled: 0, pendingIdsToDelete: [] as string[], reconciledFromIds: new Map<number, string>() };
 
     if (transactionsToInsert.length > 0) {
       addStep('extraction', `💳 Found ${transactionsToInsert.length} transaction${transactionsToInsert.length !== 1 ? 's' : ''} in the document`, 'complete');
     }
 
     if (transactionsToInsert.length > 0 && extractedData.firstTransactionDate && extractedData.lastTransactionDate) {
-      addStep('duplicate-check', '🔍 Checking for duplicate transactions...', 'processing');
+      addStep('duplicate-check', '🔍 Checking for duplicates and pending transactions...', 'processing');
       
       // Fetch existing transactions in the same date range for this account
-      const { searchTransactions } = await import('@/lib/db-tools');
+      const { searchTransactions, getPendingTransactions, deleteTransactionsByIds } = await import('@/lib/db-tools');
+      
+      // Expand date range by 5 days to catch pending/posted matches
+      const startDate = new Date(extractedData.firstTransactionDate);
+      startDate.setDate(startDate.getDate() - 5);
+      const endDate = new Date(extractedData.lastTransactionDate);
+      endDate.setDate(endDate.getDate() + 5);
       
       const existingTransactions = await searchTransactions(userId, {
         accountName: extractedData.accountName || undefined,
-        startDate: extractedData.firstTransactionDate,
-        endDate: extractedData.lastTransactionDate,
+        startDate: startDate.toISOString().split('T')[0],
+        endDate: endDate.toISOString().split('T')[0],
       });
 
+      // Also fetch pending transactions specifically
+      let pendingTransactions: Array<any> = [];
+      try {
+        pendingTransactions = await getPendingTransactions(
+          userId,
+          null, // account_id not available in this route
+          startDate.toISOString().split('T')[0],
+          endDate.toISOString().split('T')[0]
+        );
+      } catch (e) {
+        console.log('[process-statement] getPendingTransactions failed, column may not be migrated:', e);
+      }
+
       console.log(`Found ${existingTransactions.length} existing transactions in database`);
+      console.log(`Found ${pendingTransactions.length} pending transactions`);
 
-      // If there are existing transactions, deduplicate using JavaScript logic
-      if (existingTransactions.length > 0) {
-        console.log('Running deduplication...');
+      // Merge existing and pending, ensuring we have id and is_pending
+      const allExisting = existingTransactions.map(t => ({
+        id: t.id || '',
+        date: t.date instanceof Date ? t.date.toISOString().split('T')[0] : String(t.date),
+        merchant: t.merchant,
+        amount: Number(t.amount),
+        category: t.category,
+        description: t.description,
+        is_pending: pendingTransactions.some(p => p.id === t.id) || (t as any).is_pending || false,
+      }));
 
-        // Use simple JavaScript-based deduplication for reliability
-        const { deduplicateTransactionsSimple } = await import('@/lib/deduplication-test');
+      // If there are existing transactions, use reconciliation logic
+      if (allExisting.length > 0) {
+        console.log('Running pending reconciliation...');
+
+        const { reconcilePendingTransactions } = await import('@/lib/deduplication-test');
         
-        const deduplicationResult = deduplicateTransactionsSimple(
+        const reconciliationResult = reconcilePendingTransactions(
           transactionsToInsert,
-          existingTransactions.map(t => ({
-            date: t.date instanceof Date ? t.date.toISOString().split('T')[0] : t.date,
-            merchant: t.merchant,
-            amount: Number(t.amount),
-            category: t.category,
-            description: t.description,
-          }))
+          allExisting
         );
 
-        transactionsToInsert = deduplicationResult.uniqueTransactions;
+        // Store which transactions need reconciled_from_id
+        const reconciledFromIds = new Map<number, string>();
+        reconciliationResult.reconciledTransactions.forEach((rt) => {
+          const txnIdx = transactionsToInsert.findIndex((t: any) => 
+            t.date === rt.transaction.date && 
+            t.merchant === rt.transaction.merchant && 
+            Math.abs(t.amount - rt.transaction.amount) < 0.01
+          );
+          if (txnIdx >= 0) {
+            reconciledFromIds.set(txnIdx, rt.reconciledFromId);
+          }
+        });
+
+        // Delete reconciled pending transactions
+        if (reconciliationResult.pendingIdsToDelete.length > 0) {
+          try {
+            const deletedCount = await deleteTransactionsByIds(reconciliationResult.pendingIdsToDelete);
+            console.log(`[process-statement] Deleted ${deletedCount} reconciled pending transactions`);
+          } catch (e) {
+            console.error('[process-statement] Failed to delete pending transactions:', e);
+          }
+        }
+
+        transactionsToInsert = reconciliationResult.transactionsToInsert;
         duplicatesInfo = {
-          duplicatesFound: deduplicationResult.duplicatesFound,
-          duplicateExamples: deduplicationResult.duplicateExamples,
+          duplicatesFound: reconciliationResult.stats.exactDuplicatesSkipped,
+          duplicateExamples: [],
+        };
+        pendingReconciliationInfo = {
+          pendingReconciled: reconciliationResult.stats.pendingReconciled,
+          pendingIdsToDelete: reconciliationResult.pendingIdsToDelete,
+          reconciledFromIds,
         };
 
-        console.log(`Deduplication complete:`);
-        console.log(`  - ${duplicatesInfo.duplicatesFound} duplicates found`);
-        console.log(`  - ${transactionsToInsert.length} unique transactions to save`);
+        console.log(`Reconciliation complete:`);
+        console.log(`  - ${duplicatesInfo.duplicatesFound} duplicates skipped`);
+        console.log(`  - ${pendingReconciliationInfo.pendingReconciled} pending transactions reconciled`);
+        console.log(`  - ${transactionsToInsert.length} transactions to save`);
         
         processingSteps[processingSteps.length - 1].status = 'complete';
         
-        if (duplicatesInfo.duplicatesFound > 0) {
-          addStep('deduplication', `✨ Removed ${duplicatesInfo.duplicatesFound} duplicate transaction${duplicatesInfo.duplicatesFound !== 1 ? 's' : ''} - keeping only ${transactionsToInsert.length} unique transaction${transactionsToInsert.length !== 1 ? 's' : ''}`, 'complete');
-        } else {
-          addStep('deduplication', `✅ No duplicates found - all ${transactionsToInsert.length} transaction${transactionsToInsert.length !== 1 ? 's are' : ' is'} new`, 'complete');
+        // Generate status message
+        const parts: string[] = [];
+        if (pendingReconciliationInfo.pendingReconciled > 0) {
+          parts.push(`🔄 Reconciled ${pendingReconciliationInfo.pendingReconciled} pending`);
         }
+        if (duplicatesInfo.duplicatesFound > 0) {
+          parts.push(`✨ Skipped ${duplicatesInfo.duplicatesFound} duplicate${duplicatesInfo.duplicatesFound !== 1 ? 's' : ''}`);
+        }
+        if (transactionsToInsert.length > 0) {
+          parts.push(`✅ Adding ${transactionsToInsert.length} transaction${transactionsToInsert.length !== 1 ? 's' : ''}`);
+        }
+        addStep('deduplication', parts.join(' | ') || '✅ Processing complete', 'complete');
       } else {
         console.log('No existing transactions found, skipping deduplication');
         processingSteps[processingSteps.length - 1].status = 'complete';
@@ -298,7 +374,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    console.log('=== DUPLICATE DETECTION END ===\n');
+    console.log('=== DUPLICATE DETECTION & PENDING RECONCILIATION END ===\n');
 
     // Save to Supabase
     addStep('saving', '💾 Saving to database...', 'processing');
@@ -334,7 +410,7 @@ export async function POST(request: NextRequest) {
 
     // Insert only unique transactions (include account_name for easy querying)
     if (transactionsToInsert.length > 0) {
-      const transactions = transactionsToInsert.map((txn: any) => ({
+      const transactions = transactionsToInsert.map((txn: any, idx: number) => ({
         user_id: userId,
         document_id: documentId,
         account_name: accountName,
@@ -351,6 +427,9 @@ export async function POST(request: NextRequest) {
         clarification_question: txn.clarificationQuestion || null,
         suggested_actions: txn.suggestedActions || null,
         metadata: {},
+        // Pending transaction tracking
+        is_pending: txn.isPending === true,
+        reconciled_from_id: pendingReconciliationInfo.reconciledFromIds.get(idx) || null,
       }));
 
       const insertedTransactions = await insertTransactions(transactions);

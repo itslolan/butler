@@ -300,6 +300,62 @@ export async function insertTransactions(transactions: Transaction[]) {
 }
 
 /**
+ * Delete transactions by IDs
+ * Used for pending transaction reconciliation
+ */
+export async function deleteTransactionsByIds(transactionIds: string[]): Promise<number> {
+  if (transactionIds.length === 0) return 0;
+
+  const { data, error } = await supabase
+    .from('transactions')
+    .delete()
+    .in('id', transactionIds)
+    .select('id');
+
+  if (error) {
+    throw new Error(`Failed to delete transactions: ${error.message}`);
+  }
+
+  return data?.length || 0;
+}
+
+/**
+ * Get pending transactions for a user within a date range
+ * Used for pending transaction reconciliation
+ */
+export async function getPendingTransactions(
+  userId: string,
+  accountId: string | null,
+  startDate: string,
+  endDate: string
+): Promise<Array<Transaction & { id: string }>> {
+  let query = supabase
+    .from('transactions')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('is_pending', true)
+    .gte('date', startDate)
+    .lte('date', endDate);
+
+  if (accountId) {
+    query = query.eq('account_id', accountId);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    // If is_pending column doesn't exist yet, return empty array
+    if (error.message.includes('is_pending')) {
+      console.log('[getPendingTransactions] is_pending column not yet migrated, returning empty');
+      return [];
+    }
+    throw new Error(`Failed to get pending transactions: ${error.message}`);
+  }
+
+  return (data || []) as Array<Transaction & { id: string }>;
+}
+
+/**
  * Get cached LLM-generated dashboard welcome summary (if any).
  * Stored in dashboard_welcome_summaries to avoid expensive LLM calls on every load.
  */
