@@ -80,9 +80,9 @@ Generate 2-4 contextual action suggestions for this transaction.`;
       userId: undefined,
       flowName: 'action_generation',
       model: GEMINI_MODEL,
-      systemPrompt: ACTION_GENERATION_PROMPT.substring(0, 1000),
+      systemPrompt: ACTION_GENERATION_PROMPT,
       userMessage: prompt,
-      llmResult: responseText.substring(0, 1000),
+      llmResult: responseText,
       durationMs: llmDuration,
     });
     

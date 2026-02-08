@@ -178,8 +178,8 @@ export async function POST(request: NextRequest) {
           flowName: 'budget_auto_assign',
           model: GEMINI_MODEL,
           systemPrompt: `Budget auto-assign attempt ${attempts}`,
-          userMessage: prompt.substring(0, 2000),
-          llmResult: responseText.substring(0, 2000),
+          userMessage: prompt,
+          llmResult: responseText,
           durationMs: llmDuration,
         });
 

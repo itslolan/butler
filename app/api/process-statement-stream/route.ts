@@ -417,15 +417,15 @@ export async function POST(request: NextRequest) {
 
         const content = geminiResponse.response.text();
         
-        // Log the LLM call
+        // Log the LLM call (no truncation - store full data for debugging)
         logLLMCall({
           sessionId,
           userId,
           flowName: 'statement_parsing_stream',
           model: GEMINI_MODEL,
-          systemPrompt: systemPrompt.substring(0, 3000),
+          systemPrompt: systemPrompt,
           userMessage: 'Extract all information from this financial document',
-          llmResult: content.substring(0, 2000),
+          llmResult: content,
           hasAttachments: true,
           attachmentType: isPdf ? 'pdf' : 'image',
           durationMs: llmDuration,

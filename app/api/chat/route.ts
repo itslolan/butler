@@ -330,8 +330,8 @@ If no memories found, return {"memories": []}.`;
       flowName: 'memory_extraction',
       model: 'gemini-3-flash-preview',
       systemPrompt: 'Extract memories from conversation',
-      userMessage: prompt.substring(0, 2000), // Truncate for logging
-      llmResult: responseText.substring(0, 2000),
+      userMessage: prompt,
+      llmResult: responseText,
       durationMs,
     });
     
@@ -1324,9 +1324,9 @@ When answering questions, use these memories to provide context-aware responses.
             userId: effectiveUserId,
             flowName: 'chat',
             model: GEMINI_MODEL,
-            systemPrompt: SYSTEM_PROMPT.substring(0, 5000),
+            systemPrompt: SYSTEM_PROMPT,
             userMessage: lastMessage.content,
-            llmResult: result.response.text().substring(0, 2000),
+            llmResult: result.response.text(),
             durationMs: llmDuration,
           });
           let functionCallCount = 0;
@@ -1382,7 +1382,7 @@ When answering questions, use these memories to provide context-aware responses.
                 flowName: 'chat',
                 toolName: name,
                 toolArguments: args,
-                toolResult: functionError ? undefined : JSON.stringify(functionResult).substring(0, 2000),
+                toolResult: functionError ? undefined : JSON.stringify(functionResult),
                 toolError: functionError ? functionError.message : undefined,
                 durationMs: duration,
               });
@@ -1459,9 +1459,9 @@ When answering questions, use these memories to provide context-aware responses.
               userId: effectiveUserId,
               flowName: 'chat',
               model: GEMINI_MODEL,
-              systemPrompt: SYSTEM_PROMPT.substring(0, 5000),
-              userMessage: toolResponseSummary.substring(0, 5000),
-              llmResult: result.response.text().substring(0, 2000),
+              systemPrompt: SYSTEM_PROMPT,
+              userMessage: toolResponseSummary,
+              llmResult: result.response.text(),
               durationMs: followUpDuration,
             });
           }

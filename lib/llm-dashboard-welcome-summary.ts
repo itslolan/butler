@@ -186,8 +186,8 @@ ${JSON.stringify(metrics)}
     flowName: 'welcome_summary',
     model: GEMINI_MODEL,
     systemPrompt: 'Generate welcome summary',
-    userMessage: prompt.substring(0, 1000),
-    llmResult: text.substring(0, 2000),
+    userMessage: prompt,
+    llmResult: text,
     durationMs: llmDuration,
   });
 

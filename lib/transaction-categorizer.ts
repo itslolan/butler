@@ -217,9 +217,9 @@ Use these memories to help classify transactions accurately.`;
       userId,
       flowName: 'transaction_categorization',
       model: GEMINI_MODEL,
-      systemPrompt: systemPrompt.substring(0, 3000),
+      systemPrompt: systemPrompt,
       userMessage: `Categorize ${transactions.length} transactions`,
-      llmResult: response.substring(0, 2000),
+      llmResult: response,
       durationMs: llmDuration,
     });
     

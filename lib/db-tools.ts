@@ -1921,8 +1921,8 @@ Format: ["- memory content 1", "- memory content 2"]`;
       flowName: 'memory_conflict_detection',
       model: 'gemini-3-flash-preview',
       systemPrompt: 'Detect memory conflicts',
-      userMessage: prompt.substring(0, 1000),
-      llmResult: responseText.substring(0, 1000),
+      userMessage: prompt,
+      llmResult: responseText,
       durationMs: llmDuration,
     });
     
