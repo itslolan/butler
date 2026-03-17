@@ -117,38 +117,52 @@ export function isLikelyInternalTransfer(txn: TransactionForClassification): boo
  * be excluded from income/expense totals.
  * 
  * This is the single source of truth for transaction classification.
+ * 
+ * Classification priority:
+ * 1. Explicit user-set type ('income' | 'expense') → always respected, no override.
+ * 2. Explicit 'transfer' type → excluded from totals.
+ * 3. No type / 'other' type → auto-detect internal transfers via merchant/category
+ *    heuristics, then fall back to amount sign inference.
  */
 export function classifyTransaction(txn: TransactionForClassification): ClassificationResult {
   const amount = Number(txn.amount) || 0;
   const absAmount = Math.abs(amount);
   const explicitType = txn.transaction_type?.toLowerCase() as TransactionType | undefined;
 
-  // Check if this is a transfer that should be excluded
+  // If the user has explicitly set a definitive type (income or expense), always respect it.
+  // Auto-detection heuristics must never override a conscious user choice.
+  if (explicitType === 'income') {
+    return { type: 'income', isExcluded: false, absAmount, amount };
+  }
+  if (explicitType === 'expense') {
+    return { type: 'expense', isExcluded: false, absAmount, amount };
+  }
+
+  // For explicit 'transfer', respect that too (user consciously marked it).
   const isExplicitTransfer = explicitType === 'transfer';
-  const isInternalTransfer = isLikelyInternalTransfer(txn);
+
+  // Auto-detect internal transfers only when there is no definitive explicit type.
+  // This covers null/undefined (un-classified) and 'other' (weak/ambiguous) types.
+  const isInternalTransfer = !isExplicitTransfer && isLikelyInternalTransfer(txn);
+
   const isExcluded = isExplicitTransfer || isInternalTransfer;
 
-  // Determine the canonical type
   let type: TransactionType;
 
   if (isExplicitTransfer || isInternalTransfer) {
-    // Transfers are always classified as 'transfer'
     type = 'transfer';
-  } else if (explicitType === 'income') {
-    type = 'income';
-  } else if (explicitType === 'expense') {
-    type = 'expense';
   } else if (explicitType === 'other') {
-    // 'other' is treated as expense (fees, adjustments, etc.)
+    // 'other' is treated as expense (fees, adjustments, etc.) when not auto-detected
+    // as an internal transfer above.
     type = 'expense';
   } else {
-    // No explicit type - infer from amount sign
+    // No explicit type — infer from amount sign.
     if (amount > 0) {
       type = 'income';
     } else if (amount < 0) {
       type = 'expense';
     } else {
-      // Zero amount - classify as 'other' and exclude
+      // Zero amount — treat as 'other' and exclude.
       type = 'other';
     }
   }

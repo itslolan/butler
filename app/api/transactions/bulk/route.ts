@@ -118,12 +118,19 @@ export async function POST(request: NextRequest) {
       .update(updateData)
       .in('id', transactionIds)
       .eq('user_id', userId)
-      .select('id');
+      .select('id, merchant, transaction_type');
 
     if (updateError) {
       console.error('[transactions/bulk] Update error:', updateError.message);
       return NextResponse.json({ error: updateError.message }, { status: 500 });
     }
+
+    console.log(`[transactions/bulk] Action: ${action}, value: ${value}, requested IDs: ${transactionIds.length}, updated: ${updatedTransactions?.length || 0}`);
+    console.log('[transactions/bulk] Updated rows:', JSON.stringify(updatedTransactions?.map(t => ({
+      id: t.id,
+      merchant: t.merchant,
+      transaction_type: t.transaction_type,
+    }))));
 
     return NextResponse.json({
       success: true,

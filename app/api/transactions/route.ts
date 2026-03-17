@@ -97,6 +97,17 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: fetchError.message }, { status: 500 });
       }
 
+      console.log(`[transactions] Type filter active: ${transactionTypes.join(',')}, total rows from DB: ${allData?.length || 0}`);
+
+      // Log classification for e-transfer transactions to diagnose filtering issues
+      for (const txn of allData || []) {
+        const m = (txn.merchant || '').toLowerCase();
+        if (m.includes('e-transfer') || m.includes('etransfer') || m.includes('sreelakshmy')) {
+          const classification = classifyTransaction(txn);
+          console.log(`[transactions] DIAG txn id=${txn.id} merchant="${txn.merchant}" db_type="${txn.transaction_type}" category="${txn.category}" → classified as type="${classification.type}" isExcluded=${classification.isExcluded}`);
+        }
+      }
+
       // Filter by classified type
       allMatchingTransactions = (allData || []).filter(txn => {
         const classification = classifyTransaction(txn);

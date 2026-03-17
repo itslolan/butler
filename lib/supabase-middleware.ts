@@ -67,9 +67,9 @@ export async function updateSession(request: NextRequest) {
         response.cookies.delete('sb-access-token');
         response.cookies.delete('sb-refresh-token');
         
-        const supabaseCookies = Array.from(request.cookies.keys()).filter(name => 
-          name.startsWith('sb-')
-        );
+        const supabaseCookies = request.cookies.getAll()
+          .map(c => c.name)
+          .filter(name => name.startsWith('sb-'));
         supabaseCookies.forEach(name => {
           response.cookies.delete(name);
         });
