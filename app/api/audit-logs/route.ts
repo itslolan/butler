@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase-server';
 import { getAuditLogs, getAuditLogCount } from '@/lib/audit-logger';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
 
 export async function GET(request: NextRequest) {
   try {

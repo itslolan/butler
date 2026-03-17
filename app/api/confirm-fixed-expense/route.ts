@@ -5,6 +5,8 @@ import { supabase } from '@/lib/supabase';
 import { normalizeMerchantName } from '@/lib/merchant-summarizer';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
 
 /**
  * POST - Confirm or reject an expense as a fixed expense

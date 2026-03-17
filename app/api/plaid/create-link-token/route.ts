@@ -3,6 +3,8 @@ import { plaidClient, PLAID_PRODUCTS, PLAID_COUNTRY_CODES, PLAID_LANGUAGE, isPla
 import { createClient } from '@/lib/supabase-server';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
 
 export async function POST(request: NextRequest) {
   try {

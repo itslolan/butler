@@ -6,6 +6,8 @@ import { encryptNumber } from '@/lib/encryption';
 import { logFromRequest } from '@/lib/audit-logger';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
 
 export async function POST(request: NextRequest) {
   try {

@@ -3,6 +3,7 @@ import { executeToolCall } from '@/lib/chat-tool-executor';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
 
 /**
  * POST /api/dashboard/tools

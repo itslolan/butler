@@ -13,6 +13,7 @@ import { ChartConfig } from '@/lib/chart-types';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
 
 /**
  * GET /api/charts?userId=X&type=Y&months=6&month=YYYY-MM

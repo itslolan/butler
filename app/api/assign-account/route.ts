@@ -4,6 +4,8 @@ import { CreateAccountInput } from '@/lib/supabase';
 import { createClient } from '@/lib/supabase-server';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
 
 /**
  * POST /api/assign-account - Assign account to documents (from screenshot uploads)

@@ -4,6 +4,7 @@ import { classifyTransaction } from '@/lib/transaction-classifier';
 import { isUserProvidedIncomeTransaction, USER_PROVIDED_INCOME_MERCHANT } from '@/lib/financial-figure-sources';
 
 export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
 
 export interface TransactionsQueryParams {
   userId: string;

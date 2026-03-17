@@ -26,6 +26,7 @@ import { getFixedExpensesByCategory } from '@/lib/fixed-expenses';
 export const runtime = 'nodejs';
 export const maxDuration = 30; // 30 second timeout
 export const dynamic = 'force-dynamic'; // Don't cache, but set reasonable timeout
+export const fetchCache = 'force-no-store';
 
 /**
  * GET /api/budget

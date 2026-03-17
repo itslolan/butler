@@ -13,6 +13,8 @@ import {
 import { createLLMSession, logLLMCall } from '@/lib/llm-logger';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
 
 const GEMINI_MODEL = 'gemini-3-flash-preview';
 const MAX_RETRY_ATTEMPTS = 3;

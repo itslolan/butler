@@ -7,6 +7,8 @@ import {
 } from '@/lib/budget-utils';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
 
 /**
  * GET /api/budget/categories
