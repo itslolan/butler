@@ -54,7 +54,30 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
-  await supabase.auth.getUser();
+  try {
+    const { data, error } = await supabase.auth.getUser();
+    
+    if (error) {
+      console.error('Auth error in middleware:', error.message);
+      
+      const accessToken = request.cookies.get('sb-access-token');
+      const refreshToken = request.cookies.get('sb-refresh-token');
+      
+      if (accessToken || refreshToken) {
+        response.cookies.delete('sb-access-token');
+        response.cookies.delete('sb-refresh-token');
+        
+        const supabaseCookies = Array.from(request.cookies.keys()).filter(name => 
+          name.startsWith('sb-')
+        );
+        supabaseCookies.forEach(name => {
+          response.cookies.delete(name);
+        });
+      }
+    }
+  } catch (error) {
+    console.error('Error refreshing session:', error);
+  }
 
   return response;
 }
