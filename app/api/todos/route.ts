@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getUnclarifiedTransactions, getDocumentsPendingAccountSelection, getAccountsByUserId } from '@/lib/db-tools';
 
 export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
 
 export async function GET(request: NextRequest) {
   try {

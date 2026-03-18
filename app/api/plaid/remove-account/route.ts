@@ -5,6 +5,8 @@ import { supabase } from '@/lib/supabase';
 import { logFromRequest } from '@/lib/audit-logger';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
 
 export async function DELETE(request: NextRequest) {
   try {

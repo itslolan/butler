@@ -3,6 +3,7 @@ import { getUploadDetails, deleteUpload } from '@/lib/db-tools';
 import { logFromRequest } from '@/lib/audit-logger';
 
 export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
 
 interface RouteParams {
   params: Promise<{ id: string }>;

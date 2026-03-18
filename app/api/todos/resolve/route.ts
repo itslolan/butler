@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase-server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
 
 type TodoType = 'transaction_clarification' | 'account_selection';
 type ResolveAction = 'resolve' | 'dismiss';

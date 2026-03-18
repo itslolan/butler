@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase-server';
 import { supabase } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
 
 /**
  * DELETE /api/user/delete-data

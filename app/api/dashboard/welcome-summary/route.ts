@@ -16,6 +16,7 @@ import {
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
 
 type Availability = {
   startMonth: string | null; // YYYY-MM

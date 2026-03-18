@@ -1,19 +1,22 @@
 /**
  * Budget Utilities
  * 
- * NOTE: Transaction classification in SQL queries follows the same logic as
- * lib/transaction-classifier.ts:
+ * Transaction classification uses classifyTransaction() from lib/transaction-classifier.ts
+ * as the single source of truth. This ensures that:
  * 
- * - Expenses: transaction_type IN ('expense', 'other') OR (transaction_type IS NULL AND amount < 0)
- * - Income: transaction_type = 'income' OR (transaction_type IS NULL AND amount > 0)
- * - Transfers: Excluded from totals (transaction_type = 'transfer' or internal transfer patterns)
+ * - Expenses: transaction_type IN ('expense', 'other') OR (type IS NULL AND amount < 0),
+ *   with auto-detected internal transfers (credit card payments, account-to-account moves)
+ *   excluded via isLikelyInternalTransfer() — identical to chart/analytics functions.
+ * - Income: transaction_type = 'income' OR (type IS NULL AND amount > 0)
+ * - Transfers: Excluded from spending totals (explicit type='transfer' AND auto-detected patterns)
  * 
- * For complex post-processing or internal transfer detection, use the 
- * classifyTransaction() function from lib/transaction-classifier.ts.
+ * SQL queries pre-filter to expense/other rows for efficiency; classifyTransaction() then
+ * removes auto-detected internal transfers in the in-memory pass.
  */
 import { supabase, BudgetCategory, Budget, BudgetSuperCategory } from './supabase';
 import { USER_PROVIDED_INCOME_MERCHANT } from './financial-figure-sources';
 import { normalizeCategoryNameKey, normalizeCategoryDisplayName, uniqueCategoryNamesByKey } from './category-normalization';
+import { classifyTransaction } from './transaction-classifier';
 
 export const DEFAULT_MISC_SUPER_CATEGORY = 'Miscellaneous';
 
@@ -1037,7 +1040,7 @@ export async function getSpendingByCategory(
 
   const { data, error } = await supabase
     .from('transactions')
-    .select('category, amount, transaction_type')
+    .select('category, amount, transaction_type, merchant')
     .eq('user_id', userId)
     .gte('date', startDate)
     .lte('date', endDate)
@@ -1050,11 +1053,14 @@ export async function getSpendingByCategory(
     throw new Error(`Failed to get spending: ${error.message}`);
   }
 
-  // Aggregate by category
+  // Aggregate by category, using classifyTransaction to exclude auto-detected internal
+  // transfers (e.g. credit card payments) — consistent with chart/analytics functions.
   const spending: Record<string, number> = {};
   for (const txn of data || []) {
+    const classification = classifyTransaction(txn);
+    if (classification.isExcluded) continue;
     const category = txn.category || 'Uncategorized';
-    spending[category] = (spending[category] || 0) + Math.abs(Number(txn.amount));
+    spending[category] = (spending[category] || 0) + classification.absAmount;
   }
 
   return spending;
@@ -1262,7 +1268,7 @@ export async function getHistoricalSpendingBreakdown(
   // Add limit to prevent memory issues with large datasets
   const { data, error } = await supabase
     .from('transactions')
-    .select('date, category, amount, transaction_type')
+    .select('date, category, amount, transaction_type, merchant')
     .eq('user_id', userId)
     .gte('date', startDateStr)
     .or('transaction_type.in.(expense,other),and(transaction_type.is.null,amount.lt.0)')
@@ -1272,15 +1278,18 @@ export async function getHistoricalSpendingBreakdown(
     throw new Error(`Failed to get historical spending: ${error.message}`);
   }
 
-  // Aggregate by month and category
+  // Aggregate by month and category, using classifyTransaction to exclude auto-detected
+  // internal transfers — consistent with chart/analytics functions.
   const monthlyData: Record<string, Record<string, number>> = {};
   const categoryTotals: Record<string, number> = {};
 
   for (const txn of data || []) {
+    const classification = classifyTransaction(txn);
+    if (classification.isExcluded) continue;
     const date = new Date(txn.date);
     const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
     const category = txn.category || 'Uncategorized';
-    const amount = Math.abs(Number(txn.amount));
+    const amount = classification.absAmount;
 
     if (!monthlyData[monthKey]) {
       monthlyData[monthKey] = {};
@@ -1526,9 +1535,9 @@ export async function analyzeBudgetHealth(userId: string, month: string): Promis
   const [year, monthNum] = month.split('-').map(Number);
   const endDate = new Date(year, monthNum, 0).toISOString().split('T')[0]; // last day of month
   
-  const { data: transactions, error: txnError } = await supabase
+  const { data: rawTransactions, error: txnError } = await supabase
     .from('transactions')
-    .select('date, merchant, amount, category, description')
+    .select('date, merchant, amount, category, description, transaction_type')
     .eq('user_id', userId)
     .gte('date', startDate)
     .lte('date', endDate)
@@ -1540,6 +1549,10 @@ export async function analyzeBudgetHealth(userId: string, month: string): Promis
   if (txnError) {
     throw new Error(`Failed to get transactions: ${txnError.message}`);
   }
+
+  // Exclude auto-detected internal transfers (e.g. credit card payments) — consistent
+  // with getSpendingByCategory and chart/analytics functions.
+  const transactions = (rawTransactions || []).filter(txn => !classifyTransaction(txn).isExcluded);
   
   // Calculate category spending and identify overspent categories
   const overspentCategories: Array<{

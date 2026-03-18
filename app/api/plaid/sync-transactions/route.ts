@@ -9,6 +9,8 @@ import { syncTransactionCategoriesToBudget } from '@/lib/budget-utils';
 import { applyFixedExpenseDetectionToTransactions } from '@/lib/fixed-expense-detector';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
 
 // Batch size for LLM categorization (to avoid token limits)
 const CATEGORIZATION_BATCH_SIZE = 50;

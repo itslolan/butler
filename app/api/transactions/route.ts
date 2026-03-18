@@ -4,6 +4,7 @@ import { classifyTransaction } from '@/lib/transaction-classifier';
 import { isUserProvidedIncomeTransaction, USER_PROVIDED_INCOME_MERCHANT } from '@/lib/financial-figure-sources';
 
 export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
 
 export interface TransactionsQueryParams {
   userId: string;
@@ -56,7 +57,7 @@ export async function GET(request: NextRequest) {
       .neq('merchant', USER_PROVIDED_INCOME_MERCHANT)
       .order(sortColumn, { ascending });
 
-    // Apply filters
+    // Apply filters (except transaction type - will filter that in memory after classification)
     if (accountIds.length > 0) {
       query = query.in('account_id', accountIds);
     }
@@ -67,10 +68,6 @@ export async function GET(request: NextRequest) {
 
     if (endDate) {
       query = query.lte('date', endDate);
-    }
-
-    if (transactionTypes.length > 0) {
-      query = query.in('transaction_type', transactionTypes);
     }
 
     if (uncategorizedOnly) {
@@ -85,16 +82,51 @@ export async function GET(request: NextRequest) {
       query = query.or(`merchant.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
     }
 
-    // Pagination
-    const offset = (page - 1) * pageSize;
-    query = query.range(offset, offset + pageSize - 1);
+    // For type filtering, we need to fetch all matching transactions and filter in-memory
+    // because the classification logic is more complex than just checking the database field
+    const needsTypeFiltering = transactionTypes.length > 0;
+    
+    let allMatchingTransactions: any[] = [];
+    let totalMatchingCount = 0;
 
-    const { data: transactions, error, count } = await query;
+    if (needsTypeFiltering) {
+      // Fetch all transactions without pagination to apply type filter
+      const { data: allData, error: fetchError } = await query;
+      
+      if (fetchError) {
+        console.error('[transactions] Error:', fetchError.message);
+        return NextResponse.json({ error: fetchError.message }, { status: 500 });
+      }
 
-    if (error) {
-      console.error('[transactions] Error:', error.message);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      // Filter by classified type
+      allMatchingTransactions = (allData || []).filter(txn => {
+        const classification = classifyTransaction(txn);
+        return transactionTypes.includes(classification.type);
+      });
+
+      totalMatchingCount = allMatchingTransactions.length;
+
+      // Apply pagination in-memory
+      const offset = (page - 1) * pageSize;
+      allMatchingTransactions = allMatchingTransactions.slice(offset, offset + pageSize);
+    } else {
+      // No type filtering needed, use normal pagination
+      const offset = (page - 1) * pageSize;
+      query = query.range(offset, offset + pageSize - 1);
+
+      const { data, error: fetchError, count: dbCount } = await query;
+      
+      if (fetchError) {
+        console.error('[transactions] Error:', fetchError.message);
+        return NextResponse.json({ error: fetchError.message }, { status: 500 });
+      }
+
+      allMatchingTransactions = data || [];
+      totalMatchingCount = dbCount || 0;
     }
+
+    const transactions = allMatchingTransactions;
+    const count = totalMatchingCount;
 
     // Calculate totals for the filtered results (without pagination)
     // Include merchant and category for proper transfer detection
@@ -105,7 +137,7 @@ export async function GET(request: NextRequest) {
       .eq('user_id', userId)
       .neq('merchant', USER_PROVIDED_INCOME_MERCHANT);
 
-    // Apply the same filters for totals
+    // Apply the same filters for totals (except transaction type - filter that in memory)
     if (accountIds.length > 0) {
       totalsQuery = totalsQuery.in('account_id', accountIds);
     }
@@ -114,9 +146,6 @@ export async function GET(request: NextRequest) {
     }
     if (endDate) {
       totalsQuery = totalsQuery.lte('date', endDate);
-    }
-    if (transactionTypes.length > 0) {
-      totalsQuery = totalsQuery.in('transaction_type', transactionTypes);
     }
     if (uncategorizedOnly) {
       totalsQuery = totalsQuery.or('category.is.null,category.eq.');
@@ -142,6 +171,11 @@ export async function GET(request: NextRequest) {
         
         // Use the unified classifier to properly detect transfers and classify transactions
         const classification = classifyTransaction(txn);
+        
+        // If type filtering is active, only include transactions matching the selected types
+        if (transactionTypes.length > 0 && !transactionTypes.includes(classification.type)) {
+          continue;
+        }
         
         // Skip transfers and excluded transactions (credit card payments, internal transfers, etc.)
         if (classification.isExcluded) {

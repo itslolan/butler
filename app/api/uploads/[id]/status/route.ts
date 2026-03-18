@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { updateUploadStatus } from '@/lib/db-tools';
 
 export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
 
 interface RouteParams {
   params: Promise<{ id: string }>;

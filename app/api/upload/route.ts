@@ -6,6 +6,7 @@ import { logFromRequest } from '@/lib/audit-logger';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
 
 function sanitizeFileName(name: string): string {
   // Keep it simple and filesystem/url-safe

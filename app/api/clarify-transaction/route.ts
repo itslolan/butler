@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { updateTransactionType, getTransactionById, upsertMemory, findMatchingTransfer } from '@/lib/db-tools';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
 
 /**
  * API endpoint to clarify/categorize a transaction

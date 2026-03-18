@@ -11,6 +11,8 @@ import { applyFixedExpenseDetectionToTransactions, persistFixedExpenseFlags } fr
 import { createLLMSession, logLLMCall } from '@/lib/llm-logger';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
 
 const GEMINI_MODEL = 'gemini-3-pro-preview';
 

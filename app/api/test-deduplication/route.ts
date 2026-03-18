@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { runDeduplicationTests } from '@/lib/deduplication-test';
 
+export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
+
 export async function GET(request: NextRequest) {
   try {
     // Capture console output

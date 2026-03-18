@@ -163,7 +163,12 @@ export default function BudgetPage() {
       budgeted: budgetedOverrides?.[cat.id] ?? cat.budgeted,
       spent: cat.spent,
     }));
-    const totalBudgeted = categories.reduce((sum, cat) => sum + (cat.budgeted || 0), 0);
+    // When AI overrides are active, recalculate from the updated per-category amounts.
+    // Otherwise use budgetData.totalBudgeted which already accounts for super-category
+    // overrides (where child categories are zeroed out but the parent carries the full amount).
+    const totalBudgeted = budgetedOverrides
+      ? categories.reduce((sum, cat) => sum + (cat.budgeted || 0), 0)
+      : budgetData.totalBudgeted;
     return {
       month: currentMonth,
       income: budgetData.income,
