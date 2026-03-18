@@ -70,6 +70,12 @@ export default function LandingPage() {
               Free Tools
             </Link>
             <Link 
+              href="/blog"
+              className="text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+            >
+              Blog
+            </Link>
+            <Link 
               href="/pricing"
               className="text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
             >
@@ -522,6 +528,7 @@ export default function LandingPage() {
                 <li><Link href="/demo" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">Try Demo</Link></li>
                 <li><Link href="/signup" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">Sign Up</Link></li>
                 <li><Link href="/login" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">Sign In</Link></li>
+                <li><Link href="/blog" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">Blog</Link></li>
               </ul>
             </div>
 

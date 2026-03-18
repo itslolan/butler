@@ -1,8 +1,18 @@
 import { MetadataRoute } from 'next';
+import { getPublishedPosts } from '@/lib/notion';
 
-export default function sitemap(): MetadataRoute.Sitemap {
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = (process.env.NEXT_PUBLIC_SITE_URL || 'https://adphex.com').replace(/\/$/, '');
   const currentDate = new Date();
+
+  // Fetch blog posts for sitemap
+  const blogPosts = await getPublishedPosts();
+  const blogEntries: MetadataRoute.Sitemap = blogPosts.map((post) => ({
+    url: `${baseUrl}/blog/${post.slug}`,
+    lastModified: post.date ? new Date(post.date) : currentDate,
+    changeFrequency: 'weekly',
+    priority: 0.7,
+  }));
 
   return [
     {
@@ -11,6 +21,13 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: 'weekly',
       priority: 1.0,
     },
+    {
+      url: `${baseUrl}/blog`,
+      lastModified: currentDate,
+      changeFrequency: 'daily',
+      priority: 0.9,
+    },
+    ...blogEntries,
     {
       url: `${baseUrl}/demo`,
       lastModified: currentDate,

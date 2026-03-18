@@ -43,7 +43,7 @@
        <div className="flex flex-col gap-4">
          <div>
            <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-             Estimated income
+             Your income (approx)
            </h2>
            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
              This can be changed any time and Adphex can automatically adjust the budget
