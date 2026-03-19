@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useCallback, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useCallback, useEffect, useRef, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import ChatInterface from '@/components/ChatInterface';
 import VisualizationPanel from '@/components/VisualizationPanel';
@@ -11,15 +11,17 @@ import MobileChatModal from '@/components/MobileChatModal';
 import MobileProcessingToast from '@/components/MobileProcessingToast';
 import { useAuth } from '@/components/AuthProvider';
 import LandingPage from '@/components/LandingPage';
+import SimpleLandingPage from '@/components/SimpleLandingPage';
 import TodoButton from '@/components/TodoButton';
 import TodoList from '@/components/TodoList';
 import OnboardingPanels from '@/components/OnboardingPanels';
 import SubscriptionsPanel from '@/components/SubscriptionsPanel';
 import DashboardWelcomeSummary from '@/components/DashboardWelcomeSummary';
 
-export default function Home() {
+function HomeContent() {
   const { user, loading } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [uploadCount, setUploadCount] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [lastUploadResult, setLastUploadResult] = useState<string>('');
@@ -215,8 +217,12 @@ export default function Home() {
     return null;
   }
 
-  // If not authenticated, show Landing Page
+  // If not authenticated, show Landing Page (simple variant if ?variant=simple)
   if (!user) {
+    const variant = searchParams.get('variant');
+    if (variant === 'simple') {
+      return <SimpleLandingPage />;
+    }
     return <LandingPage />;
   }
 
@@ -388,5 +394,13 @@ export default function Home() {
       <MobileProcessingToast processingSteps={processingSteps} lastUploadResult={lastUploadResult} />
     </main>
     </AuthGuard>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense>
+      <HomeContent />
+    </Suspense>
   );
 }
