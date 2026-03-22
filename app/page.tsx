@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import ChatInterface from '@/components/ChatInterface';
 import VisualizationPanel from '@/components/VisualizationPanel';
@@ -11,6 +11,7 @@ import MobileChatModal from '@/components/MobileChatModal';
 import MobileProcessingToast from '@/components/MobileProcessingToast';
 import { useAuth } from '@/components/AuthProvider';
 import LandingPage from '@/components/LandingPage';
+import DesktopLandingPage from '@/components/DesktopLandingPage';
 import TodoButton from '@/components/TodoButton';
 import TodoList from '@/components/TodoList';
 import OnboardingPanels from '@/components/OnboardingPanels';
@@ -20,6 +21,7 @@ import DashboardWelcomeSummary from '@/components/DashboardWelcomeSummary';
 export default function Home() {
   const { user, loading } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [uploadCount, setUploadCount] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [lastUploadResult, setLastUploadResult] = useState<string>('');
@@ -217,7 +219,10 @@ export default function Home() {
 
   // If not authenticated, show Landing Page
   if (!user) {
-    return <LandingPage />;
+    if (searchParams.get('variant') === 'old') {
+      return <LandingPage />;
+    }
+    return <DesktopLandingPage />;
   }
 
   // If authenticated, show Dashboard (wrapped in AuthGuard for extra safety)
