@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import ChatInterface from '@/components/ChatInterface';
@@ -18,7 +18,7 @@ import OnboardingPanels from '@/components/OnboardingPanels';
 import SubscriptionsPanel from '@/components/SubscriptionsPanel';
 import DashboardWelcomeSummary from '@/components/DashboardWelcomeSummary';
 
-export default function Home() {
+function HomeContent() {
   const { user, loading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -217,7 +217,7 @@ export default function Home() {
     return null;
   }
 
-  // If not authenticated, show Landing Page
+  // If not authenticated, show Landing Page (simple variant if ?variant=simple)
   if (!user) {
     if (searchParams.get('variant') === 'old') {
       return <LandingPage />;
@@ -393,5 +393,13 @@ export default function Home() {
       <MobileProcessingToast processingSteps={processingSteps} lastUploadResult={lastUploadResult} />
     </main>
     </AuthGuard>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense>
+      <HomeContent />
+    </Suspense>
   );
 }
