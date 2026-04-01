@@ -49,7 +49,7 @@ export default function LoginPage() {
         });
 
         if (error) throw error;
-        router.push('/');
+        router.push('/web');
         router.refresh();
       }
     } catch (error: any) {
