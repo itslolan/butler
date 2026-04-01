@@ -1,14 +1,10 @@
+'use client';
+
+import { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import type { Metadata } from 'next';
 
-const DMG_DOWNLOAD_URL = '#';
-
-export const metadata: Metadata = {
-  title: 'Adphex — Your finances. On your machine. Nowhere else.',
-  description:
-    'Adphex is a personal finance assistant that runs entirely on your Mac — no cloud, no subscriptions, no data leaving your device. Upload your bank statements and get instant insights powered by a local AI model.',
-};
+const DMG_DOWNLOAD_URL = 'https://gaddwvuybwnhcgciwfky.supabase.co/storage/v1/object/public/adphex-release/Adphex-0.1.0_aarch64.dmg';
 
 function AppleLogo({ className }: { className?: string }) {
   return (
@@ -26,16 +22,162 @@ function ShieldIcon({ className }: { className?: string }) {
   );
 }
 
+function EmailModal({
+  isOpen,
+  onClose,
+  onSubmit,
+  isSubmitting,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onSubmit: (email: string) => void;
+  isSubmitting?: boolean;
+}) {
+  const [email, setEmail] = useState('');
+  const [error, setError] = useState('');
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!email || !emailRegex.test(email)) {
+      setError('Please enter a valid email address');
+      return;
+    }
+
+    onSubmit(email);
+    setEmail('');
+    setError('');
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="relative bg-[#13111a] border border-purple-500/20 rounded-2xl shadow-2xl max-w-md w-full p-8"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          onClick={onClose}
+          disabled={isSubmitting}
+          className="absolute top-4 right-4 text-white/40 hover:text-white/80 transition-colors disabled:opacity-50"
+          aria-label="Close modal"
+        >
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+
+        <div className="mb-6">
+          <h2 className="text-2xl font-bold mb-2">Download Adphex</h2>
+          <p className="text-white/50">Enter your email to download Adphex for Mac</p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                setError('');
+              }}
+              placeholder="your@email.com"
+              disabled={isSubmitting}
+              className="w-full px-4 py-3 bg-[#0c0a12] border border-white/10 rounded-xl text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-transparent transition-all disabled:opacity-50"
+              autoFocus
+            />
+            {error && <p className="mt-2 text-sm text-red-400">{error}</p>}
+          </div>
+
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="w-full px-6 py-3 bg-[#7c3aed] hover:bg-[#6d28d9] text-white rounded-xl font-semibold transition-colors shadow-lg shadow-purple-900/30 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isSubmitting ? 'Please wait...' : 'Continue to Download'}
+          </button>
+        </form>
+
+        <p className="mt-4 text-xs text-white/30 text-center">
+          We&apos;ll only use your email to send you updates about Adphex. No spam, ever.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function LandingPage() {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleDownloadClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsModalOpen(true);
+  };
+
+  const handleEmailSubmit = async (email: string) => {
+    setIsSubmitting(true);
+    
+    try {
+      // Save email to database
+      const response = await fetch('/api/download-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to save email');
+      }
+
+      // Close modal
+      setIsModalOpen(false);
+      
+      // Trigger download
+      const link = document.createElement('a');
+      link.href = DMG_DOWNLOAD_URL;
+      link.download = 'Adphex-0.1.0_aarch64.dmg';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error('Error saving email:', error);
+      // Still trigger download even if email save fails
+      setIsModalOpen(false);
+      const link = document.createElement('a');
+      link.href = DMG_DOWNLOAD_URL;
+      link.download = 'Adphex-0.1.0_aarch64.dmg';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#0c0a12] text-white selection:bg-purple-500/20 antialiased">
+      <EmailModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onSubmit={handleEmailSubmit}
+        isSubmitting={isSubmitting}
+      />
       {/* Hero: copy left, screenshot right */}
       <section className="relative pt-12 pb-6 md:pt-16 md:pb-8 px-6 overflow-hidden" aria-label="Adphex for Mac">
         <div className="absolute top-20 left-1/4 w-[500px] h-[350px] bg-purple-600/[0.07] rounded-full blur-[120px] pointer-events-none" />
 
         <div className="max-w-7xl xl:max-w-[90rem] mx-auto relative z-10">
-          <div className="grid lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] xl:grid-cols-[minmax(0,24rem)_minmax(0,1fr)] gap-8 lg:gap-3 xl:gap-4 items-center">
-            <div className="text-left shrink-0 lg:max-w-md xl:max-w-lg">
+          <div className="flex flex-col lg:flex-row justify-center items-center gap-8 lg:gap-10">
+            <div className="text-left shrink-0 lg:max-w-[22rem] xl:max-w-[24rem]">
               <div className="mb-6 flex lg:justify-start justify-center">
                 <Image
                   src="/adphex-logo.png"
@@ -65,7 +207,7 @@ export default function LandingPage() {
             </div>
 
             <div
-              className="min-w-0 w-full lg:w-[70%] lg:ml-auto lg:pl-0 xl:pl-2"
+              className="min-w-0 w-full lg:max-w-[680px] xl:max-w-[780px]"
               aria-label="Adphex desktop app preview"
             >
               <div className="rounded-2xl border border-purple-500/[0.12] bg-[#13111a]/50 p-1.5 sm:p-2 shadow-[0_25px_50px_-12px_rgba(0,0,0,0.45),0_0_100px_-24px_rgba(124,58,237,0.28)] ring-1 ring-white/[0.04]">
@@ -88,14 +230,14 @@ export default function LandingPage() {
       {/* Primary download CTA */}
       <section className="px-6 pb-16 md:pb-20" aria-label="Download Adphex">
         <div className="max-w-6xl mx-auto flex flex-col items-center text-center">
-          <a
-            href={DMG_DOWNLOAD_URL}
+          <button
+            onClick={handleDownloadClick}
             className="inline-flex items-center gap-3 px-8 py-4 bg-[#7c3aed] hover:bg-[#6d28d9] text-white rounded-2xl font-semibold text-lg transition-colors shadow-[0_0_80px_rgba(124,58,237,0.2)]"
           >
             <AppleLogo className="w-5 h-5" />
             Download now
             <span className="text-white/50 font-normal">&mdash; Free</span>
-          </a>
+          </button>
           <p className="mt-4 text-sm text-white/25">For macOS &middot; Apple Silicon</p>
         </div>
       </section>
@@ -205,14 +347,14 @@ export default function LandingPage() {
           <p className="text-white/40 text-lg mb-10">
             Download Adphex and see where your money actually goes
           </p>
-          <a
-            href={DMG_DOWNLOAD_URL}
+          <button
+            onClick={handleDownloadClick}
             className="inline-flex items-center gap-3 px-8 py-4 bg-[#7c3aed] hover:bg-[#6d28d9] text-white rounded-2xl font-semibold text-lg transition-colors shadow-[0_0_60px_rgba(124,58,237,0.2)]"
           >
             <AppleLogo className="w-5 h-5" />
             Download for Mac
             <span className="text-white/50 font-normal">&mdash; Free</span>
-          </a>
+          </button>
         </div>
       </section>
 
