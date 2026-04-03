@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 
@@ -22,16 +22,34 @@ function ShieldIcon({ className }: { className?: string }) {
   );
 }
 
+function SunIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" />
+    </svg>
+  );
+}
+
+function MoonIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" />
+    </svg>
+  );
+}
+
 function EmailModal({
   isOpen,
   onClose,
   onSubmit,
   isSubmitting,
+  isDark,
 }: {
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (email: string) => void;
   isSubmitting?: boolean;
+  isDark: boolean;
 }) {
   const [email, setEmail] = useState('');
   const [error, setError] = useState('');
@@ -55,17 +73,25 @@ function EmailModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+      className={`fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm ${
+        isDark ? 'bg-black/80' : 'bg-black/40'
+      }`}
       onClick={onClose}
     >
       <div
-        className="relative bg-[#13111a] border border-purple-500/20 rounded-2xl shadow-2xl max-w-md w-full p-8"
+        className={`relative rounded-2xl shadow-2xl max-w-md w-full p-8 ${
+          isDark 
+            ? 'bg-[#13111a] border border-purple-500/20' 
+            : 'bg-white border border-gray-200'
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
         <button
           onClick={onClose}
           disabled={isSubmitting}
-          className="absolute top-4 right-4 text-white/40 hover:text-white/80 transition-colors disabled:opacity-50"
+          className={`absolute top-4 right-4 transition-colors disabled:opacity-50 ${
+            isDark ? 'text-white/40 hover:text-white/80' : 'text-gray-400 hover:text-gray-700'
+          }`}
           aria-label="Close modal"
         >
           <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
@@ -74,8 +100,12 @@ function EmailModal({
         </button>
 
         <div className="mb-6">
-          <h2 className="text-2xl font-bold mb-2">Download Adphex</h2>
-          <p className="text-white/50">Enter your email to download Adphex for Mac</p>
+          <h2 className={`text-2xl font-bold mb-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+            Download Adphex
+          </h2>
+          <p className={isDark ? 'text-white/50' : 'text-gray-600'}>
+            Enter your email to download Adphex for Mac
+          </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -89,22 +119,26 @@ function EmailModal({
               }}
               placeholder="your@email.com"
               disabled={isSubmitting}
-              className="w-full px-4 py-3 bg-[#0c0a12] border border-white/10 rounded-xl text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-transparent transition-all disabled:opacity-50"
+              className={`w-full px-4 py-3 rounded-xl font-medium focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-transparent transition-all disabled:opacity-50 ${
+                isDark
+                  ? 'bg-[#0c0a12] border border-white/10 text-white placeholder:text-white/30'
+                  : 'bg-gray-50 border border-gray-300 text-gray-900 placeholder:text-gray-400'
+              }`}
               autoFocus
             />
-            {error && <p className="mt-2 text-sm text-red-400">{error}</p>}
+            {error && <p className="mt-2 text-sm text-red-500">{error}</p>}
           </div>
 
           <button
             type="submit"
             disabled={isSubmitting}
-            className="w-full px-6 py-3 bg-[#7c3aed] hover:bg-[#6d28d9] text-white rounded-xl font-semibold transition-colors shadow-lg shadow-purple-900/30 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full px-6 py-3 bg-[#7c3aed] hover:bg-[#6d28d9] text-white rounded-xl font-semibold transition-colors shadow-lg shadow-purple-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isSubmitting ? 'Please wait...' : 'Continue to Download'}
           </button>
         </form>
 
-        <p className="mt-4 text-xs text-white/30 text-center">
+        <p className={`mt-4 text-xs text-center ${isDark ? 'text-white/30' : 'text-gray-400'}`}>
           We&apos;ll only use your email to send you updates about Adphex. No spam, ever.
         </p>
       </div>
@@ -115,6 +149,20 @@ function EmailModal({
 export default function LandingPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDark, setIsDark] = useState(true);
+
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('adphex-theme');
+    if (savedTheme === 'light') {
+      setIsDark(false);
+    }
+  }, []);
+
+  const toggleTheme = () => {
+    const newTheme = !isDark;
+    setIsDark(newTheme);
+    localStorage.setItem('adphex-theme', newTheme ? 'dark' : 'light');
+  };
 
   const handleDownloadClick = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -164,16 +212,48 @@ export default function LandingPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0c0a12] text-white selection:bg-purple-500/20 antialiased">
+    <div className={`min-h-screen antialiased transition-colors ${
+      isDark 
+        ? 'bg-[#0c0a12] text-white selection:bg-purple-500/20' 
+        : 'bg-white text-gray-900 selection:bg-purple-200'
+    }`}>
       <EmailModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onSubmit={handleEmailSubmit}
         isSubmitting={isSubmitting}
+        isDark={isDark}
       />
+      
+      {/* Theme Toggle Button */}
+      <div className="fixed top-6 right-6 z-40 flex items-center gap-3">
+        <Link
+          href="/blog"
+          className={`px-4 py-2 rounded-full text-sm font-medium transition-all hover:scale-105 ${
+            isDark 
+              ? 'bg-white/5 hover:bg-white/10 text-white/70 hover:text-white border border-white/10' 
+              : 'bg-gray-100 hover:bg-gray-200 text-gray-700 hover:text-gray-900 border border-gray-200'
+          }`}
+        >
+          Blog
+        </Link>
+        <button
+          onClick={toggleTheme}
+          className={`p-3 rounded-full transition-all hover:scale-110 ${
+            isDark 
+              ? 'bg-white/5 hover:bg-white/10 text-white/60 hover:text-white border border-white/10' 
+              : 'bg-gray-100 hover:bg-gray-200 text-gray-600 hover:text-gray-900 border border-gray-200'
+          }`}
+          aria-label="Toggle theme"
+        >
+          {isDark ? <SunIcon className="w-5 h-5" /> : <MoonIcon className="w-5 h-5" />}
+        </button>
+      </div>
       {/* Hero: copy left, screenshot right */}
       <section className="relative pt-12 pb-6 md:pt-16 md:pb-8 px-6 overflow-hidden" aria-label="Adphex for Mac">
-        <div className="absolute top-20 left-1/4 w-[500px] h-[350px] bg-purple-600/[0.07] rounded-full blur-[120px] pointer-events-none" />
+        <div className={`absolute top-20 left-1/4 w-[500px] h-[350px] rounded-full blur-[120px] pointer-events-none ${
+          isDark ? 'bg-purple-600/[0.07]' : 'bg-purple-400/[0.08]'
+        }`} />
 
         <div className="max-w-7xl xl:max-w-[90rem] mx-auto relative z-10">
           <div className="flex flex-col lg:flex-row justify-center items-center gap-8 lg:gap-10">
@@ -188,20 +268,26 @@ export default function LandingPage() {
                 />
               </div>
 
-              <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight leading-[1.08] mb-4 text-center lg:text-left">
-                Your personal financial advisor.
+              <h1 className={`text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight leading-[1.08] mb-4 text-center lg:text-left ${
+                isDark ? 'text-white' : 'text-gray-900'
+              }`}>
+                A helping hand for your finances.
                 <br />
-                On your machine.
-                <br />
-                <span className="text-purple-400/40">Adphex Chat.</span>
+                <span className={isDark ? 'text-purple-400/40' : 'text-purple-500/50'}>
+                  Your data never leaves your Mac.
+                </span>
               </h1>
 
-              <p className="text-base md:text-lg text-white/50 max-w-xl leading-relaxed text-center lg:text-left lg:mx-0 mx-auto">
-                Adphex is your own personal finance advisor that runs entirely on your Mac &mdash; no cloud,
+              <p className={`text-base md:text-lg max-w-xl leading-relaxed text-center lg:text-left lg:mx-0 mx-auto ${
+                isDark ? 'text-white/50' : 'text-gray-600'
+              }`}>
+                Your own personal finance advisor that runs entirely on your Mac &mdash; no cloud,
                 no subscriptions, no data leaving your device.
               </p>
 
-              <p className="mt-4 text-sm text-white/30 tracking-wide text-center lg:text-left">
+              <p className={`mt-4 text-sm tracking-wide text-center lg:text-left ${
+                isDark ? 'text-white/30' : 'text-gray-400'
+              }`}>
                 Runs on Apple Silicon &middot; No internet required
               </p>
             </div>
@@ -210,13 +296,17 @@ export default function LandingPage() {
               className="min-w-0 w-full lg:max-w-[680px] xl:max-w-[780px]"
               aria-label="Adphex desktop app preview"
             >
-              <div className="rounded-2xl border border-purple-500/[0.12] bg-[#13111a]/50 p-1.5 sm:p-2 shadow-[0_25px_50px_-12px_rgba(0,0,0,0.45),0_0_100px_-24px_rgba(124,58,237,0.28)] ring-1 ring-white/[0.04]">
+              <div className={`rounded-2xl overflow-hidden ${
+                isDark
+                  ? 'shadow-[0_20px_60px_-12px_rgba(0,0,0,0.5),0_0_80px_-20px_rgba(124,58,237,0.2)]'
+                  : 'shadow-[0_8px_30px_rgba(0,0,0,0.08),0_1px_3px_rgba(0,0,0,0.05)]'
+              }`}>
                 <Image
                   src="/adphex-desktop-chat.png"
                   alt="Adphex desktop app showing the Chat tab with a financial summary: transaction counts, income, expenses, savings rate, and category breakdown."
                   width={1024}
                   height={686}
-                  className="w-full h-auto rounded-xl"
+                  className="w-full h-auto"
                   sizes="(max-width: 1024px) 100vw, (max-width: 1536px) 55vw, 700px"
                   unoptimized
                   priority
@@ -238,66 +328,86 @@ export default function LandingPage() {
             Download now
             <span className="text-white/50 font-normal">&mdash; Free</span>
           </button>
-          <p className="mt-4 text-sm text-white/25">For macOS &middot; Apple Silicon</p>
+          <p className={`mt-4 text-sm ${isDark ? 'text-white/25' : 'text-gray-400'}`}>
+            For macOS &middot; Apple Silicon
+          </p>
         </div>
       </section>
 
       {/* Divider */}
-      <div className="border-t border-white/[0.06]" />
+      <div className={`border-t ${isDark ? 'border-white/[0.06]' : 'border-gray-200'}`} />
 
       {/* Features */}
       <section className="py-24 px-6">
         <div className="max-w-4xl mx-auto">
           <div className="flex items-center gap-3 mb-6">
-            <ShieldIcon className="w-6 h-6 text-purple-400" />
-            <span className="text-sm font-medium text-purple-400 tracking-wide uppercase">Privacy guarantee</span>
+            <ShieldIcon className={`w-6 h-6 ${isDark ? 'text-purple-400' : 'text-purple-500'}`} />
+            <span className={`text-sm font-medium tracking-wide uppercase ${
+              isDark ? 'text-purple-400' : 'text-purple-600'
+            }`}>
+              Privacy guarantee
+            </span>
           </div>
-          <h2 className="text-3xl md:text-4xl font-bold tracking-tight mb-14 max-w-2xl">
+          <h2 className={`text-3xl md:text-4xl font-bold tracking-tight mb-14 max-w-2xl ${
+            isDark ? 'text-white' : 'text-gray-900'
+          }`}>
             So many features!
           </h2>
 
           <div className="grid md:grid-cols-2 gap-x-16 gap-y-12">
             <div>
-              <h3 className="text-lg font-semibold mb-2">Smart categorization</h3>
-              <p className="text-white/40 leading-relaxed">
+              <h3 className={`text-lg font-semibold mb-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                Smart categorization
+              </h3>
+              <p className={`leading-relaxed ${isDark ? 'text-white/40' : 'text-gray-600'}`}>
                 Transactions are automatically grouped &mdash; food, transport, entertainment,
                 subscriptions, transfers &mdash; so you see the full picture at a glance.
               </p>
             </div>
 
             <div>
-              <h3 className="text-lg font-semibold mb-2">Income, expenses & savings at a glance</h3>
-              <p className="text-white/40 leading-relaxed">
+              <h3 className={`text-lg font-semibold mb-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                Income, expenses & savings at a glance
+              </h3>
+              <p className={`leading-relaxed ${isDark ? 'text-white/40' : 'text-gray-600'}`}>
                 See your total income, total spending, and net savings across any date range or
                 account &mdash; updated live as you upload more statements.
               </p>
             </div>
 
             <div>
-              <h3 className="text-lg font-semibold mb-2">Instant transaction extraction</h3>
-              <p className="text-white/40 leading-relaxed">
+              <h3 className={`text-lg font-semibold mb-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                Instant transaction extraction
+              </h3>
+              <p className={`leading-relaxed ${isDark ? 'text-white/40' : 'text-gray-600'}`}>
                 Upload a PDF and get a clean, structured list of every transaction within seconds.
               </p>
             </div>
 
             <div>
-              <h3 className="text-lg font-semibold mb-2">Your private data never leaves your machine</h3>
-              <p className="text-white/40 leading-relaxed">
+              <h3 className={`text-lg font-semibold mb-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                Your private data never leaves your machine
+              </h3>
+              <p className={`leading-relaxed ${isDark ? 'text-white/40' : 'text-gray-600'}`}>
                 Your data never leaves your machine. No accounts, no sync, no servers to hack.
               </p>
             </div>
 
             <div>
-              <h3 className="text-lg font-semibold mb-2">Multi-account support</h3>
-              <p className="text-white/40 leading-relaxed">
+              <h3 className={`text-lg font-semibold mb-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                Multi-account support
+              </h3>
+              <p className={`leading-relaxed ${isDark ? 'text-white/40' : 'text-gray-600'}`}>
                 Checking, savings, credit card &mdash; Adphex detects account details from your
                 statements and keeps everything organized.
               </p>
             </div>
 
             <div>
-              <h3 className="text-lg font-semibold mb-2">Zero duplicate transactions</h3>
-              <p className="text-white/40 leading-relaxed">
+              <h3 className={`text-lg font-semibold mb-2 ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                Zero duplicate transactions
+              </h3>
+              <p className={`leading-relaxed ${isDark ? 'text-white/40' : 'text-gray-600'}`}>
                 Upload statements from overlapping periods and Adphex is smart enough to
                 deduplicate &mdash; so your numbers are always accurate.
               </p>
@@ -309,12 +419,16 @@ export default function LandingPage() {
       {/* Trust hook */}
       <section className="py-24 px-6">
         <div className="max-w-2xl mx-auto">
-          <h2 className="text-3xl md:text-4xl font-bold tracking-tight mb-6">
+          <h2 className={`text-3xl md:text-4xl font-bold tracking-tight mb-6 ${
+            isDark ? 'text-white' : 'text-gray-900'
+          }`}>
             Most finance apps want your data.
             <br />
-            <span className="text-purple-400/40">We don&apos;t.</span>
+            <span className={isDark ? 'text-purple-400/40' : 'text-purple-500/50'}>We don&apos;t.</span>
           </h2>
-          <div className="space-y-5 text-white/50 text-lg leading-relaxed">
+          <div className={`space-y-5 text-lg leading-relaxed ${
+            isDark ? 'text-white/50' : 'text-gray-600'
+          }`}>
             <p>
               Every budgeting app, every bank integration, every &ldquo;free&rdquo; finance tool is built
               around one thing: your financial data. It gets stored on their servers, used to train
@@ -328,13 +442,15 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <div className="border-t border-white/[0.06]" />
+      <div className={`border-t ${isDark ? 'border-white/[0.06]' : 'border-gray-200'}`} />
 
-      <div className="border-t border-white/[0.06]" />
+      <div className={`border-t ${isDark ? 'border-white/[0.06]' : 'border-gray-200'}`} />
 
       {/* Final CTA */}
       <section className="relative py-24 px-6 overflow-hidden">
-        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[500px] h-[300px] bg-purple-600/[0.06] rounded-full blur-[100px] pointer-events-none" />
+        <div className={`absolute bottom-0 left-1/2 -translate-x-1/2 w-[500px] h-[300px] rounded-full blur-[100px] pointer-events-none ${
+          isDark ? 'bg-purple-600/[0.06]' : 'bg-purple-400/[0.08]'
+        }`} />
 
         <div className="max-w-2xl mx-auto text-center relative z-10">
           <Image
@@ -342,9 +458,9 @@ export default function LandingPage() {
             alt="Adphex"
             width={64}
             height={64}
-            className="rounded-2xl mx-auto mb-8 shadow-lg shadow-purple-900/30"
+            className="rounded-2xl mx-auto mb-8 shadow-lg shadow-purple-500/30"
           />
-          <p className="text-white/40 text-lg mb-10">
+          <p className={`text-lg mb-10 ${isDark ? 'text-white/40' : 'text-gray-600'}`}>
             Download Adphex and see where your money actually goes
           </p>
           <button
@@ -359,9 +475,13 @@ export default function LandingPage() {
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-white/[0.06] py-8 px-6">
+      <footer className={`border-t py-8 px-6 ${
+        isDark ? 'border-white/[0.06]' : 'border-gray-200'
+      }`}>
         <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2.5 text-sm text-white/25">
+          <div className={`flex items-center gap-2.5 text-sm ${
+            isDark ? 'text-white/25' : 'text-gray-400'
+          }`}>
             <Image
               src="/adphex-logo.png"
               alt="Adphex"
@@ -371,8 +491,12 @@ export default function LandingPage() {
             />
             <span>&copy; {new Date().getFullYear()} Adphex</span>
           </div>
-          <div className="flex items-center gap-6 text-sm text-white/25">
-            <Link href="/privacy" className="hover:text-white/60 transition-colors">
+          <div className={`flex items-center gap-6 text-sm ${
+            isDark ? 'text-white/25' : 'text-gray-400'
+          }`}>
+            <Link href="/privacy" className={`transition-colors ${
+              isDark ? 'hover:text-white/60' : 'hover:text-gray-700'
+            }`}>
               Privacy
             </Link>
           </div>

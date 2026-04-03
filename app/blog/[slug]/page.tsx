@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import Image from 'next/image';
 import { notFound } from 'next/navigation';
 import { getPublishedPosts, getPostBySlug, getPageBlocks } from '@/lib/notion';
 import NotionBlockRenderer from '@/components/blog/notion-block-renderer';
@@ -137,9 +138,13 @@ export default async function BlogPostPage({ params }: Props) {
         <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <Link href="/" className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white font-bold shadow-sm">
-                A
-              </div>
+              <Image
+                src="/adphex-icon.png"
+                alt="Adphex"
+                width={32}
+                height={32}
+                className="rounded-lg"
+              />
               <span className="font-semibold text-lg tracking-tight text-slate-900 dark:text-white">
                 Adphex
               </span>
