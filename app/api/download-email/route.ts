@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
         email: email.toLowerCase().trim(),
         user_agent: userAgent,
         ip_address: ipAddress,
-        download_url: 'https://gaddwvuybwnhcgciwfky.supabase.co/storage/v1/object/public/adphex-release/Adphex-0.1.0_aarch64.dmg',
+        download_url: 'https://github.com/itslolan/adphex-release/raw/refs/heads/main/Adphex-0.1.0_aarch64.dmg?download=',
       })
       .select()
       .single();

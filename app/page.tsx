@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 
-const DMG_DOWNLOAD_URL = 'https://gaddwvuybwnhcgciwfky.supabase.co/storage/v1/object/public/adphex-release/Adphex-0.1.0_aarch64.dmg';
+const DMG_DOWNLOAD_URL = 'https://github.com/itslolan/adphex-release/raw/refs/heads/main/Adphex-0.1.0_aarch64.dmg?download=';
 
 function AppleLogo({ className }: { className?: string }) {
   return (
